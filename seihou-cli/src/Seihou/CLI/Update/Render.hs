@@ -50,6 +50,8 @@ import Seihou.Core.Types
     ModuleLoadError (..),
     ModuleName (..),
     Operation (..),
+    ParentVars,
+    Removal,
     SHA256 (..),
     VarName (..),
   )
@@ -119,6 +121,9 @@ agentUpgradeHint target =
     <> fromMaybe "<module>" target
     <> "' to have an agent repair the manifest state and finish the upgrade.\n"
 
+instancePolicies :: AppliedComposition -> [(ModuleName, ParentVars, Maybe Removal)]
+instancePolicies application = [(state ^. #name, state ^. #parentVars, state ^. #removalPolicy) | state <- application ^. #instances]
+
 renderUpdateHuman :: Bool -> UpdateOutput -> Text
 renderUpdateHuman _ (UpdatePlanOutput (UpdatePlanView plan)) =
   T.unlines $
@@ -132,6 +137,7 @@ renderUpdateHuman _ (UpdatePlanOutput (UpdatePlanView plan)) =
            renderFiles (reconciliationSummary (plan ^. #reconciliation)),
            if isUpdateNoOp plan then "Commands:    0 will run (no project update)" else renderCommands (summarizeCommandPlan (plan ^. #commandPlan))
          ]
+      <> ["Removal policies changed: " <> appliedTargetName (application ^. #candidate . #target) | application <- plan ^. #plannedApplications, maybe [] instancePolicies (application ^. #previous) /= instancePolicies (application ^. #candidate)]
       <> ["Checkout declarations changed: " <> application ^. #candidate . #applicationId . #unApplicationId | application <- plan ^. #plannedApplications, maybe [] (^. #checkoutCommands) (application ^. #previous) /= application ^. #candidate . #checkoutCommands]
       <> ["  checkout " <> (if isUpdateNoOp plan then "not-run-no-update" else dispositionText (command ^. #disposition)) <> ": " <> fromMaybe "" (commandText (command ^. #operation)) | command <- plan ^. #commandPlan . #commands, isCheckoutCommand (command ^. #operation)]
       <> T.lines (renderCheckoutPlan True (plan ^. #checkoutPlan))

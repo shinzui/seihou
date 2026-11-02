@@ -204,3 +204,26 @@ tests = testSpec "seed run end-to-end" $ do
       D.removeFile (root </> "nested/start.txt")
       _ <- success binary root ["run", "demo"]
       TIO.readFile (root </> "nested/start.txt") `shouldReturn` "starter\n"
+
+  it "removes a recorded seed root and its unshared inherited managed files in one command" $
+    withSystemTempDirectory "seed-root-closure" $ \root -> do
+      (binary, modul) <- prepare root
+      let base = root </> ".seihou/modules/base"
+      D.createDirectoryIfMissing True (base </> "files")
+      TIO.writeFile (base </> "files/base") "managed base\n"
+      TIO.writeFile (base </> "files/starter") "wrong base starter\n"
+      TIO.writeFile (base </> "module.dhall") "let S = ../demo/schema/package.dhall in S.Module::{name=\"base\",version=Some \"1.0.0\",vars=[S.VarDecl::{name=\"base.starters\",type=\"bool\",default=Some \"true\"}],steps=[S.Step::{strategy=\"copy\",src=\"base\",dest=\"base.txt\"},S.Step::{strategy=\"copy\",src=\"starter\",dest=\"nested/start.txt\",when=Some \"Eq base.starters true\"}],removal=Some S.Removal::{steps=[S.RemovalStep::{action=\"remove-file\",dest=\"base.txt\"},S.RemovalStep::{action=\"remove-file\",dest=\"nested/start.txt\",when=Some \"Eq base.starters true\"}]}}"
+      TIO.writeFile (modul </> "module.dhall") (body "seed" ",dependencies=[S.Dependency::{module=\"base\",vars=[{name=\"base.starters\",value=\"false\"}]}],removal=Some S.Removal::{steps=[S.RemovalStep::{action=\"remove-file\",dest=\"LICENSE\"}]}")
+      _ <- success binary root ["run", "demo"]
+      TIO.writeFile (root </> "nested/start.txt") "authored seed\n"
+      before <- BS.readFile (root </> ".seihou/manifest.json")
+      preview <- success binary root ["remove", "demo", "--dry-run"]
+      preview `shouldSatisfy` T.isInfixOf "Retire inherited module base"
+      BS.readFile (root </> ".seihou/manifest.json") `shouldReturn` before
+      _ <- success binary root ["remove", "demo"]
+      TIO.readFile (root </> "nested/start.txt") `shouldReturn` "authored seed\n"
+      D.doesFileExist (root </> "base.txt") `shouldReturn` False
+      D.doesFileExist (root </> "LICENSE") `shouldReturn` False
+      after <- readManifest root
+      after ^. #applications `shouldBe` []
+      after ^. #modules `shouldBe` []

@@ -33,7 +33,7 @@ module Seihou.Manifest.Upgrade
   )
 where
 
-import Control.Monad (foldM, forM, unless, when)
+import Control.Monad (foldM, forM, forM_, unless, when)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -60,6 +60,7 @@ data UpgradeStepAction
   | AddEmptySeedReceipts
   | AddEmptyCheckoutOutputs
   | AddUnknownRecipeInputs
+  | IntroduceConditionalRemoval
   | AddUnknownRecipeChain
   | MakeSeedOwnershipExplicit
   | AddEmptyCheckoutCommands
@@ -126,7 +127,8 @@ manifestUpgradeSteps =
     step 9 AddEmptyCheckoutCommands "repeatable checkout commands",
     step 10 MakeSeedOwnershipExplicit "explicit seed instance ownership",
     step 11 AddUnknownRecipeInputs "recipe inputs",
-    step 12 AddUnknownRecipeChain "recipe inheritance provenance"
+    step 12 AddUnknownRecipeChain "recipe inheritance provenance",
+    step 13 IntroduceConditionalRemoval "conditional removal policies and recorded root retirement"
   ]
   where
     step from stepAction =
@@ -135,6 +137,7 @@ manifestUpgradeSteps =
 upgradeStepKind :: UpgradeStepAction -> UpgradeStepKind
 upgradeStepKind AddUnknownRecipeInputs = LosslessUpgrade
 upgradeStepKind AddUnknownRecipeChain = LosslessUpgrade
+upgradeStepKind IntroduceConditionalRemoval = LosslessUpgrade
 upgradeStepKind StampVersion = LosslessUpgrade
 upgradeStepKind ConvertMachineLocalPaths = InferenceBearingUpgrade
 upgradeStepKind MakeSharedWriteEvidenceExplicit = LosslessUpgrade
@@ -196,6 +199,9 @@ applyLosslessUpgradeStep upgradeStep document = do
   unless (actual == upgradeStep ^. #fromVersion) $
     Left (StepVersionMismatch upgradeStep actual)
   transformed <- case upgradeStep ^. #action of
+    IntroduceConditionalRemoval -> do
+      validateUnconditionalRemovals actual document
+      addUnknownRemovalPolicies actual document
     AddUnknownRecipeChain -> case document of
       Aeson.Object fields -> do
         apps <- case KeyMap.lookup "applications" fields of
@@ -350,3 +356,60 @@ addInputs (Aeson.Array apps) = Aeson.Array (fmap add apps)
     add (Aeson.Object fields) = Aeson.Object (KeyMap.insert "recipeInputs" Aeson.Null fields)
     add other = other
 addInputs other = other
+
+-- Schema 13 has no conditional-removal evidence. Do not legitimize a future field
+-- merely by stamping its document with a newer version; preserve all unrelated keys.
+validateUnconditionalRemovals :: ManifestSchemaVersion -> Aeson.Value -> Either ManifestUpgradeError ()
+validateUnconditionalRemovals version = \case
+  Aeson.Object fields -> do
+    modules <- values (fromMaybe (Aeson.Array mempty) (KeyMap.lookup "modules" fields))
+    forM_ modules $ \case
+      Aeson.Object modul -> case KeyMap.lookup "removal" modul of
+        Nothing -> Right ()
+        Just Aeson.Null -> Right ()
+        Just (Aeson.Object removal) -> do
+          steps <- values (fromMaybe (Aeson.Array mempty) (KeyMap.lookup "steps" removal))
+          forM_ steps $ \case
+            Aeson.Object step -> case KeyMap.lookup "when" step of
+              Nothing -> Right ()
+              Just Aeson.Null -> Right ()
+              _ -> bad "schema 13 cannot contain conditional removal policies"
+            _ -> bad "removal step must be an object"
+        _ -> bad "removal must be an object"
+      _ -> bad "module must be an object"
+  _ -> bad "manifest must be an object"
+  where
+    bad :: Text -> Either ManifestUpgradeError a
+    bad = Left . MalformedDocument version
+    values value = case Aeson.fromJSON value of
+      Aeson.Success xs -> Right (xs :: [Aeson.Value])
+      Aeson.Error err -> bad (T.pack err)
+
+-- The old reader never accepted typed per-application policy results. Preserve
+-- unknown fields and explicitly record that historical evidence is unavailable.
+addUnknownRemovalPolicies :: ManifestSchemaVersion -> Aeson.Value -> Either ManifestUpgradeError Aeson.Value
+addUnknownRemovalPolicies version (Aeson.Object fields) = case KeyMap.lookup "applications" fields of
+  Nothing -> Right (Aeson.Object fields)
+  Just value -> do
+    apps <- values value
+    upgraded <- forM apps $ \case
+      Aeson.Object app -> case KeyMap.lookup "instances" app of
+        Nothing -> Right (Aeson.Object app)
+        Just states -> do
+          instances <- values states
+          converted <- forM instances $ \case
+            Aeson.Object state -> case KeyMap.lookup "removalPolicy" state of
+              Nothing -> Right (Aeson.Object (KeyMap.insert "removalPolicy" Aeson.Null state))
+              Just Aeson.Null -> Right (Aeson.Object state)
+              _ -> bad "schema 13 cannot contain per-application removal policy evidence"
+            _ -> bad "instance must be an object"
+          Right (Aeson.Object (KeyMap.insert "instances" (Aeson.toJSON converted) app))
+      _ -> bad "application must be an object"
+    Right (Aeson.Object (KeyMap.insert "applications" (Aeson.toJSON upgraded) fields))
+  where
+    bad :: Text -> Either ManifestUpgradeError a
+    bad = Left . MalformedDocument version
+    values value = case Aeson.fromJSON value of
+      Aeson.Success xs -> Right (xs :: [Aeson.Value])
+      Aeson.Error err -> bad (T.pack err)
+addUnknownRemovalPolicies version _ = Left (MalformedDocument version "manifest must be an object")

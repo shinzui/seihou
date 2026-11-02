@@ -15,6 +15,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (UTCTime)
 import Seihou.Composition.Instance (ModuleInstance (..))
+import Seihou.Core.Expr (settleRemovalConditions)
 import Seihou.Core.Types
 import Seihou.Manifest.Hash (hashContent)
 
@@ -77,7 +78,8 @@ buildAppliedComposition target targetOrigin targetVersion additional namespace c
           parentVars = inst ^. #parentVars,
           origin = origin,
           moduleVersion = modul ^. #version,
-          resolvedVars = Map.map (varValueToText . (^. #value)) (Map.findWithDefault Map.empty inst resolved)
+          resolvedVars = Map.map (varValueToText . (^. #value)) (Map.findWithDefault Map.empty inst resolved),
+          removalPolicy = settleRemovalConditions (Map.map (^. #value) (Map.findWithDefault Map.empty inst resolved)) <$> modul ^. #removal
         }
 
 -- | Replace an existing application in place, or append a newly-applied one.

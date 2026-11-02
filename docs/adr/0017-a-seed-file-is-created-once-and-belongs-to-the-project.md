@@ -162,3 +162,28 @@ recovery form one ownership contract. Keeping any of them as an engine-only
 prerequisite does not complete delivery. The normal update must own recorded
 source/dependency lookup, saved inputs and lossless preparation; hidden cache,
 manifest or index repair is not an accepted adoption workflow.
+
+## Composed removal policy amendment (2026-11-01)
+
+A recorded application with one module root retires its unshared inherited instances
+when that root is removed. Plan all ordinary removal effects against the original
+seed claims before retiring metadata, then publish the complete candidate manifest.
+Other applications retain shared qualified instances. Explicit compositions with
+additional roots and recipe applications retain exact-instance selection; no dependency
+graph is guessed from an unordered module list.
+
+A base that suppresses its starter outputs must also suppress their removal effects.
+`RemovalStep.when` is settled while resolved values still retain their declared types
+at accepted run/update. Persist the resulting Boolean in each application's instance
+`removalPolicy`; flattened saved text cannot distinguish a Boolean from text, and a
+shared module summary cannot represent different applications' accepted outcomes. Old removal steps remain unconditional. Conditional
+policies and the root-retirement boundary require schema 14 and its lossless adjacent
+upgrade under ADR 0014. Historical instance policies become null, preserving unknown
+evidence honestly. Unconditional legacy cleanup remains available; conditional cleanup
+without an accepted receipt requires the ordinary update before removal. Retiring the last seed claim still forgets settlement; this
+amendment does not introduce permanent tombstones or authorize deletion of released files.
+
+The composed consumer and acceptance authority is
+`mori://shinzui/seihou-modules/plans/11-add-a-bun-based-openapi-typescript-client-module`.
+A source build is distinct from a published/installed release; producer pins must not
+claim the new runtime has shipped before that delivery is verified.

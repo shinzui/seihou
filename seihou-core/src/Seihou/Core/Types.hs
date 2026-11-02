@@ -301,7 +301,8 @@ data RemovalAction
 data RemovalStep = RemovalStep
   { action :: !RemovalAction,
     dest :: !Text,
-    src :: !(Maybe FilePath)
+    src :: !(Maybe FilePath),
+    condition :: !(Maybe Expr)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -630,6 +631,7 @@ data ManifestCapability
   | SeedReceipts
   | RecipeInputs
   | RecipeInheritance
+  | ConditionalRemovalPolicies
   | SeedOwnerClaims
   | CheckoutLocalOutputs
   | CheckoutLocalCommands
@@ -768,7 +770,8 @@ data AppliedInstanceState = AppliedInstanceState
     parentVars :: !ParentVars,
     origin :: !ArtifactOrigin,
     moduleVersion :: !(Maybe Text),
-    resolvedVars :: !(Map VarName Text)
+    resolvedVars :: !(Map VarName Text),
+    removalPolicy :: !(Maybe Removal)
   }
   deriving stock (Eq, Show, Generic)
 

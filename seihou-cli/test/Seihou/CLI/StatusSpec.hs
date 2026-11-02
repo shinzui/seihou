@@ -101,7 +101,8 @@ mkApplication target modules =
           parentVars = emptyParentVars,
           origin = LocalOrigin name,
           moduleVersion = Just "1.0.0",
-          resolvedVars = Map.empty
+          resolvedVars = Map.empty,
+          removalPolicy = Nothing
         }
 
 -- | Build a 'MigrationPlan' fixture for use with formatStatus.

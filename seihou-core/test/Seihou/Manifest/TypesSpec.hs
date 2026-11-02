@@ -96,14 +96,16 @@ manifestWithEveryOriginPosition =
                        parentVars = emptyParentVars,
                        origin = ProjectOrigin ".seihou/modules/docs",
                        moduleVersion = Just "0.1.0",
-                       resolvedVars = Map.empty
+                       resolvedVars = Map.empty,
+                       removalPolicy = Nothing
                      },
                    AppliedInstanceState
                      { name = ModuleName "scratch",
                        parentVars = emptyParentVars,
                        origin = LocalOrigin "scratch",
                        moduleVersion = Nothing,
-                       resolvedVars = Map.empty
+                       resolvedVars = Map.empty,
+                       removalPolicy = Nothing
                      }
                  ],
                commandReceipts = Map.empty,
@@ -137,7 +139,7 @@ manifestWithEveryStringPosition =
                removal =
                  Just
                    ( Removal
-                       [RemovalStep RemoveFileAction "flake.nix" (Just "files/flake.nix")]
+                       [RemovalStep RemoveFileAction "flake.nix" (Just "files/flake.nix") (Just (ExprLit True))]
                        [Command "cabal clean" (Just "backend") Nothing ApplicationCommand]
                    )
              }
@@ -297,7 +299,7 @@ spec = do
 
   describe "checkout command codec" $ do
     let command = CheckoutCommand "demo" 0 "mkdir -p .local/setup" Nothing
-        application commands = AppliedComposition (ApplicationId "setup") (AppliedModuleTarget "demo") (ProjectOrigin "modules/demo") (Just "1") [] Nothing Nothing [AppliedInstanceState "demo" emptyParentVars (ProjectOrigin "modules/demo") (Just "1") Map.empty] Map.empty commands Nothing Nothing fixedTime
+        application commands = AppliedComposition (ApplicationId "setup") (AppliedModuleTarget "demo") (ProjectOrigin "modules/demo") (Just "1") [] Nothing Nothing [AppliedInstanceState "demo" emptyParentVars (ProjectOrigin "modules/demo") (Just "1") Map.empty Nothing] Map.empty commands Nothing Nothing fixedTime
         manifest commands = emptyManifest fixedTime & #applications .~ [application commands]
         mutateApp transform value = case value of
           Aeson.Object fields -> case KeyMap.lookup "applications" fields of
@@ -336,6 +338,40 @@ spec = do
       (m ^. #vars) `shouldBe` Map.empty
       (m ^. #files) `shouldBe` Map.empty
       (m ^. #blueprintMigrations) `shouldBe` []
+
+  describe "conditional removal policy codec" $ do
+    let policy = Removal [RemovalStep RemoveFileAction "package.json" Nothing (Just (ExprLit True))] []
+        applied = AppliedModule (ModuleName "base") emptyParentVars (LocalOrigin "base") Nothing fixedTime (Just policy)
+        manifest = emptyManifest fixedTime & #modules .~ [applied]
+    it "roundtrips the condition at schema 14" $
+      manifestFromJSON (manifestToJSON manifest) `shouldBe` Right manifest
+    it "roundtrips per-application policy and rejects missing or unresolved accepted evidence" $ do
+      let state = AppliedInstanceState "base" emptyParentVars (LocalOrigin "base") Nothing Map.empty (Just policy)
+          app = AppliedComposition (ApplicationId "base") (AppliedModuleTarget "base") (LocalOrigin "base") Nothing [] Nothing Nothing [state] Map.empty [] Nothing Nothing fixedTime
+          recorded = manifest & #applications .~ [app]
+          alterInstances f (Aeson.Object fields) = Aeson.Object (update "applications" (mapArray (alterApp f)) fields)
+          alterInstances _ value = value
+          mapArray f (Aeson.Array values) = Aeson.Array (fmap f values)
+          mapArray _ value = value
+          alterApp f (Aeson.Object fields) = Aeson.Object (update "instances" (mapArray (\case Aeson.Object fields' -> Aeson.Object (f fields'); value -> value)) fields)
+          alterApp _ value = value
+          update key f fields = maybe fields (\value -> KeyMap.insert key (f value) fields) (KeyMap.lookup key fields)
+          withoutPolicy = alterInstances (KeyMap.delete "removalPolicy") (Aeson.toJSON recorded)
+          unresolved = recorded & #applications %~ map (\entry -> entry & #instances %~ map (\instanceState -> instanceState & #removalPolicy .~ Just (Removal [RemovalStep RemoveFileAction "starter" Nothing (Just (ExprEq "flag" (VBool True)))] [])))
+      manifestFromJSON (manifestToJSON recorded) `shouldBe` Right recorded
+      manifestFromJSON (Aeson.encode withoutPolicy) `shouldSatisfy` either (const True) (const False)
+      manifestEncodingLoss unresolved `shouldSatisfy` (not . null)
+      manifestFromJSON (manifestToJSON unresolved) `shouldSatisfy` either (const True) (const False)
+
+    it "rejects conditional evidence in an older schema instead of ignoring it" $ do
+      let old = manifest & #version .~ ManifestSchemaVersion 13
+      manifestEncodingLoss old `shouldSatisfy` (not . null)
+      manifestFromJSON (manifestToJSON old) `shouldSatisfy` either (const True) (const False)
+
+    it "rejects an unresolved expression instead of reinterpreting saved text" $ do
+      let unresolved = manifest & #modules %~ map (\entry -> entry & #removal %~ fmap (\spec -> spec & #steps %~ map (\step -> step & #condition .~ Just (ExprEq (VarName "base.starters") (VBool True)))))
+      manifestEncodingLoss unresolved `shouldSatisfy` (not . null)
+      manifestFromJSON (manifestToJSON unresolved) `shouldSatisfy` either (const True) (const False)
 
   describe "ArtifactOrigin" $ do
     it "roundtrips a remote origin carrying a repository name" $ do
@@ -543,8 +579,8 @@ spec = do
                 namespace = Just "planning",
                 context = Just "work",
                 instances =
-                  [ AppliedInstanceState (ModuleName "link-skill") pv1 (LocalOrigin "link-skill") (Just "1") (Map.singleton (VarName "skill.name") "exec-plan"),
-                    AppliedInstanceState (ModuleName "link-skill") pv2 (LocalOrigin "link-skill") (Just "1") (Map.singleton (VarName "skill.name") "master-plan")
+                  [ AppliedInstanceState (ModuleName "link-skill") pv1 (LocalOrigin "link-skill") (Just "1") (Map.singleton (VarName "skill.name") "exec-plan") Nothing,
+                    AppliedInstanceState (ModuleName "link-skill") pv2 (LocalOrigin "link-skill") (Just "1") (Map.singleton (VarName "skill.name") "master-plan") Nothing
                   ],
                 commandReceipts = Map.singleton fingerprint receipt,
                 checkoutCommands = [],

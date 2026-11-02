@@ -63,6 +63,21 @@ fileField _ _ _ = Nothing
 
 spec :: Spec
 spec = do
+  it "upgrades unconditional schema-13 removal without changing producer fields" $ do
+    let document = Aeson.object ["version" Aeson..= (13 :: Int), "producerField" Aeson..= True, "modules" Aeson..= [Aeson.object ["removal" Aeson..= Aeson.object ["steps" Aeson..= [Aeson.object ["action" Aeson..= ("remove-file" :: String), "dest" Aeson..= ("package.json" :: String)]]]]]]
+    case upgradeDocumentLosslessly (v 14) document of
+      Right (_, upgraded) -> upgraded `shouldBe` setDocumentSchemaVersion (v 14) document
+      Left err -> expectationFailure (show err)
+  it "adds unknown instance removal evidence losslessly without manufacturing an outcome" $ do
+    let state = Aeson.object ["producerInstance" Aeson..= True]
+        document = Aeson.object ["version" Aeson..= (13 :: Int), "applications" Aeson..= [Aeson.object ["instances" Aeson..= [state], "producerApplication" Aeson..= True]]]
+        expected = Aeson.object ["version" Aeson..= (14 :: Int), "applications" Aeson..= [Aeson.object ["instances" Aeson..= [Aeson.object ["producerInstance" Aeson..= True, "removalPolicy" Aeson..= Aeson.Null]], "producerApplication" Aeson..= True]]]
+    fmap snd (upgradeDocumentLosslessly (v 14) document) `shouldBe` Right expected
+    let forged = Aeson.object ["version" Aeson..= (13 :: Int), "applications" Aeson..= [Aeson.object ["instances" Aeson..= [Aeson.object ["removalPolicy" Aeson..= Aeson.object []]]]]]
+    upgradeDocumentLosslessly (v 14) forged `shouldSatisfy` either (const True) (const False)
+  it "refuses conditional evidence in a schema-13 document" $ do
+    let document = Aeson.object ["version" Aeson..= (13 :: Int), "modules" Aeson..= [Aeson.object ["removal" Aeson..= Aeson.object ["steps" Aeson..= [Aeson.object ["when" Aeson..= ("true" :: String)]]]]]]
+    upgradeDocumentLosslessly (v 14) document `shouldSatisfy` either (const True) (const False)
   it "upgrades schema 12 with unknown recipe chain history and preserves unknown raw fields" $ do
     let document = Aeson.object ["version" Aeson..= (12 :: Int), "futureTop" Aeson..= True, "applications" Aeson..= [Aeson.object ["producerOwned" Aeson..= True]]]
     case upgradeDocumentLosslessly (v 13) document of

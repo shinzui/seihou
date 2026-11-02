@@ -65,8 +65,9 @@ OLDER MANIFESTS
       10 -> 11 precise seed ownership claims
       11 -> 12 recipe inputs
       12 -> 13 unknown recipe-chain history
+      13 -> 14 conditional removal policies and recorded root retirement
 
-    ✓ Upgraded .seihou/manifest.json to schema version 13.
+    ✓ Upgraded .seihou/manifest.json to schema version 14.
       Review the diff and commit it: git diff .seihou/manifest.json
 
   Running it on a manifest that is already current reports that there is
@@ -164,3 +165,19 @@ RECIPE INHERITANCE
   the old manifest. Metadata-only base changes need acceptance, and unchanged
   application command receipts remain valid. Use the normal recipe update to
   adopt unknown history; no manual manifest editing is required.
+
+CONDITIONAL REMOVAL POLICIES
+
+  Schema 14 records the conditional-removal/root-retirement boundary. Omitted
+  removal conditions remain unconditional. Each application instance records
+  removalPolicy with typed Boolean condition results at accepted run/update.
+  The adjacent upgrade records null for unknown historical policies, changes no
+  project files, and invents no result. A schema-13 document carrying policy
+  evidence is rejected. Ordinary run/update/removal prepare this
+  lossless boundary in memory; previews do not publish it. A conditional legacy
+  application without accepted policy evidence needs its ordinary update first.
+
+  A recorded single-module root retires unshared inherited modules in the same
+  removal. Other applications keep shared qualified instances. Explicit
+  additional-root compositions and recipe applications retain exact-instance
+  selection. See seihou help modules.

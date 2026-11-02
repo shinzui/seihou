@@ -58,7 +58,9 @@ REMOVAL AND COMMITS
   seihou remove NAME
 
   Managed-file removal follows the module's removal declaration and protects
-  conflicts. Recorded seed-only/checkout-only owners need no custom spec; seed
+  conflicts. Removing a recorded single-module root also retires its unshared
+  inherited modules; other applications keep shared instances. Recorded
+  seed-only/checkout-only owners need no custom spec; seed
   retirement preserves files. Status/diff count seeds without content comparisons.
   Review changes and commit portable manifest/config, real source directories
   and ignore rules. Accepted link adoption can stage tracked-link removals.

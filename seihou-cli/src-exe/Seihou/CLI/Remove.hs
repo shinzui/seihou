@@ -13,7 +13,7 @@ import Data.Text.IO qualified as TIO
 import Data.Time.Clock (getCurrentTime)
 import Seihou.CLI.CheckoutSync (renderCheckoutPlan)
 import Seihou.CLI.Commands (RemoveOpts (..))
-import Seihou.CLI.ManifestCapabilityUpgrade (prepareRecordedSeedOwnership)
+import Seihou.CLI.ManifestCapabilityUpgrade (prepareRecordedSeedOwnership, prepareRemovalPolicies)
 import Seihou.CLI.Style (bold, dim, green, useColor, yellow)
 import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Core.Checkout
@@ -51,7 +51,8 @@ handleRemove opts = do
   let matchingApps = Set.fromList [app ^. #applicationId | app <- originalManifest ^. #applications, maybe True (== app ^. #applicationId) (opts ^. #application), state <- app ^. #instances, modName == state ^. #name || modName == qualifiedName (ModuleInstance (state ^. #name) (state ^. #parentVars))]
       legacyPaths = Set.fromList [path | (path, receipt) <- Map.toAscList (originalManifest ^. #seeds), LegacySeedOwners apps <- [receipt ^. #ownership], not (Set.null (apps `Set.intersection` matchingApps))]
   prepared <- prepareRecordedSeedOwnership root paths legacyPaths originalManifest
-  manifest <- case prepared of Left err -> TIO.putStrLn err >> exitFailure; Right candidate -> pure candidate
+  seedPrepared <- case prepared of Left err -> TIO.putStrLn err >> exitFailure; Right candidate -> pure candidate
+  manifest <- case prepareRemovalPolicies seedPrepared of Left err -> TIO.putStrLn err >> exitFailure; Right candidate -> pure candidate
   case selectRecordedRemoval manifest modName (opts ^. #application) of
     Left err -> TIO.putStrLn (err ^. #message) >> exitFailure
     Right (Just selected) -> handleCheckoutRemoval opts manifest selected >> exitWith ExitSuccess
@@ -221,7 +222,14 @@ handleCheckoutRemoval :: RemoveOpts -> Manifest -> CheckoutRemovalSelection -> I
 handleCheckoutRemoval opts manifest selected = do
   root <- getCurrentDirectory
   let candidate = selected ^. #candidateManifest
-      retiredSeeds = [path | (path, receipt) <- Map.toAscList (manifest ^. #seeds), case receipt ^. #ownership of KnownSeedOwners owners -> Set.member (selected ^. #instanceName) (Map.findWithDefault Set.empty (selected ^. #applicationId) owners); _ -> False]
+      ownersFor path source = case Map.lookup path (source ^. #seeds) of
+        Just receipt -> case receipt ^. #ownership of KnownSeedOwners owners -> Map.findWithDefault Set.empty (selected ^. #applicationId) owners; _ -> Set.empty
+        Nothing -> Set.empty
+      retiredSeeds = [path | path <- Map.keys (manifest ^. #seeds), not (Set.null (ownersFor path manifest `Set.difference` ownersFor path candidate))]
+      qualified applied = qualifiedName (ModuleInstance (applied ^. #name) (applied ^. #parentVars))
+      retainedModules = Set.fromList (map qualified (candidate ^. #modules))
+      inherited = [qualified applied | applied <- manifest ^. #modules, not (Set.member (qualified applied) retainedModules), qualified applied /= selected ^. #instanceName]
+  mapM_ (\name -> TIO.putStrLn ("  Retire inherited module " <> name ^. #unModuleName <> ".")) inherited
   mapM_ (\path -> TIO.putStrLn ("  Keep " <> T.pack path <> " (seed file; owned by the project)")) (take 5 retiredSeeds)
   checked <- runEff $ runFilesystem $ runProcessIO $ prepareCheckoutPlan Reconcile ApplyDeclaration root manifest candidate []
   plan <- case checked of

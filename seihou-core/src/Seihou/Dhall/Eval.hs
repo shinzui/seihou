@@ -104,6 +104,7 @@ evalModuleFromFile path = do
         mapM_ (\v -> evaluate (v ^. #type_)) (m ^. #vars)
         mapM_ (\s -> evaluate (s ^. #lifecycle) >> evaluate (s ^. #strategy) >> evaluate (s ^. #condition) >> mapM_ evaluate (s ^. #patch)) (m ^. #steps)
         mapM_ (\c -> evaluate (c ^. #lifecycle) >> mapM_ evaluate (c ^. #condition)) ((m ^. #commands) <> concatMap (^. #commands) (m ^. #removal))
+        mapM_ (\s -> evaluate (s ^. #condition)) (concatMap (^. #steps) (m ^. #removal))
         mapM_ (\p -> evaluate (p ^. #condition)) (m ^. #prompts)
         pure m
       Failure e -> throwIO e
@@ -514,12 +515,14 @@ removalDecoder =
 -- | Decoder for RemovalStep from a Dhall record.
 removalStepDecoder :: Decoder RemovalStep
 removalStepDecoder =
-  record
-    ( RemovalStep
-        <$> field "action" removalActionDecoder
-        <*> field "dest" strictText
-        <*> field "src" (maybe string)
-    )
+  withDefaults [("when", noneText)] $
+    record
+      ( RemovalStep
+          <$> field "action" removalActionDecoder
+          <*> field "dest" strictText
+          <*> field "src" (maybe string)
+          <*> (parseWhen <$> field "when" (maybe strictText))
+      )
 
 -- | Decoder for RemovalAction from a Dhall Text string.
 --

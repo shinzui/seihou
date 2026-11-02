@@ -365,3 +365,4 @@ isUpdateNoOp plan =
         && previous ^. #origin == candidate ^. #origin
         && previous ^. #moduleVersion == candidate ^. #moduleVersion
         && previous ^. #resolvedVars == candidate ^. #resolvedVars
+        && previous ^. #removalPolicy == candidate ^. #removalPolicy

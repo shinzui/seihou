@@ -1,6 +1,6 @@
 module Seihou.Core.ApplicationSpec (tests) where
 
-import Control.Lens ((&), (?~), (^.))
+import Control.Lens ((&), (.~), (?~), (^.))
 import Control.Monad (forM_)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
@@ -115,6 +115,17 @@ spec = do
       map (^. #parentVars) (composition ^. #instances) `shouldBe` [pv1, pv2]
       map (^. #resolvedVars) (composition ^. #instances)
         `shouldBe` [Map.singleton "skill.name" "exec-plan", Map.singleton "skill.name" "master-plan"]
+
+    it "settles removal while Boolean and text values retain their declared types" $ do
+      let inst = ModuleInstance "dep" emptyParentVars
+          condition = ExprEq (VarName "flag") (VBool True)
+          policy = Removal [RemovalStep RemoveFileAction "starter.txt" Nothing (Just condition)] []
+          modul = mkModule "dep" Nothing & #removal .~ Just policy
+          build value = buildAppliedComposition moduleTarget (LocalOrigin "root") Nothing [] Nothing Nothing [(inst, modul, LocalOrigin "dep")] (Map.singleton inst (Map.singleton "flag" (mkResolved "flag" value))) fixedTime
+          expected result = [Just (Removal [RemovalStep RemoveFileAction "starter.txt" Nothing (Just (ExprLit result))] [])]
+      map (^. #removalPolicy) (build (VBool True) ^. #instances) `shouldBe` expected True
+      map (^. #removalPolicy) (build (VText "true") ^. #instances) `shouldBe` expected False
+      map (^. #resolvedVars) (build (VBool True) ^. #instances) `shouldBe` map (^. #resolvedVars) (build (VText "true") ^. #instances)
 
     it "keeps identity independent of versions, source paths, and resolved values" $ do
       let inst = ModuleInstance "dep" emptyParentVars

@@ -114,7 +114,7 @@ modeIn path certification = (^. #sharedWriteMode) <$> Map.lookup path (certifica
 spec :: Spec
 spec = do
   describe "legacy seed ownership evidence" $ do
-    let instanceState name = AppliedInstanceState name emptyParentVars (LocalOrigin (name ^. #unModuleName)) (Just "1.0.0") Map.empty
+    let instanceState name = AppliedInstanceState name emptyParentVars (LocalOrigin (name ^. #unModuleName)) (Just "1.0.0") Map.empty Nothing
         app = recordedApplication appA & #instances .~ map instanceState ["first", "second"]
         receipt = SeedRecord "first" (LegacySeedOwners (Set.singleton appA)) SeedCreated testTime
         old = emptyManifest testTime & #applications .~ [app] & #seeds .~ Map.singleton "a.txt" receipt
@@ -294,7 +294,7 @@ spec = do
         case manifestFromJSON written of
           Left err -> expectationFailure err
           Right upgraded -> do
-            (upgraded ^. #version) `shouldBe` ManifestSchemaVersion 13
+            (upgraded ^. #version) `shouldBe` ManifestSchemaVersion 14
             (^. #sharedWriteMode) <$> Map.lookup ".gitignore" (upgraded ^. #files)
               `shouldBe` Just SharedWriteAdditiveOnly
         TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` gitignoreBefore

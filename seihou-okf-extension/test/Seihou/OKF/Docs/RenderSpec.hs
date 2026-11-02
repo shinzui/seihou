@@ -131,6 +131,7 @@ spec = do
     it "renders the removal procedure" $ do
       body <- requireBody "modules/rich" testOptions richModel
       body `shouldSatisfy` T.isInfixOf "## Removal"
+      body `shouldSatisfy` T.isInfixOf "delete `flake.nix` — when `IsSet license`"
       body `shouldSatisfy` T.isInfixOf "- delete `flake.nix`"
       body `shouldSatisfy` T.isInfixOf "- strip this module's section from `.gitignore`"
       body `shouldSatisfy` T.isInfixOf "Then runs:"
@@ -589,8 +590,8 @@ richModule =
         Just
           Removal
             { steps =
-                [ RemovalStep {action = RemoveFileAction, dest = "flake.nix", src = Nothing},
-                  RemovalStep {action = RemoveSectionAction, dest = ".gitignore", src = Nothing}
+                [ RemovalStep {action = RemoveFileAction, dest = "flake.nix", src = Nothing, condition = Just (ExprIsSet "license")},
+                  RemovalStep {action = RemoveSectionAction, dest = ".gitignore", src = Nothing, condition = Nothing}
                 ],
               commands =
                 [Command {run = "rm -rf dist-newstyle", workDir = Nothing, condition = Nothing, lifecycle = ApplicationCommand}]

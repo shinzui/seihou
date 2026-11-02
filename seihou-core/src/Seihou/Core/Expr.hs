@@ -2,11 +2,13 @@ module Seihou.Core.Expr
   ( parseExpr,
     renderExpr,
     evalExpr,
+    settleRemovalConditions,
     exprRefs,
   )
 where
 
 import Data.Char (isDigit)
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.Core.Types
@@ -97,6 +99,11 @@ evalExpr vars = go
     go (ExprNot e) = not (go e)
     go (ExprIsSet name) = Map.member name vars
     go (ExprLit b) = b
+
+-- | Capture the policy while resolved values still retain their declared types.
+-- Persist literals, never reinterpret flattened text during a later removal.
+settleRemovalConditions :: Map VarName VarValue -> Removal -> Removal
+settleRemovalConditions variables spec = spec & #steps %~ map (\step -> step & #condition %~ fmap (ExprLit . evalExpr variables))
 
 -- | Collect the variables an expression references, paired with the literal
 -- each is compared against via 'Eq' (if any).

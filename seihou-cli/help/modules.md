@@ -127,3 +127,12 @@ may need tools/network. Keep intended writes outside tracked/managed state and
 working directories real and project-relative. Ordinary receipts never suppress
 checkout commands. `--no-commands` suppresses both lifecycles while retaining setup;
 a true no-op update executes neither. Removal accepts application commands only.
+
+Removing a recorded application with one module root also retires its unshared
+inherited modules in the same operation. Other applications keep shared qualified
+instances. Seeds remain protected throughout inherited cleanup. Explicit compositions
+with additional roots and recipe applications keep exact-instance selection.
+
+Removal steps may declare `when`, using the generation expression grammar. It is
+evaluated against that instance's saved resolved values. Older omitted conditions
+remain unconditional. This policy requires the schema-14 runtime.

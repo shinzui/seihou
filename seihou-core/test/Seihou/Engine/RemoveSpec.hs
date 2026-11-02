@@ -1,6 +1,6 @@
 module Seihou.Engine.RemoveSpec (tests) where
 
-import Control.Lens ((&), (.~), (^.))
+import Control.Lens ((%~), (&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
@@ -81,7 +81,7 @@ spec :: Spec
 spec = do
   describe "seed preservation and exact selection" $ do
     let appId = ApplicationId "a"
-        app = AppliedComposition appId (AppliedModuleTarget modName) (LocalOrigin "test-module") Nothing [] Nothing Nothing [AppliedInstanceState name emptyParentVars (LocalOrigin text) Nothing Map.empty | (name, text) <- [(modName, "test-module"), (otherMod, "other-module")]] Map.empty [] Nothing Nothing fixedTime
+        app = AppliedComposition appId (AppliedModuleTarget otherMod) (LocalOrigin "test-module") Nothing [] Nothing Nothing [AppliedInstanceState name emptyParentVars (LocalOrigin text) Nothing Map.empty Nothing | (name, text) <- [(modName, "test-module"), (otherMod, "other-module")]] Map.empty [] Nothing Nothing fixedTime
         receipt = SeedRecord modName (KnownSeedOwners (Map.singleton appId (Set.fromList [modName, otherMod]))) SeedCreated fixedTime
         manifest = mkManifest False [] & #applications .~ [app] & #seeds .~ Map.singleton "seed.txt" receipt
     it "retires a no-spec instance without losing a co-seeder or original supplier" $ do
@@ -90,7 +90,7 @@ spec = do
       fmap (^. #ownership) (Map.lookup "seed.txt" (candidate ^. #seeds)) `shouldBe` Just (KnownSeedOwners (Map.singleton appId (Set.singleton otherMod)))
       fmap (^. #moduleName) (Map.lookup "seed.txt" (candidate ^. #seeds)) `shouldBe` Just modName
     it "keeps every declarative removal form without needing to read seed content" $ do
-      let removal = Removal [RemovalStep action "seed.txt" (Just "rewrite.dhall") | action <- [RemoveFileAction, RemoveSectionAction, RewriteFileAction]] []
+      let removal = Removal [RemovalStep action "seed.txt" (Just "rewrite.dhall") Nothing | action <- [RemoveFileAction, RemoveSectionAction, RewriteFileAction]] []
       Right plan <- pure (runBuildOps emptyFS manifest modName removal)
       plan ^. #ops `shouldBe` replicate 3 (KeepSeedOp "seed.txt")
     it "defends direct supplied operations, including path aliases, at execution too" $ do
@@ -101,6 +101,60 @@ spec = do
     it "refuses unresolved legacy subtraction rather than guessing from supplier" $ do
       let legacy = manifest & #seeds .~ Map.singleton "seed.txt" (receipt & #ownership .~ LegacySeedOwners (Set.singleton appId))
       selectRecordedRemoval legacy modName Nothing `shouldSatisfy` either (const True) (const False)
+
+  describe "recorded root closure and conditional removal" $ do
+    let appId = ApplicationId "root"
+        variables = Map.singleton (VarName "base.starters") "false"
+        rootApp = AppliedComposition appId (AppliedModuleTarget modName) (LocalOrigin "root") Nothing [] Nothing Nothing [AppliedInstanceState name emptyParentVars (LocalOrigin "fixture") Nothing variables (Just (if name == otherMod then settleRemovalConditions (Map.singleton (VarName "base.starters") (VBool False)) baseSpec else rootSpec)) | name <- [otherMod, modName]] Map.empty [] Nothing Nothing fixedTime
+        baseSpec = Removal [RemovalStep RemoveFileAction "base.txt" Nothing Nothing, RemovalStep RemoveFileAction "package.json" Nothing (Just (ExprEq (VarName "base.starters") (VBool True)))] []
+        rootSpec = Removal [RemovalStep RemoveFileAction "client.txt" Nothing Nothing] []
+        applied name spec = AppliedModule name emptyParentVars (LocalOrigin "fixture") Nothing fixedTime (Just spec)
+        file name owners = FileRecord (hashContent "bytes") name Template fixedTime Nothing owners SharedWriteUnknown
+        manifest =
+          (emptyManifest fixedTime)
+            & #applications .~ [rootApp]
+            & #modules .~ [applied otherMod (settleRemovalConditions (Map.singleton (VarName "base.starters") (VBool False)) baseSpec), applied modName rootSpec]
+            & #files .~ Map.fromList [("base.txt", file otherMod (Set.singleton appId)), ("client.txt", file modName (Set.singleton appId))]
+            & #seeds .~ Map.singleton "package.json" (SeedRecord modName (KnownSeedOwners (Map.singleton appId (Set.singleton modName))) SeedCreated fixedTime)
+    it "retires an unshared inherited closure and uses recorded per-instance conditions" $ do
+      Right (Just selected) <- pure (selectRecordedRemoval manifest modName Nothing)
+      selected ^. #candidateManifest . #applications `shouldBe` []
+      selected ^. #candidateManifest . #modules `shouldBe` []
+      selected ^. #candidateManifest . #files `shouldBe` Map.empty
+      fmap (map (^. #dest) . (^. #steps)) (selected ^. #removal) `shouldBe` Just ["client.txt", "base.txt"]
+    it "uses application dependency order when shared module summaries were reordered" $ do
+      Right (Just selected) <- pure (selectRecordedRemoval (manifest & #modules %~ reverse) modName Nothing)
+      fmap (map (^. #dest) . (^. #steps)) (selected ^. #removal) `shouldBe` Just ["client.txt", "base.txt"]
+    it "selects a recorded managed root even without seed or checkout receipts" $ do
+      Right (Just selected) <- pure (selectRecordedRemoval (manifest & #seeds .~ Map.empty) modName Nothing)
+      selected ^. #candidateManifest . #applications `shouldBe` []
+      selected ^. #candidateManifest . #modules `shouldBe` []
+    it "keeps an inherited module claimed by another application" $ do
+      let otherId = ApplicationId "survivor"
+          survivor = rootApp & #applicationId .~ otherId & #target .~ AppliedModuleTarget otherMod & #instances %~ filter ((== otherMod) . (^. #name))
+          shared = manifest & #applications %~ (<> [survivor]) & #files %~ Map.adjust (\record -> record & #applicationIds %~ Set.insert otherId) "base.txt"
+      Right (Just selected) <- pure (selectRecordedRemoval shared modName Nothing)
+      fmap (map (^. #dest) . (^. #steps)) (selected ^. #removal) `shouldBe` Just ["client.txt"]
+      map (^. #name) (selected ^. #candidateManifest . #modules) `shouldBe` [otherMod]
+      Map.keys (selected ^. #candidateManifest . #files) `shouldBe` ["base.txt"]
+    it "uses the departing application's receipt even when a shared module summary differs" $ do
+      let laterSummary = manifest & #modules %~ map (\entry -> if entry ^. #name == otherMod then entry & #removal .~ Just (settleRemovalConditions (Map.singleton (VarName "base.starters") (VBool True)) baseSpec) else entry)
+      Right (Just selected) <- pure (selectRecordedRemoval laterSummary modName Nothing)
+      fmap (map (^. #dest) . (^. #steps)) (selected ^. #removal) `shouldBe` Just ["client.txt", "base.txt"]
+    it "requires ordinary adoption when a conditional legacy application has no receipt" $ do
+      let unknown = manifest & #applications %~ map (\app -> app & #instances %~ map (\state -> state & #removalPolicy .~ Nothing))
+      selectRecordedRemoval unknown modName Nothing `shouldSatisfy` either (const True) (const False)
+    it "preserves type-sensitive conditions and refuses unresolved policy" $ do
+      let fs = mkFS [("package.json", "bytes"), ("base.txt", "bytes")]
+          legacy = mkManifestWithRemoval baseSpec [("package.json", "bytes"), ("base.txt", "bytes")]
+          settle value = settleRemovalConditions (Map.singleton (VarName "base.starters") value) baseSpec
+      Right yes <- pure (runBuildOps fs legacy modName (settle (VBool True)))
+      Right no <- pure (runBuildOps fs legacy modName (settle (VBool False)))
+      Right text <- pure (runBuildOps fs legacy modName (settle (VText "true")))
+      length (yes ^. #ops) `shouldBe` 2
+      length (no ^. #ops) `shouldBe` 1
+      length (text ^. #ops) `shouldBe` 1
+      runBuildOps fs legacy modName baseSpec `shouldSatisfy` either (const True) (const False)
 
   describe "computeRemovalPlan" $ do
     it "returns ModuleNotApplied when module is not in manifest" $ do
@@ -227,7 +281,7 @@ spec = do
       result `shouldBe` Left (ModuleNotApplied modName)
 
     it "builds DeleteFileOp with RFSafe for unchanged files" $ do
-      let removal = Removal [RemovalStep RemoveFileAction "README.md" Nothing] []
+      let removal = Removal [RemovalStep RemoveFileAction "README.md" Nothing Nothing] []
           manifest = mkManifestWithRemoval removal [("README.md", "hello")]
           fs = mkFS [("README.md", "hello")]
           result = runBuildOps fs manifest modName removal
@@ -236,7 +290,7 @@ spec = do
         Right plan -> (plan ^. #ops) `shouldBe` [DeleteFileOp "README.md" RFSafe]
 
     it "builds DeleteFileOp with RFConflict for modified files" $ do
-      let removal = Removal [RemovalStep RemoveFileAction "README.md" Nothing] []
+      let removal = Removal [RemovalStep RemoveFileAction "README.md" Nothing Nothing] []
           manifest = mkManifestWithRemoval removal [("README.md", "original")]
           fs = mkFS [("README.md", "user changed this")]
           result = runBuildOps fs manifest modName removal
@@ -245,7 +299,7 @@ spec = do
         Right plan -> (plan ^. #ops) `shouldBe` [DeleteFileOp "README.md" RFConflict]
 
     it "builds DeleteFileOp with RFGone for already-deleted files" $ do
-      let removal = Removal [RemovalStep RemoveFileAction "README.md" Nothing] []
+      let removal = Removal [RemovalStep RemoveFileAction "README.md" Nothing Nothing] []
           manifest = mkManifestWithRemoval removal [("README.md", "hello")]
           result = runBuildOps emptyFS manifest modName removal
       case result of
@@ -253,7 +307,7 @@ spec = do
         Right plan -> (plan ^. #ops) `shouldBe` [DeleteFileOp "README.md" RFGone]
 
     it "builds StripSectionOp for remove-section steps" $ do
-      let removal = Removal [RemovalStep RemoveSectionAction ".gitignore" Nothing] []
+      let removal = Removal [RemovalStep RemoveSectionAction ".gitignore" Nothing Nothing] []
           manifest = mkManifestWithRemoval removal [(".gitignore", "content")]
           fs = mkFS [(".gitignore", "content")]
           result = runBuildOps fs manifest modName removal
@@ -270,7 +324,7 @@ spec = do
         Right plan -> (plan ^. #ops) `shouldBe` [RemovalCommandOp "cabal clean" Nothing]
 
     it "rejects a removal step destination with a parent directory segment" $ do
-      let removal = Removal [RemovalStep RemoveFileAction "../outside" Nothing] []
+      let removal = Removal [RemovalStep RemoveFileAction "../outside" Nothing Nothing] []
           manifest = mkManifestWithRemoval removal []
           fs = mkFS [("../outside", "do not delete")]
           result = runBuildOps fs manifest modName removal
@@ -298,7 +352,7 @@ spec = do
     it "combines steps and commands in order" $ do
       let removal =
             Removal
-              [RemovalStep RemoveFileAction "a.txt" Nothing, RemovalStep RemoveSectionAction ".gitignore" Nothing]
+              [RemovalStep RemoveFileAction "a.txt" Nothing Nothing, RemovalStep RemoveSectionAction ".gitignore" Nothing Nothing]
               [Command "echo done" Nothing Nothing ApplicationCommand]
           manifest = mkManifestWithRemoval removal [("a.txt", "aaa")]
           fs = mkFS [("a.txt", "aaa"), (".gitignore", "stuff")]
@@ -313,7 +367,7 @@ spec = do
 
   describe "executeRemovalOps" $ do
     it "deletes files with DeleteFileOp" $ do
-      let removal = Removal [RemovalStep RemoveFileAction "README.md" Nothing] []
+      let removal = Removal [RemovalStep RemoveFileAction "README.md" Nothing Nothing] []
           manifest = mkManifestWithRemoval removal [("README.md", "hello")]
           fs = mkFS [("README.md", "hello")]
           plan = ExecutedRemovalPlan modName [DeleteFileOp "README.md" RFSafe]
@@ -321,7 +375,7 @@ spec = do
       Map.member "README.md" (finalFS ^. #files) `shouldBe` False
 
     it "preserves files in keep-set for DeleteFileOp" $ do
-      let removal = Removal [RemovalStep RemoveFileAction "a.txt" Nothing] []
+      let removal = Removal [RemovalStep RemoveFileAction "a.txt" Nothing Nothing] []
           manifest = mkManifestWithRemoval removal [("a.txt", "aaa")]
           fs = mkFS [("a.txt", "modified")]
           plan = ExecutedRemovalPlan modName [DeleteFileOp "a.txt" RFConflict]
@@ -356,7 +410,7 @@ spec = do
       Map.lookup "file.txt" (finalFS ^. #files) `shouldBe` Just content
 
     it "removes module from manifest after all steps" $ do
-      let removal = Removal [RemovalStep RemoveFileAction "a.txt" Nothing] []
+      let removal = Removal [RemovalStep RemoveFileAction "a.txt" Nothing Nothing] []
           manifest = mkManifestWithRemoval removal [("a.txt", "aaa")]
           fs = mkFS [("a.txt", "aaa")]
           plan = ExecutedRemovalPlan modName [DeleteFileOp "a.txt" RFSafe]

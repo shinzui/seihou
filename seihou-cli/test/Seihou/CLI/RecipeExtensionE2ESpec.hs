@@ -77,7 +77,7 @@ tests = testSpec "RecipeExtension" $ do
       before <- readManifest root
       case Aeson.eitherDecode before :: Either String Aeson.Value of
         Right (Aeson.Object fields) -> do
-          KM.lookup "version" fields `shouldBe` Just (Aeson.toJSON (13 :: Int))
+          KM.lookup "version" fields `shouldBe` Just (Aeson.toJSON (14 :: Int))
           T.pack (show fields) `shouldSatisfy` T.isInfixOf "recipeChain"
           T.pack (show fields) `shouldSatisfy` T.isInfixOf "descriptorHash"
         other -> expectationFailure (show other)

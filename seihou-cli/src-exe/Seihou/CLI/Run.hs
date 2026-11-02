@@ -64,6 +64,7 @@ import Seihou.Core.ArtifactRef (renderArtifactRefError)
 import Seihou.Core.Checkout
 import Seihou.Core.CommandFingerprint (checkoutCommandsFromOperations, isCheckoutCommand)
 import Seihou.Core.Context (resolveContext)
+import Seihou.Core.Expr (settleRemovalConditions)
 import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
 import Seihou.Core.Seed (renderSeedOwnershipError, replaceSelectedSeedClaims)
@@ -513,7 +514,7 @@ handleRun runOpts = do
                                 -- Build updated manifest with all composed modules.
                                 let orphanedPaths = map (^. #path) (diff ^. #orphaned)
                                     cleanedFiles = foldr Map.delete (manifest ^. #files) orphanedPaths
-                                    allModuleEntries = updateAllModules (manifest ^. #modules) originedModules now
+                                    allModuleEntries = updateAllModules (manifest ^. #modules) originedModules resolved now
                                     allResolvedVals =
                                       Map.unions
                                         [Map.map (^. #value) vs | vs <- Map.elems resolved]
@@ -996,9 +997,10 @@ findAppliedByName manifest name =
 updateAllModules ::
   [AppliedModule] ->
   [(ModuleInstance, Module, ArtifactOrigin)] ->
+  Map ModuleInstance (Map VarName ResolvedVar) ->
   UTCTime ->
   [AppliedModule]
-updateAllModules existing modulesInOrder now =
+updateAllModules existing modulesInOrder resolved now =
   let composedKeys =
         Set.fromList
           [ (inst ^. #module_, inst ^. #parentVars)
@@ -1012,7 +1014,7 @@ updateAllModules existing modulesInOrder now =
               origin = origin,
               moduleVersion = m ^. #version,
               appliedAt = now,
-              removal = m ^. #removal
+              removal = settleRemovalConditions (Map.map (^. #value) (resolved Map.! inst)) <$> m ^. #removal
             }
         | (inst, m, origin) <- modulesInOrder
         ]

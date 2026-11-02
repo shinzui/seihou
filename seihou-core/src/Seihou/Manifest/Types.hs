@@ -16,7 +16,7 @@ module Seihou.Manifest.Types
   )
 where
 
-import Control.Monad (forM_, unless, when)
+import Control.Monad (forM, forM_, unless, when)
 import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
@@ -34,6 +34,7 @@ import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl, sameArtifactIdentity)
 import Seihou.Core.Checkout (CheckoutError (..), validateCheckoutRecords)
 import Seihou.Core.CommandFingerprint (checkoutCommandOperation, fingerprintCommand)
+import Seihou.Core.Expr (renderExpr)
 import Seihou.Core.Module (isValidModuleName)
 import Seihou.Core.Path (validateCanonicalProjectPath, validateProjectRelativePath)
 import Seihou.Core.Seed (renderManifestInvariantError, seedApplicationIds, validateManifestInvariants)
@@ -82,8 +83,11 @@ import System.FilePath (takeFileName)
 -- change advances this number is
 -- docs/adr/0014-every-semantic-manifest-change-advances-the-schema-version.md.
 -- Schema 13 records application recipe-chain evidence; null denotes unknown history.
+-- Schema 14 records conditional removal policies and single-root closure retirement.
+-- Missing removal conditions remain unconditional; 13 -> 14 adds null instance
+-- policies where accepted typed evidence is unknown.
 currentManifestVersion :: ManifestSchemaVersion
-currentManifestVersion = ManifestSchemaVersion 13
+currentManifestVersion = ManifestSchemaVersion 14
 
 -- | The oldest schema the ordinary decoder reads. Anything older records
 -- machine-specific absolute paths and must go through the explicit
@@ -99,6 +103,7 @@ minimumManifestVersion TargetedAdditiveSharedPathUpdate = ManifestSchemaVersion 
 minimumManifestVersion SeedReceipts = ManifestSchemaVersion 8
 minimumManifestVersion RecipeInputs = ManifestSchemaVersion 12
 minimumManifestVersion RecipeInheritance = ManifestSchemaVersion 13
+minimumManifestVersion ConditionalRemovalPolicies = ManifestSchemaVersion 14
 minimumManifestVersion SeedOwnerClaims = ManifestSchemaVersion 11
 minimumManifestVersion CheckoutLocalOutputs = ManifestSchemaVersion 9
 minimumManifestVersion CheckoutLocalCommands = ManifestSchemaVersion 10
@@ -252,6 +257,7 @@ instance FromJSON Manifest where
         <*> o Aeson..:? "recipe"
         <*> o Aeson..:? "blueprint"
         <*> o Aeson..:? "blueprintMigrations" Aeson..!= []
+    unless (manifestSupports ConditionalRemovalPolicies manifest || not (hasConditionalRemoval manifest || hasRemovalPolicy manifest)) $ fail "conditional removal policies require manifest schema 14"
     case validateManifestInvariants manifest of
       Left err -> fail (T.unpack (renderManifestInvariantError err))
       Right () -> case validateCheckoutRecords manifest [] of
@@ -359,18 +365,22 @@ legacyLocalOrigin :: Text -> Maybe ArtifactOrigin -> ArtifactOrigin
 legacyLocalOrigin recordedName = fromMaybe (LocalOrigin recordedName)
 
 instance ToJSON AppliedInstanceState where
-  toJSON state =
-    Aeson.object $
-      [ "name" .= (state ^. #name . #unModuleName),
-        "origin" .= (state ^. #origin),
-        "resolvedVars" .= varsToJSON (state ^. #resolvedVars)
-      ]
-        ++ parentVarsField (state ^. #parentVars)
-        ++ maybe [] (\v -> ["version" .= v]) (state ^. #moduleVersion)
-    where
-      parentVarsField (ParentVars m)
-        | Map.null m = []
-        | otherwise = ["parentVars" .= parentVarsMapToJSON m]
+  toJSON = instanceToJSON currentManifestVersion
+
+instanceToJSON :: ManifestSchemaVersion -> AppliedInstanceState -> Aeson.Value
+instanceToJSON schema state =
+  Aeson.object $
+    [ "name" .= (state ^. #name . #unModuleName),
+      "origin" .= (state ^. #origin),
+      "resolvedVars" .= varsToJSON (state ^. #resolvedVars)
+    ]
+      ++ ["removalPolicy" .= fmap removalToJSON (state ^. #removalPolicy) | schema >= ManifestSchemaVersion 14]
+      ++ parentVarsField (state ^. #parentVars)
+      ++ maybe [] (\v -> ["version" .= v]) (state ^. #moduleVersion)
+  where
+    parentVarsField (ParentVars m)
+      | Map.null m = []
+      | otherwise = ["parentVars" .= parentVarsMapToJSON m]
 
 instance FromJSON AppliedInstanceState where
   parseJSON = Aeson.withObject "AppliedInstanceState" $ \o -> do
@@ -384,6 +394,7 @@ instance FromJSON AppliedInstanceState where
       <*> o .: "origin"
       <*> o Aeson..:? "version"
       <*> (varsFromJSON =<< o Aeson..:? "resolvedVars" Aeson..!= Aeson.object [])
+      <*> (o Aeson..:? "removalPolicy" >>= traverse parseRemovalJSON)
 
 instance ToJSON AppliedComposition where
   toJSON = applicationToJSON currentManifestVersion
@@ -395,7 +406,7 @@ applicationToJSON schema composition =
       "target" .= (composition ^. #target),
       "targetOrigin" .= (composition ^. #targetOrigin),
       "additionalModules" .= map (^. #unModuleName) (composition ^. #additionalModules),
-      "instances" .= (composition ^. #instances),
+      "instances" .= map (instanceToJSON schema) (composition ^. #instances),
       "appliedAt" .= (composition ^. #appliedAt)
     ]
       ++ maybe [] (\v -> ["targetVersion" .= v]) (composition ^. #targetVersion)
@@ -428,6 +439,11 @@ parseApplication schema = Aeson.withObject "AppliedComposition" $ \o -> do
   when (schema < minimumManifestVersion RecipeInheritance) $ do
     legacyChain <- o Aeson..:? "recipeChain" :: Aeson.Parser (Maybe Aeson.Value)
     unless (legacyChain == Nothing) (fail "recipe chain requires manifest schema 13")
+  rawInstances <- o Aeson..:? "instances" Aeson..!= []
+  instances <- forM rawInstances $ \value -> do
+    when (schema >= minimumManifestVersion ConditionalRemovalPolicies) $
+      Aeson.withObject "AppliedInstanceState" (\fields -> unless (KM.member "removalPolicy" fields) (fail "schema 14 instance requires removalPolicy (null for unknown legacy policy)")) value
+    parseJSON value
   composition <-
     AppliedComposition
       <$> (ApplicationId <$> o .: "applicationId")
@@ -437,7 +453,7 @@ parseApplication schema = Aeson.withObject "AppliedComposition" $ \o -> do
       <*> (map ModuleName <$> o Aeson..:? "additionalModules" Aeson..!= [])
       <*> o Aeson..:? "namespace"
       <*> o Aeson..:? "context"
-      <*> o Aeson..:? "instances" Aeson..!= []
+      <*> pure instances
       <*> (commandReceiptsFromJSON =<< o Aeson..:? "commandReceipts" Aeson..!= Aeson.object [])
       <*> pure commands
       <*> (if schema >= ManifestSchemaVersion 12 then traverse varsFromJSON =<< o .: "recipeInputs" else pure Nothing)
@@ -645,6 +661,16 @@ parentVarsMapFromJSON v = do
   m <- parseJSON v :: Aeson.Parser (Map Text Text)
   pure (Map.mapKeys VarName m)
 
+-- | All accepted policies, including per-application instance receipts.
+recordedRemovals :: Manifest -> [Removal]
+recordedRemovals manifest = [spec | applied <- manifest ^. #modules, spec <- maybe [] pure (applied ^. #removal)] <> [spec | app <- manifest ^. #applications, state <- app ^. #instances, spec <- maybe [] pure (state ^. #removalPolicy)]
+
+hasRemovalPolicy :: Manifest -> Bool
+hasRemovalPolicy manifest = or [isJust (state ^. #removalPolicy) | app <- manifest ^. #applications, state <- app ^. #instances]
+
+hasConditionalRemoval :: Manifest -> Bool
+hasConditionalRemoval manifest = or [isJust (step ^. #condition) | applied <- manifest ^. #modules, spec <- maybe [] pure (applied ^. #removal), step <- spec ^. #steps]
+
 -- | Encode a Removal to JSON.
 removalToJSON :: Removal -> Aeson.Value
 removalToJSON r =
@@ -660,6 +686,7 @@ removalStepToJSON s =
       "dest" .= (s ^. #dest)
     ]
       ++ maybe [] (\p -> ["src" .= p]) (s ^. #src)
+      ++ maybe [] (\expr -> ["when" .= case expr of ExprLit value -> Aeson.Bool value; _ -> Aeson.String (renderExpr expr)]) (s ^. #condition)
 
 removalActionToText :: RemovalAction -> Text
 removalActionToText RemoveFileAction = "remove-file"
@@ -685,6 +712,7 @@ parseRemovalStepJSON = Aeson.withObject "RemovalStep" $ \o ->
     <$> (parseRemovalActionText =<< o .: "action")
     <*> o .: "dest"
     <*> o Aeson..:? "src"
+    <*> (fmap ExprLit <$> o Aeson..:? "when")
 
 parseRemovalActionText :: Text -> Aeson.Parser RemovalAction
 parseRemovalActionText "remove-file" = pure RemoveFileAction
@@ -903,6 +931,9 @@ manifestEncodingLoss manifest =
     <> ["recipe inputs require manifest schema 12" | not (manifestSupports RecipeInputs manifest), any (isJust . (^. #recipeInputs)) (manifest ^. #applications)]
     <> ["seed owner claims require manifest schema 11" | not (manifestSupports SeedOwnerClaims manifest), any (\r -> case r ^. #ownership of KnownSeedOwners _ -> True; _ -> False) (Map.elems (manifest ^. #seeds))]
     <> either (pure . T.pack) (const []) (Aeson.parseEither (const (validateCheckoutCommands manifest)) Aeson.Null)
+    <> ["conditional removal policies must record a typed boolean result" | spec <- recordedRemovals manifest, step <- spec ^. #steps, Just expr <- [step ^. #condition], case expr of ExprLit _ -> False; _ -> True]
+    <> ["instance removal policies require manifest schema 14" | not (manifestSupports ConditionalRemovalPolicies manifest), hasRemovalPolicy manifest]
+    <> ["conditional removal policies require manifest schema 14" | not (manifestSupports ConditionalRemovalPolicies manifest), hasConditionalRemoval manifest]
     <> ["removal commands cannot declare checkout setup" | applied <- manifest ^. #modules, removal <- maybe [] pure (applied ^. #removal), any ((== CheckoutCommandLifecycle) . (^. #lifecycle)) (removal ^. #commands)]
     <> ["checkout commands require manifest schema 10" | manifest ^. #version < ManifestSchemaVersion 10, any (not . null . (^. #checkoutCommands)) (manifest ^. #applications)]
     <> ["checkout outputs require manifest schema 9" | manifest ^. #version < ManifestSchemaVersion 9, not (Map.null (manifest ^. #checkoutOutputs))]

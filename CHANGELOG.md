@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.15.0.0] - 2026-11-01
+
+### Added
+
+- Conditional removal steps record typed Boolean results per application instance at accepted run/update; omitted conditions remain unconditional. Generated registry documentation includes removal conditions.
+- Removing a recorded single-module root also retires its unshared inherited instances in the same preview/operation; other applications retain shared instances. Explicit additional-root compositions and recipes keep exact-instance selection.
+
+### Changed
+
+- **Breaking core API:** `RemovalStep` gains a `condition` field and `AppliedInstanceState` gains `removalPolicy`. Manifest schema 14 records the conditional-policy/root-retirement boundary, with a lossless adjacent 13-to-14 upgrade that records unknown historical policies as null and rejects policy evidence mislabeled as schema 13. Ordinary run/update/removal stage the required policy capability before publication.
+
+### Fixed
+
+- Preserve child seeds throughout inherited removal. Composing bases can condition cleanup on the same output switch used during generation, preserving their standalone removal contract after a child's seed claims retire.
+- Consumer acceptance is tracked by `mori://shinzui/seihou-modules/plans/11-add-a-bun-based-openapi-typescript-client-module`.
+
 ## [0.14.0.0] - 2026-11-01
 
 ### Added
@@ -1256,7 +1272,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.14.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.15.0.0...HEAD
+[0.15.0.0]: https://github.com/shinzui/seihou/compare/v0.14.0.0...v0.15.0.0
 [0.14.0.0]: https://github.com/shinzui/seihou/compare/v0.13.0.0...v0.14.0.0
 [0.13.0.0]: https://github.com/shinzui/seihou/compare/v0.12.1.0...v0.13.0.0
 [0.12.1.0]: https://github.com/shinzui/seihou/compare/v0.12.0.1...v0.12.1.0

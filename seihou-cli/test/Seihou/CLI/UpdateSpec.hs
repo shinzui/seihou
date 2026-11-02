@@ -12,7 +12,7 @@ module Seihou.CLI.UpdateSpec
 where
 
 import Control.Exception (bracket)
-import Control.Lens ((&), (.~), (^.))
+import Control.Lens ((%~), (&), (.~), (^.))
 import Control.Monad (forM_)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (traverse_)
@@ -372,6 +372,15 @@ spec = do
       isUpdateNoOp (unchangedFilePlan SharedWriteAdditiveOnly True) `shouldBe` True
       isUpdateNoOp (unchangedFilePlan SharedWriteRequiresOwnershipClosure False) `shouldBe` True
 
+    it "accepts removal-policy-only adoption and then returns to a true no-op" $ do
+      let previous = application (AppliedModuleTarget "base") [instanceState "base"]
+          policy = Removal [RemovalStep RemoveFileAction "starter" Nothing (Just (ExprLit False))] []
+          candidate = previous & #instances %~ map (\state -> state & #removalPolicy .~ Just policy)
+          planned before after = PlannedApplication (Just before) after [] Map.empty [] Map.empty
+          plan before after = unchangedFilePlan SharedWriteAdditiveOnly True & #plannedApplications .~ [planned before after] & #applications .~ [after]
+      isUpdateNoOp (plan previous candidate) `shouldBe` False
+      isUpdateNoOp (plan candidate candidate) `shouldBe` True
+
     it "rejects a plan when its manifest snapshot changes" $
       withSystemTempDirectory "seihou-update-stale" $ \root -> do
         fixture <- prepareUpdateFixture root
@@ -584,7 +593,7 @@ spec = do
       withSystemTempDirectory "seihou-update-schema-5" $ \root -> do
         fixture <- prepareSharedPathFixture CoOwnerAppends root
         manifestText <- TIO.readFile (fixture ^. #manifestPath)
-        TIO.writeFile (fixture ^. #manifestPath) (T.replace "\"version\":13" "\"version\":5" manifestText)
+        TIO.writeFile (fixture ^. #manifestPath) (T.replace "\"version\":14" "\"version\":5" manifestText)
         withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
           withCurrentDirectory (fixture ^. #projectRoot) $ do
             forM_ [NamedUpdateTargets ["alpha"], AllRecordedApplications] $ \selection -> do
@@ -617,7 +626,7 @@ spec = do
             parentTwo = ParentVars (Map.singleton "tenant" "two")
             instanceOne = ModuleInstance "shared" parentOne
             instanceTwo = ModuleInstance "shared" parentTwo
-            stateFor parent = AppliedInstanceState "shared" parent (LocalOrigin "shared") (Just "1.0.0") Map.empty
+            stateFor parent = AppliedInstanceState "shared" parent (LocalOrigin "shared") (Just "1.0.0") Map.empty Nothing
             previous = application (AppliedModuleTarget "shared") [stateFor parentOne, stateFor parentTwo]
             candidate =
               Module
@@ -1195,7 +1204,8 @@ instanceStateFrom name origin =
       parentVars = emptyParentVars,
       origin,
       moduleVersion = Just "1.0.0",
-      resolvedVars = Map.empty
+      resolvedVars = Map.empty,
+      removalPolicy = Nothing
     }
 
 moduleDhall :: Text -> Text -> Text

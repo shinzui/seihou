@@ -10,16 +10,17 @@ module Seihou.Engine.Remove
     selectRecordedRemoval,
     computeRemovalPlan,
     executeRemoval,
+    settleRemovalConditions,
     buildRemovalOps,
     executeRemovalOps,
   )
 where
 
-import Control.Monad (foldM)
+import Control.Monad (foldM, forM_, unless, when)
 import Data.Generics.Labels ()
 import Data.List (nub, sortBy)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (listToMaybe, mapMaybe, maybeToList)
+import Data.Maybe (isJust, isNothing, listToMaybe, mapMaybe, maybeToList)
 import Data.Ord (Down (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -27,6 +28,7 @@ import Data.Text qualified as T
 import Data.Time (UTCTime)
 import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Core.Checkout
+import Seihou.Core.Expr (settleRemovalConditions)
 import Seihou.Core.Path (pathsHaveConflictingSpelling, validateProjectRelativePath)
 import Seihou.Core.Seed
 import Seihou.Core.Types
@@ -146,6 +148,17 @@ executeRemoval manifest plan keepSet now = do
 -- New step-based removal engine
 -- ============================================================
 
+settledCondition :: RemovalStep -> Bool
+settledCondition step = case step ^. #condition of
+  Nothing -> True
+  Just (ExprLit _) -> True
+  _ -> False
+
+enabledStep :: RemovalStep -> Bool
+enabledStep step = case step ^. #condition of
+  Just (ExprLit False) -> False
+  _ -> True
+
 -- | Build a list of removal operations from declared removal steps.
 -- Classifies remove-file targets by checking the manifest and disk state.
 buildRemovalOps ::
@@ -157,8 +170,10 @@ buildRemovalOps ::
 buildRemovalOps manifest modName removal = do
   case findApplied manifest modName of
     Nothing -> pure (Left (ModuleNotApplied modName))
+    Just _ | any (not . settledCondition) (removal ^. #steps) -> pure (Left (RemovalUnsafePath "condition" "when" "unsettled removal policy; run an ordinary update with this runtime first"))
     Just _ -> do
-      stepResults <- mapM (buildStepOp manifest modName) (removal ^. #steps)
+      let active = filter enabledStep (removal ^. #steps)
+      stepResults <- mapM (buildStepOp manifest modName) active
       let cmdResults = map buildCommandOp (removal ^. #commands)
       pure $ do
         stepOps <- sequence stepResults
@@ -408,46 +423,66 @@ selectCheckoutRemoval = selectRecordedRemoval
 
 -- | Shared selection for seed, checkout-output and checkout-command ownership.
 selectRecordedRemoval :: Manifest -> ModuleName -> Maybe ApplicationId -> Either CheckoutError (Maybe CheckoutRemovalSelection)
-selectRecordedRemoval manifest requested selectedApplication = case candidates of
-  []
-    | selectedApplication /= Nothing -> Left (checkoutError "checkout_remove_selection" "no matching recorded owning instance in the selected application")
-    | otherwise -> Right Nothing
-  [(app, state, qualified)] -> do
-    let appId = app ^. #applicationId
-        selected = Map.singleton appId (Set.singleton qualified)
-        outputs = dropCheckoutOwners selected (manifest ^. #checkoutOutputs)
-        keepFile record
-          | record ^. #moduleName /= qualified || not (Set.member appId (record ^. #applicationIds)) = Just record
-          | otherwise =
-              let retained = Set.delete appId (record ^. #applicationIds)
-               in if Set.null retained then Nothing else Just (record & #applicationIds .~ retained)
-        keepApplication other
-          | other ^. #applicationId /= appId = Just other
-          | otherwise =
-              let retained = filter (\instanceState -> qualifiedName (ModuleInstance (instanceState ^. #name) (instanceState ^. #parentVars)) /= qualified) (other ^. #instances)
-               in if null retained then Nothing else Just (other & #instances .~ retained & #commandReceipts %~ Map.filter ((/= qualified) . (^. #moduleName)) & #checkoutCommands %~ filter ((/= qualified) . (^. #moduleName)))
-        applications = mapMaybe keepApplication (manifest ^. #applications)
-        files = Map.mapMaybe keepFile (manifest ^. #files)
-        stillNeeded applied =
-          any (\other -> any (\instanceState -> instanceState ^. #name == applied ^. #name && instanceState ^. #parentVars == applied ^. #parentVars) (other ^. #instances)) applications
-            || any ((== qualifiedName (ModuleInstance (applied ^. #name) (applied ^. #parentVars))) . (^. #moduleName)) (Map.elems files)
-        removeSelected applied = applied ^. #name /= state ^. #name || applied ^. #parentVars /= state ^. #parentVars || stillNeeded applied
-        candidate = manifest & #checkoutOutputs .~ outputs & #applications .~ applications & #files .~ files & #modules %~ filter removeSelected
-        custom = listToMaybe [spec | applied <- manifest ^. #modules, applied ^. #name == state ^. #name, applied ^. #parentVars == state ^. #parentVars, spec <- maybeToList (applied ^. #removal)]
-    -- Retiring seed-only metadata does not authorize forgetting managed files.
-    case custom of
-      Nothing
-        | any (\record -> record ^. #moduleName == qualified && Set.member appId (record ^. #applicationIds)) (Map.elems (manifest ^. #files)) ->
-            Left (checkoutError "remove_managed_policy_required" "this instance also owns managed files; add a removal specification for those files before removing it")
-      _ -> Right ()
-    withSeeds <-
-      first (checkoutError "seed_owner_evidence_required" . renderSeedOwnershipError) $
-        foldM (\current path -> dropSeedOwners selected path current) candidate (Map.keys (manifest ^. #seeds))
-    first (checkoutError "seed_declaration_invalid" . renderManifestInvariantError) (validateManifestInvariants withSeeds)
-    validateCheckoutRecords withSeeds []
-    pure (Just (CheckoutRemovalSelection appId qualified (state ^. #name) custom withSeeds))
-  matches -> Left (checkoutError "checkout_remove_ambiguous" ("recorded removal is ambiguous; select one recorded instance/application: " <> T.intercalate "; " ["seihou remove " <> qualified ^. #unModuleName <> " --application " <> app ^. #applicationId . #unApplicationId | (app, _, qualified) <- matches]))
+selectRecordedRemoval manifest requested selectedApplication = do
+  case candidates of
+    []
+      | selectedApplication /= Nothing -> Left (checkoutError "checkout_remove_selection" "no matching recorded owning instance in the selected application")
+      | otherwise -> Right Nothing
+    [(app, state, qualified)] -> do
+      let appId = app ^. #applicationId
+          rootRemoval = app ^. #target == AppliedModuleTarget (state ^. #name) && null (app ^. #additionalModules)
+          departing = if rootRemoval then Set.fromList [qualifiedName (ModuleInstance (instanceState ^. #name) (instanceState ^. #parentVars)) | instanceState <- app ^. #instances] else Set.singleton qualified
+          selected = Map.singleton appId departing
+          outputs = dropCheckoutOwners selected (manifest ^. #checkoutOutputs)
+          keepFile record
+            | not (Set.member (record ^. #moduleName) departing) || not (Set.member appId (record ^. #applicationIds)) = Just record
+            | otherwise =
+                let retained = Set.delete appId (record ^. #applicationIds)
+                 in if Set.null retained then Nothing else Just (record & #applicationIds .~ retained)
+          keepApplication other
+            | other ^. #applicationId /= appId = Just other
+            | otherwise =
+                let retained = filter (\instanceState -> not (Set.member (qualifiedName (ModuleInstance (instanceState ^. #name) (instanceState ^. #parentVars))) departing)) (other ^. #instances)
+                 in if null retained then Nothing else Just (other & #instances .~ retained & #commandReceipts %~ Map.filter (not . (`Set.member` departing) . (^. #moduleName)) & #checkoutCommands %~ filter (not . (`Set.member` departing) . (^. #moduleName)))
+          applications = mapMaybe keepApplication (manifest ^. #applications)
+          files = Map.mapMaybe keepFile (manifest ^. #files)
+          stillNeeded applied =
+            any (\other -> any (\instanceState -> instanceState ^. #name == applied ^. #name && instanceState ^. #parentVars == applied ^. #parentVars) (other ^. #instances)) applications
+              || any ((== qualifiedName (ModuleInstance (applied ^. #name) (applied ^. #parentVars))) . (^. #moduleName)) (Map.elems files)
+          removeSelected applied = not (Set.member (qualifiedName (ModuleInstance (applied ^. #name) (applied ^. #parentVars))) departing) || stillNeeded applied
+          candidate = manifest & #checkoutOutputs .~ outputs & #applications .~ applications & #files .~ files & #modules %~ filter removeSelected
+          -- The application records dependency order; a shared module summary
+          -- can move when another root is run and is not an ordering authority.
+          retiring = [applied | instanceState <- app ^. #instances, applied <- manifest ^. #modules, applied ^. #name == instanceState ^. #name, applied ^. #parentVars == instanceState ^. #parentVars, not (removeSelected applied)]
+          stateFor applied = listToMaybe [instanceState | instanceState <- app ^. #instances, instanceState ^. #name == applied ^. #name, instanceState ^. #parentVars == applied ^. #parentVars]
+          recordedSpec applied = case stateFor applied >>= (^. #removalPolicy) of
+            Just spec -> Just spec
+            Nothing -> applied ^. #removal
+          settle spec = spec & #steps %~ map (\step -> step & #condition .~ Nothing) . filter enabledStep
+          specs = [settle spec | applied <- reverse retiring, spec <- maybeToList (recordedSpec applied)]
+          custom = if null specs then Nothing else Just (Removal (concatMap (^. #steps) specs) (concatMap (^. #commands) specs))
+      forM_ retiring $ \applied -> do
+        when (maybe True (isNothing . (^. #removalPolicy)) (stateFor applied) && any (any (isJust . (^. #condition)) . (^. #steps)) (applied ^. #removal)) $
+          Left (checkoutError "removal_policy_unknown" "this application has no accepted conditional removal policy; run its ordinary update before removing it")
+        unless (all (all settledCondition . (^. #steps)) (recordedSpec applied)) $
+          Left (checkoutError "removal_policy_unsettled" "removal policy has no typed recorded result; run an ordinary update with this runtime first")
+        when (recordedSpec applied == Nothing && any (\record -> record ^. #moduleName == qualifiedName (ModuleInstance (applied ^. #name) (applied ^. #parentVars)) && Set.member appId (record ^. #applicationIds)) (Map.elems (manifest ^. #files))) $
+          Left (checkoutError "remove_managed_policy_required" "an inherited instance owns managed files without a removal specification; add its removal policy before removing this root")
+      -- Retiring seed-only metadata does not authorize forgetting managed files.
+      case custom of
+        Nothing
+          | any (\record -> Set.member (record ^. #moduleName) departing && Set.member appId (record ^. #applicationIds)) (Map.elems (manifest ^. #files)) ->
+              Left (checkoutError "remove_managed_policy_required" "this instance also owns managed files; add a removal specification for those files before removing it")
+        _ -> Right ()
+      withSeeds <-
+        first (checkoutError "seed_owner_evidence_required" . renderSeedOwnershipError) $
+          foldM (\current path -> dropSeedOwners selected path current) candidate (Map.keys (manifest ^. #seeds))
+      first (checkoutError "seed_declaration_invalid" . renderManifestInvariantError) (validateManifestInvariants withSeeds)
+      validateCheckoutRecords withSeeds []
+      pure (Just (CheckoutRemovalSelection appId qualified (state ^. #name) custom withSeeds))
+    matches -> Left (checkoutError "checkout_remove_ambiguous" ("recorded removal is ambiguous; select one recorded instance/application: " <> T.intercalate "; " ["seihou remove " <> qualified ^. #unModuleName <> " --application " <> app ^. #applicationId . #unApplicationId | (app, _, qualified) <- matches]))
   where
+    hasConditionalPolicy state = any (any (isJust . (^. #condition)) . (^. #steps)) (state ^. #removalPolicy) || any (\applied -> applied ^. #name == state ^. #name && applied ^. #parentVars == state ^. #parentVars && any (any (isJust . (^. #condition)) . (^. #steps)) (applied ^. #removal)) (manifest ^. #modules)
     candidates =
       [ (app, state, qualified)
       | app <- manifest ^. #applications,
@@ -455,5 +490,5 @@ selectRecordedRemoval manifest requested selectedApplication = case candidates o
         state <- app ^. #instances,
         let qualified = qualifiedName (ModuleInstance (state ^. #name) (state ^. #parentVars)),
         requested == qualified || requested == state ^. #name,
-        any (\record -> case record ^. #ownership of KnownSeedOwners owners -> Set.member qualified (Map.findWithDefault Set.empty (app ^. #applicationId) owners); LegacySeedOwners apps -> Set.member (app ^. #applicationId) apps) (Map.elems (manifest ^. #seeds)) || any ((== qualified) . (^. #moduleName)) (app ^. #checkoutCommands) || any (\record -> Set.member qualified (Map.findWithDefault Set.empty (app ^. #applicationId) (record ^. #owners))) (Map.elems (manifest ^. #checkoutOutputs))
+        (app ^. #target == AppliedModuleTarget (state ^. #name) && null (app ^. #additionalModules)) || hasConditionalPolicy state || any (\record -> case record ^. #ownership of KnownSeedOwners owners -> Set.member qualified (Map.findWithDefault Set.empty (app ^. #applicationId) owners); LegacySeedOwners apps -> Set.member (app ^. #applicationId) apps) (Map.elems (manifest ^. #seeds)) || any ((== qualified) . (^. #moduleName)) (app ^. #checkoutCommands) || any (\record -> Set.member qualified (Map.findWithDefault Set.empty (app ^. #applicationId) (record ^. #owners))) (Map.elems (manifest ^. #checkoutOutputs))
       ]

@@ -65,6 +65,7 @@ import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef (renderArtifactRefError, resolveArtifactOrigin)
 import Seihou.Core.Checkout
 import Seihou.Core.CommandFingerprint (checkoutCommandsFromOperations)
+import Seihou.Core.Expr (settleRemovalConditions)
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
 import Seihou.Core.Seed (seedApplicationIds)
 import Seihou.Core.Types
@@ -164,7 +165,7 @@ planProjectUpdateIn sessionDirectory request = do
                       selectedIdsForSeeds = Set.fromList (map (^. #candidate . #applicationId) plannedApplications)
                       neededLegacy = Set.fromList [path | (path, receipt) <- Map.toAscList (base ^. #seeds), LegacySeedOwners apps <- [receipt ^. #ownership], Map.member path claims || not (Set.null (apps `Set.intersection` selectedIdsForSeeds))]
                       relevant = not (Map.null claims) || any (\receipt -> not (Set.null (seedApplicationIds receipt `Set.intersection` selectedIdsForSeeds))) (Map.elems (base ^. #seeds))
-                      structurallyPrepared = prepareManifestSchema manifestPath RecipeInheritance document base >>= \prepared -> if relevant then prepareManifestSchema manifestPath SeedOwnerClaims (Aeson.toJSON prepared) prepared else Right prepared
+                      structurallyPrepared = prepareManifestSchema manifestPath ConditionalRemovalPolicies document base >>= \prepared -> if relevant then prepareManifestSchema manifestPath SeedOwnerClaims (Aeson.toJSON prepared) prepared else Right prepared
                   paths <- defaultSearchPaths
                   preparedResult <- case structurallyPrepared of
                     Left err -> pure (Left err)
@@ -908,7 +909,8 @@ restoreLegacyVersion manifest state =
           parentVars = state ^. #parentVars,
           origin = applied ^. #origin,
           moduleVersion = applied ^. #moduleVersion,
-          resolvedVars = state ^. #resolvedVars
+          resolvedVars = state ^. #resolvedVars,
+          removalPolicy = state ^. #removalPolicy
         }
 
 savedInstanceValues :: AppliedComposition -> SavedInstanceValues
@@ -1313,7 +1315,7 @@ updateAppliedModules existing recordedApplications applications now =
               origin = publishedInstance application instanceId ^. #origin,
               moduleVersion = modul ^. #version,
               appliedAt = now,
-              removal = modul ^. #removal
+              removal = settleRemovalConditions (Map.map (^. #value) ((application ^. #resolvedValues) Map.! instanceId)) <$> modul ^. #removal
             }
         | (application, instanceId, modul) <- deduplicateInstances applications
         ]

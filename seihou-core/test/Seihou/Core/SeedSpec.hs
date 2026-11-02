@@ -39,7 +39,7 @@ tests = testSpec "seed foundations" $ do
           []
           Nothing
           Nothing
-          [AppliedInstanceState name emptyParentVars (LocalOrigin (name ^. #unModuleName)) Nothing Map.empty | name <- ["demo", "second"]]
+          [AppliedInstanceState name emptyParentVars (LocalOrigin (name ^. #unModuleName)) Nothing Map.empty Nothing | name <- ["demo", "second"]]
           Map.empty
           []
           Nothing
@@ -123,7 +123,7 @@ tests = testSpec "seed foundations" $ do
       checkSeedSteps patched `shouldSatisfy` (not . null)
       checkSeedSteps (seed & #steps %~ map (#strategy .~ Structured)) `shouldSatisfy` (not . null)
       checkSeedSteps (seed & #steps %~ (<> map (#lifecycle .~ Managed) (seed ^. #steps))) `shouldSatisfy` (not . null)
-      checkSeedSteps (seed & #removal ?~ Removal [RemovalStep RemoveFileAction "b" Nothing] []) `shouldSatisfy` (not . null)
+      checkSeedSteps (seed & #removal ?~ Removal [RemovalStep RemoveFileAction "b" Nothing Nothing] []) `shouldSatisfy` (not . null)
       TIO.writeFile (dir </> "module.dhall") (source ", lifecycle = Some \"sede\"")
       invalid <- evalModuleFromFile (dir </> "module.dhall")
       invalid `shouldSatisfy` isLeft

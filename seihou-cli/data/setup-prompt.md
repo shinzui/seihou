@@ -123,9 +123,10 @@ Suggest these commands when the user needs to run them locally:
   - `-c CTX`: override context for config lookup
   - `--no-commands`: skip shell command steps
 - `seihou remove MODULE [--dry-run] [--force]` — remove an applied module by executing its declared removal steps
+  - A recorded single-module root also retires its unshared inherited modules; other applications retain shared instances.
   - Managed-file removal needs a `removal` section; recorded seed-only/checkout-only owners can be removed without a custom spec. Seed retirement keeps project files. Removal stops future setup and does not undo arbitrary shell effects.
   - `--dry-run`: preview the removal plan (Delete, Strip, Rewrite, Run, and protected Keep operations)
-  - `--force`: skip confirmation prompts
+  - `--force`: accept conflicted managed-file deletions; seeds remain protected
 - `seihou agent run BLUEPRINT [PROMPT] [--var K=V] [--no-baseline]` — run a blueprint
   - Discovers the blueprint, resolves variables (same precedence chain as `seihou run`), optionally applies base modules, then starts the configured provider
   - `--no-baseline`: skip applying declared base modules

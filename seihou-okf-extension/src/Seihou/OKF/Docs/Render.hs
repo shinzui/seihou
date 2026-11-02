@@ -637,8 +637,8 @@ renderRemoval Removal {steps, commands} =
       "Then runs:\n\n" <> T.unlines (renderCommand <$> removalCommands)
 
 renderRemovalStep :: RemovalStep -> T.Text
-renderRemovalStep RemovalStep {action, dest, src} =
-  "- " <> renderRemovalAction action <> " `" <> dest <> "`" <> foldMap (\path -> " using `" <> T.pack path <> "`") src
+renderRemovalStep RemovalStep {action, dest, src, condition} =
+  "- " <> renderRemovalAction action <> " `" <> dest <> "`" <> foldMap (\path -> " using `" <> T.pack path <> "`") src <> renderCondition condition
 
 renderRemovalAction :: RemovalAction -> T.Text
 renderRemovalAction RemoveFileAction = "delete"

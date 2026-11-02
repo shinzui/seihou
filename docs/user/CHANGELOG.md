@@ -6,6 +6,14 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 ## [Unreleased]
 
+## [0.15.0.0] - 2026-11-01
+
+### Changed
+
+- **Remove a composed root in one command.** `seihou remove <root>` retires a recorded single-module application's unshared inherited modules in the same preview and operation. Other applications retain shared instances. Seeds are protected through inherited cleanup. Explicit compositions with additional roots and recipe applications retain instance selection.
+- **Keep conditional cleanup tied to accepted configuration.** Removal steps can declare `when`. Accepted run/update records each application instance's typed Boolean results; removal reuses those decisions. Older steps remain unconditional.
+- Manifest schema 14 records these policies. The adjacent 13-to-14 upgrade is deterministic and lossless, recording null for unknown historical policy results. Ordinary commands stage the upgrade without changing previewed bytes; conditional cleanup with unknown evidence first needs ordinary update. Older executables reject schema 14, so update Seihou before adopting conditional cleanup.
+
 ## [0.14.0.0] - 2026-11-01
 
 ### Added
@@ -1154,7 +1162,8 @@ regeneration.
 
 ---
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.14.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.15.0.0...HEAD
+[0.15.0.0]: https://github.com/shinzui/seihou/compare/v0.14.0.0...v0.15.0.0
 [0.14.0.0]: https://github.com/shinzui/seihou/compare/v0.13.0.0...v0.14.0.0
 [0.13.0.0]: https://github.com/shinzui/seihou/compare/v0.12.1.0...v0.13.0.0
 [0.12.1.0]: https://github.com/shinzui/seihou/compare/v0.12.0.1...v0.12.1.0

@@ -1066,3 +1066,24 @@ For the producer at `mori://shinzui/agent-seihou`, project-relative file `module
 
 Recipe inheritance producers require Seihou 0.14.0.0 or newer. Update the runtime
 before adopting descriptors that use `extends` or inherited overrides.
+
+### Conditional cleanup in composed scaffolds
+
+`RemovalStep.when` accepts the same expression grammar as generation steps and
+defaults to `None Text`. Accepted run/update evaluates it against the owning
+instance's typed resolved variables and records its Boolean result per application.
+Removal reuses that accepted result, including when another application shares the
+same qualified module. Historical unknown conditional policies require ordinary
+update before removal. A base exposing an output switch must use the same condition on
+its cleanup steps, so a child can own replacement seeds without inheriting deletion
+effects after those seed claims retire. Existing unconditional removal remains unchanged.
+This field requires the schema-14 runtime and the corresponding published schema pin.
+
+```dhall
+S.RemovalStep::{ action = "remove-file", dest = "package.json", when = Some "Eq bun.starter-files true" }
+```
+
+Removing a recorded application with one module root also retires unshared inherited
+modules. Shared qualified instances survive while another application needs them.
+Explicit compositions with additional roots and recipe applications keep exact-instance
+selection. Ordinary preview reports inherited effects before any project mutation.

@@ -93,9 +93,14 @@ SAVED INPUTS
 
   Recipe applications also reuse recorded recipe inputs before member variables.
   Inputs used only by conditions survive fresh clones. Ordinary preview prepares
-  schema 13 as needed and adopts agreeing historical values; conflicting or newly
+  schema 14 as needed and adopts agreeing historical values; conflicting or newly
   required choices need --var KEY=VALUE or --reconfigure. Recipe-only changes are
   recorded even when no generated file changes.
+
+  Accepted update also records each instance's removal policy with typed Boolean
+  condition results. Policy-only adoption appears in the preview and is a real
+  update; repeating it with matching policies is a no-op. No manual manifest
+  edits are needed.
 
 MIGRATIONS
 

@@ -31,6 +31,7 @@ module Seihou.CLI.ManifestCapabilityUpgrade
     prepareSeedOwnership,
     prepareRecordedSeedOwnership,
     prepareRecipeInheritance,
+    prepareRemovalPolicies,
     gatherSeedOwnershipEvidence,
     CertificationScope (..),
     EvidencePolicy (..),
@@ -539,5 +540,13 @@ prepareRecipeInheritance :: Manifest -> Either Text Manifest
 prepareRecipeInheritance manifest = do
   (_, document) <-
     first renderManifestUpgradeError $
-      upgradeDocumentLosslessly (max (manifest ^. #version) (minimumManifestVersion RecipeInheritance)) (Aeson.toJSON manifest)
+      upgradeDocumentLosslessly (max (manifest ^. #version) (max (minimumManifestVersion RecipeInheritance) (minimumManifestVersion ConditionalRemovalPolicies))) (Aeson.toJSON manifest)
+  first T.pack (manifestFromJSON (Aeson.encode document))
+
+-- | Stage the lossless policy boundary; dry-run callers never publish this candidate.
+prepareRemovalPolicies :: Manifest -> Either Text Manifest
+prepareRemovalPolicies manifest = do
+  (_, document) <-
+    first renderManifestUpgradeError $
+      upgradeDocumentLosslessly (max (manifest ^. #version) (minimumManifestVersion ConditionalRemovalPolicies)) (Aeson.toJSON manifest)
   first T.pack (manifestFromJSON (Aeson.encode document))

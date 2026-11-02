@@ -220,3 +220,12 @@ individually. See `seihou help recipes` for the complete shape and recovery.
 
 Recipe inheritance producers require Seihou 0.14.0.0 or newer. Update the runtime
 before adopting descriptors that use `extends` or inherited overrides.
+
+## Conditional removal in composed modules
+
+`RemovalStep.when` uses the generation expression grammar and is evaluated against
+the owning instance's recorded resolved variables. A base suppressing starter
+outputs must apply the same condition to their cleanup steps. Omitted conditions
+remain unconditional. Require Seihou 0.15.0.0+ before publishing these descriptors.
+A recorded single-module root removes its unshared inherited instances in the same
+operation; shared qualified instances remain owned by surviving applications.

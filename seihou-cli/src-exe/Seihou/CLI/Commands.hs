@@ -653,7 +653,9 @@ removeInfo =
           ( Just $
               vsep
                 [ pretty ("Removes a module that was previously applied via 'seihou run' and" :: String),
-                  pretty ("reverses its declared effects. Managed files require a removal" :: String),
+                  pretty ("reverses its declared effects. A recorded single-module root also" :: String),
+                  pretty ("retires its unshared inherited modules. Shared instances remain." :: String),
+                  pretty ("Managed files require a removal" :: String),
                   pretty ("specification. Seed-only ownership can be retired without one; seed" :: String),
                   pretty ("files and their deliberate deletion are preserved, even with --force." :: String),
                   line,
