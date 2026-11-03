@@ -19,3 +19,4 @@ okf_version: "0.2"
 - [Isolated acceptance HOME hides private registry credentials](7-isolated-acceptance-home-hides-private-registry-credentials.md) - Isolating HOME and XDG settings for empty Seihou caches also hides the GitHub credential helper and gh authentication used by the private TAN registry.
 - [Unpublished local registry candidates cannot replay in empty clones](8-unpublished-local-registry-candidates-cannot-replay-in-empty-clones.md) - Local-path and file-URL installs intentionally record no upstream, so a fresh clone with empty caches cannot fetch an unpublished producer candidate.
 - [Strict bug-report validation lacked review metadata in existing reports](9-strict-bug-report-validation-lacked-review-metadata-in-existing-reports.md) - The existing bug-report bundle lacked the reviews field recommended by its profile, so strict validation failed while recording delivery.
+

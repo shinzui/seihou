@@ -13,12 +13,15 @@ origin: "mori://shinzui/seihou"
 affects: "mori://shinzui/seihou"
 affectedVersion: "0.12.0.1"
 plan: "docs/plans/115-validate-recipes-without-running-their-composition.md"
-workaround: "Preserve the Home Manager profile and add the released Seihou profile entry at priority 4."
-resolution: "Installed github:shinzui/seihou/v0.12.0.1 at priority 4 while preserving the Home Manager profile; the effective executable reports 0.12.0.1 at f529a7a and passes installed acceptance."
+workaround: "Verify the released tag through nix build or nix shell and add no standalone profile entry. This supersedes the earlier priority 4 entry, which kept overriding Home Manager after later releases."
+resolution: "The release skill now verifies published tags with nix build and nix shell without changing the profile, so Home Manager remains the only installed seihou; the stale v0.13.0.0 priority 4 entry was removed from the profile."
 amended:
   - by: "codex-cli/gpt-6.1-sol"
     at: "2026-10-28T14:50:01Z"
     change: "Record the successful priority-aware installation without removing Home Manager."
+  - by: "claude-code/claude-opus-5-5"
+    at: "2026-11-03T16:04:50Z"
+    change: "Supersede the priority 4 install: its standalone entry left seihou stuck at 0.13.0.0 after 0.15.0.0 reached Home Manager."
 ---
 # Home Manager also provides the installed Seihou executable
 
@@ -36,4 +39,6 @@ An existing package already provides bin/seihou; conflicting packages have a pri
 
 ## Workaround
 
-Preserve the Home Manager profile and add the released Seihou profile entry at priority 4.
+Verify the released tag through `nix build` or `nix shell` and add no standalone profile entry, as the "Published Nix verification" section of [the release skill](../../agents/skills/release/SKILL.md) describes.
+
+The original workaround preserved the Home Manager profile and added the released Seihou profile entry at priority 4. That entry kept overriding Home Manager after later releases: `seihou --version` stayed at 0.13.0.0 after Home Manager had moved to 0.15.0.0, until `nix profile remove seihou` cleared it on 2026-11-03.

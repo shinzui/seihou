@@ -385,11 +385,27 @@ section — no internal implementation detail.
   `cabal haddock` output is rejected three ways over. `seihou-core` uploads
   as-is.
 
-## Installed Nix verification
+## Published Nix verification
 
-After publication, install the new tag through the user's established Nix profile
-and verify its path, version/revision, recorded origin and ordinary workflows.
-Preserve other profile entries and existing package priorities. If Home Manager
-also supplies the same executable, retain that profile and use an explicit higher
-priority for the standalone release (for example `--priority 4` above its default
-5). Never remove the entire Home Manager profile to replace one executable.
+After publication, verify the new tag from Nix without changing the user's profile.
+Do not run `nix profile install`, `add`, `upgrade` or `remove` for this step: a
+standalone entry outranks Home Manager and keeps overriding it after later releases.
+
+Build the tag and verify its path, version/revision, origin and ordinary workflows
+against the resulting executable:
+
+```bash
+SEIHOU_BIN="$(nix build --no-link --print-out-paths github:shinzui/seihou/vA.B.C.D)/bin/seihou"
+"$SEIHOU_BIN" --version
+nix flake metadata --json github:shinzui/seihou/vA.B.C.D | jq -r .locked.rev  # must equal the tag's commit
+```
+
+Pass `"$SEIHOU_BIN"` to scripts that take a binary path. For workflows that expect
+`seihou` on `PATH`, use `nix shell github:shinzui/seihou/vA.B.C.D -c <command>`.
+
+If `nix profile list` shows a standalone `seihou` entry, report it and ask the user
+whether to remove it with `nix profile remove seihou`. Never remove the Home Manager
+profile entry.
+
+Finish by telling the user that the release reaches their `PATH` only after they
+update the `seihou` input in their Home Manager flake and rebuild.

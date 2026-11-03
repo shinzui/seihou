@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-11-03
+* **Update**: FRIC-6 resolved: Supersede the priority 4 install: its standalone entry left seihou stuck at 0.13.0.0 after 0.15.0.0 reached Home Manager.
+
 ## 2026-11-01
 * **Update**: FRIC-11 accepted: Triage the stale temporary-source registration with an exact-version source recovery workaround.
 * **Addition**: FRIC-11 records detour environment friction with mori://haskell/directory: Registered dependency source checkout is empty
