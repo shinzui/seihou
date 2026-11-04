@@ -1,5 +1,9 @@
 # Bundle Update Log
 
+## 2026-11-04
+* **Addition**: IR-15 requests that seihou update carry saved inputs across a released change to a dependency edge binding, which today fails on saved required variables or, once they are supplied, silently resets optional inputs to defaults. Raised from mori://shinzui/seihou-modules/okf/friction-log/concepts/FRIC-10.
+* **Addition**: IR-16 requests that a non-interactive seihou update with pending changes exit non-zero and point to --json, instead of cancelling with exit 0 while applying nothing. Raised from mori://shinzui/seihou-modules/okf/friction-log/concepts/FRIC-11.
+
 ## 2026-11-01
 * **Completed**: IR-14: released and installed Seihou 0.14.0.0 with published schema and registry recipes; verified public install/run, empty-cache fresh-clone update and a compatible base-only refresh. ExecPlan 118 records delivery evidence.
 * **Update**: IR-14 source implementation now covers inheritance, acquisition, schema-13 chain guards, ordinary updates/cache refresh, author help and registry documentation. ExecPlan 118 retains CLI release, producer publication and installed consumer verification as open delivery work; the published schema is dbeff0d.
