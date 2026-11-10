@@ -1,5 +1,10 @@
 # Bundle Update Log
 
+## 2026-11-10
+* **Addition**: IR-17 requests that seihou upgrade refresh installed blueprints as it does modules and recipes, since it selects only those kinds and a pushed blueprint fix stays invisible to seihou agent run until the blueprint is reinstalled. Raised from mori://shinzui/kotei-docs/okf/friction-log/concepts/FRIC-5.
+* **Addition**: IR-18 requests that a batch seihou agent run exit non-zero and name the refused commands when its agent was denied tools, and that validate-blueprint warn when a blueprint declares no allowedTools, since two real runs exited 0 after refusals. Raised from mori://shinzui/kotei-docs/okf/friction-log/concepts/FRIC-5.
+* **Addition**: IR-19 requests that seihou update reconcile module files that seihou run is allowed to write under .seihou/, or that generation refuse them, since today every fumadocs-site application must be updated by forced reapplication. Raised from mori://shinzui/kotei-docs/okf/friction-log/concepts/FRIC-4.
+
 ## 2026-11-04
 * **Addition**: IR-15 requests that seihou update carry saved inputs across a released change to a dependency edge binding, which today fails on saved required variables or, once they are supplied, silently resets optional inputs to defaults. Raised from mori://shinzui/seihou-modules/okf/friction-log/concepts/FRIC-10.
 * **Addition**: IR-16 requests that a non-interactive seihou update with pending changes exit non-zero and point to --json, instead of cancelling with exit 0 while applying nothing. Raised from mori://shinzui/seihou-modules/okf/friction-log/concepts/FRIC-11.
