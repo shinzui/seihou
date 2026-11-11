@@ -249,10 +249,16 @@ Friction recorded under this plan:
   contributing guide now has a Formatting section, and its Tests section explains tasty
   `-p` patterns.
 - The `gcp-kube-env` follow-up, filed as the user directed as a friction entry in that
-  repository: `mori://shinzui/seihou-modules/okf/friction-log/concepts/FRIC-17` (status
-  `logged`, left uncommitted in that repository for its owners to triage). It records that the
-  module must move `.seihou/gcp-kube-env.conf` into `.seihou/gcp-kube-env/`, with a migration
-  for existing applications.
+  repository: `mori://shinzui/seihou-modules/okf/friction-log/concepts/FRIC-17`. Triaged
+  **resolved** there in commit `30f976c`: `gcp-kube-env` 0.2.0 writes
+  `.seihou/gcp-kube-env/settings.conf` and declares a 0.1.1-to-0.2.0 `MoveFile` migration from
+  `.seihou/gcp-kube-env.conf`. The module's test script passes under installed Seihou, and a
+  0.1.1-to-0.2.0 update with the development binary moved the file and its manifest record,
+  kept direnv loading, and was a no-op on repeat.
+- Survey of every module on this machine with the development binary (2026-11-11): all 14 in
+  `mori://shinzui/seihou-modules`, 3 in tan-seihou-modules, 8 in agent-seihou, the 24 in the
+  installed cache, and the one project-local module found pass the new checks, except the cached
+  `gcp-kube-env` 0.1.1. No project manifest under `~/Keikaku` records `gcp-kube-env`.
 
 
 ## Context and Orientation
