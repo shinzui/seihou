@@ -2,6 +2,9 @@
 
 ## 2026-11-11
 
+* **Update**: FRIC-16 resolved: Correct diagnosis after user clarified the local database migration; verified registry access using local connection.
+
+
 * **Addition**: FRIC-16 records blocked environment friction with mori://shinzui/mori: Mori registry unavailable through database tunnel
 
 

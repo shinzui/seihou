@@ -37,6 +37,7 @@ import Seihou.Core.Application (mkApplicationId)
 import Seihou.Core.CommandFingerprint (fingerprintCommand)
 import Seihou.Core.Migration (Migration (..), MigrationOp (..))
 import Seihou.Core.Types
+import Seihou.Effect.FilesystemPure (PureFS (..))
 import Seihou.Engine.Reconcile
   ( DesiredFile (..),
     FileReconciliation (..),
@@ -672,6 +673,16 @@ spec = do
             (migrationStage ^. #plans) `shouldSatisfy` all (^. #containsCommands)
             (migrationStage ^. #warnings) `shouldBe` [MigrationCommandNotSimulated "shared" "true"]
             map (^. #moduleVersion) (migrationStage ^. #manifest . #modules) `shouldBe` [Just "2.0.0", Just "2.0.0"]
+        TIO.writeFile (projectRoot </> ".gitignore") ".envrc\r\nuser-entry\n"
+        let removalCandidate = candidate & #migrations .~ [Migration "1.0.0" "2.0.0" [RemoveLine ".gitignore" ".envrc"]]
+        stagedRemoval <- planAndStageMigrations projectRoot manifest catalog [(Just previous, [(instanceOne, removalCandidate, "/candidate/shared")])]
+        case stagedRemoval of
+          Left err -> expectationFailure (show err)
+          Right migrationStage -> do
+            Map.lookup ".gitignore" (migrationStage ^. #filesystem . #files) `shouldBe` Just "user-entry\n"
+            Map.null (migrationStage ^. #manifest . #files) `shouldBe` True
+            migrationStage ^. #warnings `shouldBe` []
+        TIO.readFile (projectRoot </> ".gitignore") >>= (`shouldBe` ".envrc\r\nuser-entry\n")
 
 -- | A plan whose one file is byte-unchanged on disk, parameterized by the
 -- shared-write mode the manifest holds and whether this run's contribution is

@@ -7,17 +7,19 @@ module Seihou.CLI.Update.Migrations
   )
 where
 
-import Control.Monad (guard)
+import Control.Monad (filterM, guard)
 import Data.Generics.Labels ()
 import Data.List (find)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Set qualified as Set
+import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Effectful (runPureEff)
 import Seihou.CLI.Update.Types
 import Seihou.Composition.Instance (ModuleInstance (..))
 import Seihou.Core.Migration (Migration (..), MigrationOp (..), MigrationPlan (..), planMigrationChain)
+import Seihou.Core.Path (validateProjectRelativePath)
 import Seihou.Core.Types
 import Seihou.Core.Version (parseVersion)
 import Seihou.Effect.FilesystemPure (PureFS (..), runFilesystemPure)
@@ -65,7 +67,11 @@ planAndStageMigrations root manifest catalog applications = planAndStageMigratio
 
 planAndStageMigrationsWithSeeds :: FilePath -> Manifest -> CandidateCatalog -> [(Maybe AppliedComposition, [(ModuleInstance, Module, FilePath)])] -> Set FilePath -> IO (Either UpdateError StagedMigrations)
 planAndStageMigrationsWithSeeds projectRoot manifest catalog applications protected = do
-  initialFilesystem <- snapshotTrackedFiles projectRoot (manifest & #files %~ (`Map.withoutKeys` protected))
+  let declaredTargets = either (const []) id $ do
+        transitions <- collectTransitions catalog applications
+        planned <- traverse planTransition (deduplicateTransitions transitions)
+        pure [safe | (_, sourcePlan) <- planned, migration <- sourcePlan ^. #steps, op@(RemoveLine path _) <- migration ^. #ops, Right safe <- [validateProjectRelativePath (T.pack path)], Right () <- [validateSeedMigration protected [op]]]
+  initialFilesystem <- snapshotTrackedFiles projectRoot (manifest & #files %~ (`Map.withoutKeys` protected)) declaredTargets
   pure $ do
     transitions <- collectTransitions catalog applications
     planned <- traverse planTransition (deduplicateTransitions transitions)
@@ -202,18 +208,20 @@ commandMocks (_, sourcePlan) =
     RunCommand command _ <- migration ^. #ops
   ]
 
-snapshotTrackedFiles :: FilePath -> Manifest -> IO PureFS
-snapshotTrackedFiles projectRoot manifest = do
-  let tracked = Map.keys (manifest ^. #files)
+snapshotTrackedFiles :: FilePath -> Manifest -> [FilePath] -> IO PureFS
+snapshotTrackedFiles projectRoot manifest declaredTargets = do
+  let tracked = Set.toAscList (Set.fromList (Map.keys (manifest ^. #files) <> declaredTargets))
       components = Set.toAscList (Set.fromList (tracked <> concatMap parents tracked))
   links <- fmap Map.fromList . fmap concat $ traverse readLink components
   files <- fmap Map.fromList . fmap concat $ traverse (readTracked links) tracked
+  existingDirectories <- filterM (Directory.doesDirectoryExist . (projectRoot </>)) components
   let directories =
-        Set.fromList
-          [ directory
-          | path <- Map.keys files,
-            directory <- parents path
-          ]
+        Set.fromList existingDirectories
+          `Set.union` Set.fromList
+            [ directory
+            | path <- Map.keys files,
+              directory <- parents path
+            ]
   pure PureFS {files, dirs = directories, links}
   where
     readLink path = do

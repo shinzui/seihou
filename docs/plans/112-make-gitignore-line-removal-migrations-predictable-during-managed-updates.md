@@ -85,22 +85,47 @@ protection, execution-time file-kind validation, standalone rendering, managed p
 line-removal detail, and transaction/touched-path enumeration. `cabal build exe:seihou` succeeds and `cabal test seihou-core-test` passes all
 1,782 tests, including old/new union file evaluation and removal execution.
 `git diff --check` passes. These checks establish the source foundation only.
-No milestone is complete:
-the early representative consumer proof has not run. Remaining engine integration includes
-untracked declared-target snapshots, post-migration observations/baseline reconciliation,
-full rollback/retry coverage, and path-level shell-drift diagnostics. Schema, producer,
-release, installed-consumer replay, documentation, and original FRIC-1 closure remain open.
+No milestone is complete: schema authoring/publication and the larger safety matrix
+remain open. The early representative consumer proof now passes: after reconstructing
+the ignored `.envrc` from its recorded baseline with explicit user authorization, the
+historical candidate at `2eaba137` reproduces `changed_after_migration_command` with
+identical counts. A test-only producer candidate `abeb1bd` replaces that shell command
+with `RemoveLine`; source CLI apply succeeds, removes the exact ignore entry, retains
+two owners, and a repeat preview returns `alreadyUpToDate: true`. This is source/test
+candidate evidence, not a published fix. Logs live under the replay directory named by
+`/tmp/seihou-112-replay-root`. All 59 selected CLI Update tests pass, including staging
+an untracked declared edit target without assigning ownership or changing real bytes.
+
+On 2026-11-11 the user additionally authorized upgrading the real reporting consumer to
+the latest public module. Installed Seihou 0.15.0.0 (`d67cf67`) successfully updated that
+checkout from 0.36.0 to 0.37.1, reused all 21 inputs, and its repeat preview is stable.
+The real consumer's `.envrc` was already present and tracked and remains unchanged;
+the baseline reconstruction applied only to the detached historical fixture. This
+real upgrade does not traverse the failing 0.34.0 edge and is not proof of product-fix
+delivery. Its generated changes remain uncommitted for review.
+
 
 ## Surprises & Discoveries
 
 
-Discovery (2026-11-11): required Mori discovery is unavailable: `mori registry list`
-and `mori registry search dhall` fail with PostgreSQL `NotifierConnectError` at the
-sungkyung-clients socket. The tunnel log reports SSH timeouts to its remote host.
+Discovery (2026-11-11): the initial Mori error came from an inherited obsolete
+`MORI_PG_CONNECTION_STRING`, not a required tunnel. Current shell configuration points
+to local PostgreSQL. Setting the connection string to
+`host=/Users/shinzui/.local/state/postgresql dbname=mori` restores registry access;
 [FRIC-16](../friction-log/16-mori-registry-unavailable-through-database-tunnel.md)
-records this environment blocker and remains logged. Cross-repository discovery and the
-required early consumer replay must resume after registry connectivity is restored;
-no producer/schema release or consumer amendment has been attempted.
+is resolved. Do not restart the old tunnel. Registry discovery now locates producer,
+consumer, schema, and Dhall sources successfully.
+
+Discovery (2026-11-11): detached consumer checkpoint `ef0f4f4` lacks `.envrc` on disk:
+it was ignored and therefore never captured by Git, although its manifest records it
+and its trusted baseline is present. All other managed paths exist. The current source
+binary stops with `unresolved_conflicts` naming `.envrc`, before migration execution,
+when replayed with producer `2eaba137`. An unchanged detached Git checkout therefore does
+not reproduce the original report's complete filesystem state. The user authorized reconstructing this ignored fixture file from its recorded trusted
+baseline; the subsequent historical replay reproduces the original failure. Replay directory for this session is recorded in
+`/tmp/seihou-112-replay-root`; it has an isolated config and per-process Git URL mapping,
+with no installed-cache publication or source-checkout edits.
+
 
 
 ## Decision Log
