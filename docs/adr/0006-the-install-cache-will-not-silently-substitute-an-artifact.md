@@ -55,10 +55,14 @@ decides from it, before removing anything:
   two are the same artifact, and an entry created by hand or by a much older
   seihou is not evidence that replacing it is safe.
 
-URLs are compared through `Seihou.Core.ArtifactIdentity.normalizeOriginUrl`, the
-same normalisation the manifest guard and the blueprint-migration receipt ledger
-use, so `https://host/repo`, `https://host/repo.git` and `https://host/repo/` are
-one source everywhere in seihou.
+URLs are compared through `Seihou.Core.ArtifactIdentity.sameRepositoryOrigin`,
+the same repository comparison the manifest guard and the blueprint-migration
+receipt ledger use (ADR 0002), so `https://host/repo`, `https://host/repo.git`
+and `https://host/repo/` — and public GitHub's SSH and HTTPS forms of one
+repository — are one source everywhere in seihou, while a different user, port or
+transport on another server is a different source. (Amended 2026-11-11 by
+`docs/plans/109-compare-equivalent-git-repository-origins-consistently.md`; the
+comparison was previously a lexical normalisation.)
 
 `--force` is the only override and it prints what it overrode, mirroring
 `--allow-downgrade` under ADR 0003.

@@ -9,6 +9,10 @@
   (`docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md`).
 
 - Amended: 2026-10-27 — public GitHub SSH/HTTPS transport equivalence for recorded dependency adoption.
+- Amended: 2026-11-11 — repository identity is a parsed, conservative comparison
+  (`sameRepositoryOrigin`) shared by every identity decision, separate from the
+  lexical normalisation connection caches use
+  (`docs/plans/109-compare-equivalent-git-repository-origins-consistently.md`).
 
 ## Context
 
@@ -107,16 +111,17 @@ and ordering them is meaningless. Each constructor's trust level maps onto a
 distinct outcome:
 
 - Two `RemoteOrigin`s are the only pair whose identity can be confirmed or
-  refuted outright. Disagreeing URLs are a hard refusal. URLs are compared after
-  normalising a trailing `.git` and trailing slashes, because
-  `https://host/repo`, `https://host/repo.git` and `https://host/repo/` are the
-  same repository and a manifest must not read as a different module to a
-  developer who typed a different spelling. Public GitHub URLs also normalize
-  `git@github.com:owner/repo` and `ssh://git@github.com/owner/repo` to
-  `https://github.com/owner/repo`. This is a fixed transport equivalence on
-  that public host; other hosts, repository paths, forks, redirects and content
-  similarity do not establish identity. Fetching retains the recorded transport,
-  and updating preserves each application’s recorded spelling.
+  refuted outright. Disagreeing URLs are a hard refusal. URLs are compared with
+  `Seihou.Core.ArtifactIdentity.sameRepositoryOrigin`, which parses each URL
+  before normalising anything, so cleanup can never manufacture a match (see
+  "Repository equivalence" below). A trailing `.git` and trailing slashes do
+  not matter, because `https://host/repo`, `https://host/repo.git` and
+  `https://host/repo/` are the same repository and a manifest must not read as a
+  different module to a developer who typed a different spelling. Public GitHub's
+  documented transports of one repository are also one identity. Other hosts,
+  repository paths, forks, redirects and content similarity do not establish
+  identity. Fetching retains the recorded transport, and updating preserves each
+  application’s recorded spelling.
 - A recorded `RemoteOrigin` that resolves to a copy carrying no provenance is
   *unverifiable*, not a mismatch. Seihou searches all three roots by name, so a
   developer deliberately shadowing an installed module with a personal copy in
@@ -161,6 +166,56 @@ refuse an action. It is not a meaningful answer for a receipt lookup: a receipt
 either records this identity or it does not, and two `LocalOrigin`s bearing the
 same name are treated as the same identity there — the strongest statement
 available about an artifact seihou can only identify by name.
+
+### Repository equivalence
+
+`sameRepositoryOrigin` (and its map key, `repositoryOriginKey`) is the one
+repository-identity comparison. The manifest guard, install collision checks,
+explicit dependency and recipe-base `source` checks, migration receipts, repair
+evidence, install-closure planning and `seihou update` candidate staging all use
+it. It is pure and offline: it consults no DNS, filesystem, Git configuration or
+network. Its rules:
+
+- **Public GitHub.** `https://github.com/OWNER/REPO` (port 443 allowed; user
+  information ignored, since it selects credentials, not a repository),
+  `ssh://git@github.com/OWNER/REPO` (port 22 allowed), scp-style
+  `git@github.com:OWNER/REPO`, and `ssh://git@ssh.github.com:443/OWNER/REPO` —
+  GitHub's documented SSH-over-HTTPS-port endpoint — are one repository. Scheme
+  and host case, an optional terminal `.git` and trailing slashes are ignored.
+  The path must be exactly two non-empty ASCII components (letters, digits, `-`,
+  `_`, `.`, excluding `.` and `..`); component case is preserved. A query or
+  fragment (even empty), a percent escape, whitespace, an extra or empty path
+  segment, another SSH user, a missing SSH user, another port, HTTP, the git
+  protocol, lookalike hosts and DNS or SSH-config aliases all fall outside the
+  class.
+- **Other network URLs** (`https`, `http`, `ssh`, `git`) keep their scheme, user
+  information, non-default port, full path (case and escapes included), query
+  and fragment. Only scheme and host case, the scheme's default port, and a
+  terminal `.git` or trailing slashes on the path are normalised. Arbitrary
+  servers can expose different repositories through different transports, users
+  or ports, so none of those are discarded.
+- **Generic scp-style addresses** keep their user (or its absence), host and
+  path, including whether the path is relative — on many servers a relative scp
+  path is relative to the user's home — and never equal a scheme URL.
+- **Everything else** — local paths, `file:` URLs, Windows drive paths,
+  unsupported schemes and malformed text — is opaque: it compares only with
+  cosmetically identical opaque text and never with a parsed remote.
+
+Identity and connection are separate. The recorded URL is stored and cloned
+exactly as written, because rewriting SSH to HTTPS changes authentication.
+`normalizeOriginUrl` stays a lexical helper that never equates transports; it
+keys connection-specific state — the release-history clone cache, the
+installed-blueprint refresh clone groups, and repair's grouping of
+machine-local paths — so a failure or credential on one transport is never
+hidden behind another's clone. `isUpdateNoOp` still compares stored origins
+structurally, so a changed spelling is never hidden from the apply decision.
+
+The comparison applies on read to every supported manifest and receipt. It
+records no new fact and changes no serialized representation, so under
+[ADR 0014](0014-every-semantic-manifest-change-advances-the-schema-version.md)
+it needs no schema version or adoption step, and nothing rewrites existing
+records. A future stored identity field would be a semantic manifest change and
+would need that ADR's adjacent-version upgrade.
 
 One consumer deliberately does not verify identity. `seihou update` clones from
 the origin URL the manifest itself records

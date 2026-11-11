@@ -92,6 +92,18 @@ project damage. `seihou sync` restores recorded links and executes declared repe
 Stale or substituted installed producers, missing project-owned producers, and
 machine-local origins still appear in the artifact warning section.
 
+An installed producer whose source URL names the same repository as the manifest
+records is not reported as a mismatch, even when the two spellings differ. For
+public GitHub, `git@github.com:OWNER/REPO`, `https://github.com/OWNER/REPO`,
+`ssh://git@github.com/OWNER/REPO` and `ssh://git@ssh.github.com:443/OWNER/REPO`
+(each with or without `.git`) are one repository, so a manifest written by a
+developer who cloned over SSH reads cleanly for one who installed over HTTPS.
+Nothing needs repairing or reinstalling, and status rewrites neither URL. Other
+servers are compared conservatively: a different scheme, SSH user, port or path
+form is a different source there, because such servers can expose different
+repositories through each. A different owner or repository name is always
+reported.
+
 ### Pending migrations
 
 Pending-migration detection runs on every `seihou status` invocation —

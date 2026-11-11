@@ -16,6 +16,11 @@ provenance:
       at: 2026-10-21T13:53:02Z
       mode: "update"
       note: "Specify parse-before-normalize boundaries, classify raw update comparisons, and tighten validation evidence."
+    - model: "claude-opus-5-5"
+      harness: "claude-code"
+      at: 2026-11-11T15:48:57Z
+      mode: "implement"
+      note: "Implemented M1-M3 source work: shared conservative repository key, consumer routing, regressions, ADR and docs"
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -56,9 +61,9 @@ rather than suppressing the warning in the renderer.
 
 ## Progress
 
-- [ ] M1: The reported status workflow passes through a shared, conservative repository comparator, with the unchanged manifest and a genuine mismatch as a negative control.
-- [ ] M2: Install checks, repair evidence, guards, and migration receipts use the same rules; edge cases and equivalence laws pass focused regressions.
-- [ ] M3: Documentation and ADRs describe the contract, required checks pass, and the fixed executable is verified through the user's ordinary command. Record release and installation evidence separately from source-build evidence.
+- [x] M1 (2026-11-11): `sameRepositoryOrigin`/`repositoryOriginKey` in core; guard and `sameArtifactIdentity` use it. Six new binary regressions in `shared manifest across developers` (10/10 pass) prove ordinary `status` accepts SSH-recorded/HTTPS-installed and the reverse, twice, with byte-identical manifest and `.seihou-origin.json` and a clean tree. A different repository or owner still warns, the empty cache keeps its notice, and an older equivalent-spelling version still refuses `run`. `ArtifactIdentity` passes 293/293. Real consumer `mori://shinzui/danwa` (records `git-init` from `git@github.com:shinzui/seihou-modules.git`; the installed copy records HTTPS): source build `0ace9a9`+working tree shows no `git-init` mismatch, and its manifest and installed metadata are unchanged (see Surprises for the installed binary).
+- [x] M2 (2026-11-11): install collision, repair evidence, explicit `source` checks, install closure, update staging and receipts route through the one key. Focused suites pass, each nonzero: `ManifestGuard` 36, `InstallCollision` 19, `ManifestRepairOrigins` 22, `BlueprintMigration` 73, `Seihou.Manifest.Types` 71.
+- [ ] M3: Documentation and source checks are done (2026-11-11). ADR 0002 has a new "Repository equivalence" section, ADR 0006 is amended, `docs/cli/status.md`, `docs/cli/install.md` and both changelogs are updated, and embedded help needs no change. `cabal test all`, `nix fmt -- --fail-on-change`, `nix flake check` and `git diff --check` pass. Still open: release and installed-executable verification, which this session was not authorized to do.
 
 
 ## Surprises & Discoveries
@@ -76,6 +81,21 @@ only the appropriate components; retaining the helper for old callers does not m
 it suitable as the parser's preprocessing step.
 
 
+Implementation on 2026-11-11 found the working tree had moved since review. Commit
+`5ad7c32` (plan 103, 2026-10-26) added a whole-string GitHub rewrite inside
+`normalizeOriginUrl` (`git@github.com:` and `ssh://git@github.com/` to HTTPS). It
+also made `Update/Source.hs` group clones and verify candidates through that helper.
+New consumers used the same rewrite: `Seihou.Composition.Resolve` and
+`Seihou.Composition.RecipeChain` (explicit `source` checks), `InstallClosure`
+(repository and dependency-conflict keys), and `InstalledRunnables` (refresh clone
+groups). That rewrite already removed the reported warning. The installed
+`/Users/shinzui/.nix-profile/bin/seihou` v0.15.0.0 (`d67cf67`) contains it and shows
+no `git-init` mismatch in `mori://shinzui/danwa`. This plan therefore hardens and
+unifies an existing fix rather than introducing the first one. The
+real-consumer before/after does not show a visible delta for the reported pair.
+Map-keyed consumers also need a key, not only a binary predicate.
+
+
 ## Decision Log
 
 - Decision: Add one pure repository-equivalence API in core and route identity decisions through it. Keep stored and clone URLs intact.
@@ -91,9 +111,49 @@ it suitable as the parser's preprocessing step.
   Date: 2026-10-21
 
 
+- Decision: Export an abstract `RepositoryOriginKey` (Eq/Ord, constructors private) and `repositoryOriginKey`, alongside `sameRepositoryOrigin = (==) on key`.
+  Rationale: Install closure and update staging index maps by repository. A predicate alone would force them to keep a second definition. Equality of a private tagged key also makes reflexivity, symmetry and transitivity hold by construction.
+  Date: 2026-11-11
+
+- Decision: Revert `normalizeOriginUrl` to purely lexical behaviour, removing plan 103's GitHub rewrite. Move every identity consumer that relied on it to the key.
+  Rationale: Two definitions of repository identity would drift, and the whole-string rewrite matched `owner/repo/.git` with `owner/repo` and stripped `.git` from a query. The lexical helper now keys only connection-specific state: the `RecordedRelease` history clone cache, the `InstalledRunnables` refresh clone groups, and repair's machine-local path grouping, table lookup and "this remote" label. This restores this plan's transport-specific cache intent, at the cost of at most one extra clone when an installed set mixes transports.
+  Date: 2026-11-11
+
+- Decision: `Update/Source.hs` candidate grouping and `verifyRemoteRequirements` use the repository key rather than exact URLs. This supersedes Context and Orientation's "keep exact" instruction.
+  Rationale: Plan 103 deliberately made mixed SSH/HTTPS records of one catalog stage as one clone, and its real-consumer acceptance relied on that. Exact keys would regress it into the duplicate-candidate ambiguity this plan described. `isUpdateNoOp` keeps structural equality, as planned.
+  Date: 2026-11-11
+
+
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Source acceptance passed on 2026-11-11 against working changes on `0ace9a9`.
+`cabal test all` passed (54, 1708 and 925 tests, exit 0), and so did
+`nix fmt -- --fail-on-change` (0 files changed), `nix flake check` (aarch64-darwin,
+exit 0) and `git diff --check`. Running the source executable's ordinary `status`
+in `mori://shinzui/danwa` left the manifest and installed `git-init` metadata
+byte-identical. It reported only the unrelated `migrate-keiro-stack` provenance
+note.
+
+Verification state at handoff:
+
+- Source verification passed.
+- Release verification has not run.
+- Installed verification has not run for this change. The installed v0.15.0.0
+  (`d67cf67`) already accepts the reported pair through plan 103's less
+  conservative rewrite, so users see no visible change for that pair. The
+  difference is that negative cases on other hosts and malformed spellings now
+  stay distinct.
+
+M3 stays open until an authorized release installs this build as the user's
+ordinary `seihou`.
+
+What remains intentionally lexical: `RecordedRelease` history clones,
+`InstalledRunnables` refresh groups and repair's machine-local path grouping, plus
+structural `isUpdateNoOp`. No embedded help described the comparison, so
+`seihou-cli/help/` is unchanged. No friction entries were recorded under this plan.
+The main lesson is that a plan's consumer audit goes stale quickly. Rerunning the
+Concrete Steps search at implementation time found five consumers added after
+review.
 
 
 ## Context and Orientation

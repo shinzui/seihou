@@ -155,7 +155,13 @@ artifact, and guessing would affect every project on the machine.
 
 Two spellings of one git URL are one source: `https://host/repo`,
 `https://host/repo.git`, and `https://host/repo/` all match each other, so
-typing a different spelling than last time is not a collision.
+typing a different spelling than last time is not a collision. Public GitHub's
+documented SSH and HTTPS forms of one repository (`git@github.com:OWNER/REPO`,
+`ssh://git@github.com/OWNER/REPO`, `ssh://git@ssh.github.com:443/OWNER/REPO` and
+`https://github.com/OWNER/REPO`) also match, so switching transports needs no
+`--force`. On other servers a different scheme, SSH user, port or path form is a
+different source. The installed copy records the URL you typed; seihou never
+rewrites it to another transport.
 
 `--force` replaces the entry anyway and prints what it overrode. It is the only
 override for a registry entry, because `--name` applies to single-artifact
