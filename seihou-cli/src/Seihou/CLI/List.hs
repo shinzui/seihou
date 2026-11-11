@@ -4,6 +4,7 @@ module Seihou.CLI.List
     formatListOutputEntries,
     applyFilters,
     ListFilter (..),
+    DescriptionMode (..),
     Entry (..),
     runnableToEntryWithOrigin,
   )
@@ -13,14 +14,14 @@ import Data.Aeson (FromJSON (..), withObject, (.:?))
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
-import Data.List (sortOn)
+import Data.List (intercalate, sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Shared (shortenHome)
 import Seihou.CLI.Style (bold, dim, red, useColor)
-import Seihou.CLI.TextLayout (truncateForSummary)
+import Seihou.CLI.TextLayout (truncateForSummary, wrapParagraphs)
 import Seihou.Core.Module (DiscoveredModule (..), DiscoveredRunnable (..), ModuleSource (..), RunnableKind (..), defaultSearchPaths, discoverAllModules, discoverAllRunnables)
 import Seihou.Core.Types
 import Seihou.Prelude
@@ -51,8 +52,13 @@ data ListFilter = ListFilter
 noFilter :: ListFilter
 noFilter = ListFilter Nothing Nothing []
 
-handleList :: ListFilter -> IO ()
-handleList listOpts = do
+-- | How the list shows each entry's description: bounded to one line by
+-- default, or in full (word-wrapped at a fixed width) when @--full@ asks for it.
+data DescriptionMode = BoundedDescriptions | FullDescriptions
+  deriving stock (Eq, Show, Generic)
+
+handleList :: ListFilter -> DescriptionMode -> IO ()
+handleList listOpts mode = do
   searchPaths <- defaultSearchPaths
   runnables <- discoverAllRunnables searchPaths
   colorEnabled <- useColor
@@ -61,7 +67,7 @@ handleList listOpts = do
   origins <- Map.fromList <$> mapM readRunnableOrigin runnables
   let entries = map (runnableToEntryWithOrigin origins) runnables
       filtered = applyFilters listOpts entries
-  TIO.putStr (formatListOutputEntries colorEnabled filtered shortenedPaths listOpts)
+  TIO.putStr (formatListOutputEntries colorEnabled mode filtered shortenedPaths listOpts)
 
 readOrigin :: DiscoveredModule -> IO (FilePath, Maybe OriginInfo)
 readOrigin dm = do
@@ -122,10 +128,10 @@ runnableToEntryWithOrigin origins dr =
 formatListOutput :: Bool -> [DiscoveredModule] -> [Text] -> Text
 formatListOutput color modules searchPaths =
   let entries = map toEntry modules
-   in formatListOutputEntries color entries searchPaths noFilter
+   in formatListOutputEntries color BoundedDescriptions entries searchPaths noFilter
 
-formatListOutputEntries :: Bool -> [Entry] -> [Text] -> ListFilter -> Text
-formatListOutputEntries color entries searchPaths listOpts
+formatListOutputEntries :: Bool -> DescriptionMode -> [Entry] -> [Text] -> ListFilter -> Text
+formatListOutputEntries color mode entries searchPaths listOpts
   | null entries =
       -- With nothing to show, the kind comes from the active filter (if any).
       "No "
@@ -149,7 +155,7 @@ formatListOutputEntries color entries searchPaths listOpts
               <> " sources searched)"
               <> filterSuffix
               <> "\n"
-       in T.unlines (formatSections color entries) <> summary
+       in T.unlines (formatSections color mode entries) <> summary
   where
     filterSuffix = formatFilterSuffix listOpts
 
@@ -297,27 +303,37 @@ kindSections =
 
 -- | Render entries as one section per kind, each a heading with a count, a
 -- blank line, the entries sorted by name, and a closing blank line. A kind
--- with no entries has no section.
-formatSections :: Bool -> [Entry] -> [Text]
-formatSections color entries = concatMap section kindSections
+-- with no entries has no section. In 'FullDescriptions' mode a blank line
+-- also separates consecutive entries, since each may span several lines.
+formatSections :: Bool -> DescriptionMode -> [Entry] -> [Text]
+formatSections color mode entries = concatMap section kindSections
   where
     nameWidth = min nameColumnCap (maximum (0 : map (T.length . (^. #name)) entries))
     section (k, title) = case sortOn (^. #name) (filter ((== k) . (^. #kind)) entries) of
       [] -> []
       es ->
         [styleIf bold (title <> " (" <> T.pack (show (length es)) <> ")"), ""]
-          <> concatMap (formatEntry color nameWidth) es
+          <> entryLines es
           <> [""]
+    entryLines es = case mode of
+      BoundedDescriptions -> concatMap (formatEntry color mode nameWidth) es
+      FullDescriptions -> intercalate [""] (map (formatEntry color mode nameWidth) es)
     styleIf f t = if color then f t else t
 
--- | Render one entry as two lines: the name padded to the name column and its
--- source label, then the description, collapsed and bounded, indented under it.
-formatEntry :: Bool -> Int -> Entry -> [Text]
-formatEntry color nameWidth entry =
-  [ "  " <> paddedName <> "  " <> styleIf dim (entry ^. #source),
-    "    " <> styleDesc (truncateForSummary descriptionWidth desc)
-  ]
+-- | Render one entry: the name padded to the name column and its source
+-- label, then the description indented under it. 'BoundedDescriptions' makes
+-- that one collapsed, bounded line; 'FullDescriptions' word-wraps the whole
+-- description at 'descriptionWidth', so the indentation marks where it ends.
+formatEntry :: Bool -> DescriptionMode -> Int -> Entry -> [Text]
+formatEntry color mode nameWidth entry =
+  ("  " <> paddedName <> "  " <> styleIf dim (entry ^. #source))
+    : map indent descLines
   where
+    descLines = case mode of
+      BoundedDescriptions -> [truncateForSummary descriptionWidth desc]
+      FullDescriptions -> wrapParagraphs descriptionWidth desc
+    -- A paragraph separator stays empty rather than becoming trailing spaces.
+    indent l = if T.null l then l else "    " <> styleDesc l
     name = entry ^. #name
     paddedName = name <> T.replicate (nameWidth - T.length name) " "
     rawDesc = entry ^. #desc

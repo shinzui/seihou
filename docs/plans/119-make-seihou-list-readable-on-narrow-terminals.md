@@ -61,8 +61,12 @@ and observing that no line wraps and every source sits on the same line as its n
   Done 2026-11-11: the golden test matches the Validation sample byte for byte; seihou-cli
   suite 874/874 passes; `seihou list` against the 47 real installed artifacts prints no line
   over 76 columns.
-- [ ] Milestone 3 — `seihou list --full` prints complete descriptions word-wrapped at 72
+- [x] Milestone 3 — `seihou list --full` prints complete descriptions word-wrapped at 72
   columns under a four-space indent, with a blank line between entries.
+  Done 2026-11-11: the `--full` test matches the Validation sample exactly; seihou-cli suite
+  passes; `seihou list --full` on the real artifacts prints no line over 76 columns except
+  first lines whose name exceeds the 32-column cap (permitted). The `listInfo` help footer was
+  updated here too, ahead of milestone 4, since it lives beside the new flag.
 - [ ] Milestone 4 — user documentation, command help, CHANGELOG, and ADR 0013 describe the new
   output; a manual run against the real installed artifacts confirms the result.
 

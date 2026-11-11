@@ -4,7 +4,7 @@ import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
-import Seihou.CLI.List (Entry (..), ListFilter (..), applyFilters, formatListOutput, formatListOutputEntries, runnableToEntryWithOrigin)
+import Seihou.CLI.List (DescriptionMode (..), Entry (..), ListFilter (..), applyFilters, formatListOutput, formatListOutputEntries, runnableToEntryWithOrigin)
 import Seihou.Core.Module (DiscoveredModule (..), DiscoveredRunnable (..), ModuleSource (..), RunnableKind (..))
 import Seihou.Core.Types
 import Test.Hspec
@@ -202,34 +202,34 @@ spec = do
 
     it "uses the kind noun when all shown entries share one kind" $ do
       let entries = [mkEntryK KindBlueprint "bp-a" Nothing [], mkEntryK KindBlueprint "bp-b" Nothing []]
-          result = formatListOutputEntries False entries ["p1"] noFilterF
+          result = formatListOutputEntries False BoundedDescriptions entries ["p1"] noFilterF
       T.isInfixOf "2 blueprints found" result `shouldBe` True
 
     it "uses the singular kind noun for one entry" $ do
       let entries = [mkEntryK KindRecipe "rec-a" Nothing []]
-          result = formatListOutputEntries False entries ["p1"] noFilterF
+          result = formatListOutputEntries False BoundedDescriptions entries ["p1"] noFilterF
       T.isInfixOf "1 recipe found" result `shouldBe` True
 
     it "uses the prompt noun when all shown entries are prompts" $ do
       let entries = [mkEntryK KindPrompt "review" Nothing [], mkEntryK KindPrompt "explain" Nothing []]
-          result = formatListOutputEntries False entries ["p1"] noFilterF
+          result = formatListOutputEntries False BoundedDescriptions entries ["p1"] noFilterF
       T.isInfixOf "2 prompts found" result `shouldBe` True
 
     it "falls back to the neutral noun for a mix of kinds" $ do
       let entries = [mkEntryK KindModule "mod-a" Nothing [], mkEntryK KindRecipe "rec-a" Nothing []]
-          result = formatListOutputEntries False entries ["p1"] noFilterF
+          result = formatListOutputEntries False BoundedDescriptions entries ["p1"] noFilterF
       T.isInfixOf "2 items found" result `shouldBe` True
 
     it "names the kind in the empty message when filtered to one kind" $ do
-      let result = formatListOutputEntries False [] ["p1"] (ListFilter Nothing Nothing [KindBlueprint])
+      let result = formatListOutputEntries False BoundedDescriptions [] ["p1"] (ListFilter Nothing Nothing [KindBlueprint])
       T.isInfixOf "No blueprints found." result `shouldBe` True
 
     it "names prompts in the empty message when filtered to prompts" $ do
-      let result = formatListOutputEntries False [] ["p1"] (ListFilter Nothing Nothing [KindPrompt])
+      let result = formatListOutputEntries False BoundedDescriptions [] ["p1"] (ListFilter Nothing Nothing [KindPrompt])
       T.isInfixOf "No prompts found." result `shouldBe` True
 
     it "uses the neutral noun in the empty message with no kind filter" $ do
-      let result = formatListOutputEntries False [] ["p1"] noFilterF
+      let result = formatListOutputEntries False BoundedDescriptions [] ["p1"] noFilterF
       T.isInfixOf "No items found." result `shouldBe` True
 
   describe "runnableToEntryWithOrigin (blueprint)" $ do
@@ -270,22 +270,22 @@ spec = do
 
   describe "formatListOutputEntries (layout)" $ do
     it "groups by kind, sorts by name, and bounds each description to one line" $ do
-      let result = formatListOutputEntries False scrambledFixture ["p1", "p2", "p3"] noFilter
+      let result = formatListOutputEntries False BoundedDescriptions scrambledFixture ["p1", "p2", "p3"] noFilter
       result `shouldBe` T.unlines goldenBounded
 
     it "keeps every line within 76 columns however long a description is" $ do
       let long = mkEntryK KindRecipe "long-desc" Nothing [] & #desc .~ T.replicate 100 "verbose prose "
-          result = formatListOutputEntries False [long] ["p1"] noFilter
+          result = formatListOutputEntries False BoundedDescriptions [long] ["p1"] noFilter
       T.lines result `shouldSatisfy` all ((<= 76) . T.length)
       T.lines result `shouldSatisfy` any (T.isSuffixOf "…")
 
     it "leaves no trailing spaces on any line" $ do
-      let result = formatListOutputEntries False scrambledFixture ["p1", "p2", "p3"] noFilter
+      let result = formatListOutputEntries False BoundedDescriptions scrambledFixture ["p1", "p2", "p3"] noFilter
       T.lines result `shouldSatisfy` all (\l -> T.stripEnd l == l)
 
     it "omits sections for kinds that have no entries" $ do
       let entries = [mkEntryK KindRecipe "rec-a" Nothing []]
-          result = formatListOutputEntries False entries ["p1"] (ListFilter Nothing Nothing [KindRecipe])
+          result = formatListOutputEntries False BoundedDescriptions entries ["p1"] (ListFilter Nothing Nothing [KindRecipe])
       T.lines result
         `shouldBe` [ "Recipes (1)",
                      "",
@@ -294,6 +294,40 @@ spec = do
                      "",
                      "1 recipe found (1 sources searched) [filtered: kind=recipe]"
                    ]
+
+  describe "formatListOutputEntries (--full)" $ do
+    it "word-wraps the whole description under a four-space indent" $ do
+      let exec = filter (\e -> e ^. #name == "exec-plan") scrambledFixture
+          result = formatListOutputEntries False FullDescriptions exec ["p1"] noFilter
+      take 4 (drop 2 (T.lines result))
+        `shouldBe` [ "  exec-plan  installed: agent-seihou v0.14.0",
+                     "    Claude skill for creating, implementing, and managing execution plans",
+                     "    (ExecPlans) — self-contained design documents that guide implementation",
+                     "    of features and system changes."
+                   ]
+
+    it "separates entries with a blank line and keeps paragraph breaks unpadded" $ do
+      let a = mkEntryK KindModule "mod-a" Nothing [] & #desc .~ "First paragraph.\n\nSecond paragraph."
+          b = mkEntryK KindModule "mod-b" Nothing []
+          result = formatListOutputEntries False FullDescriptions [b, a] ["p1"] noFilter
+      T.lines result
+        `shouldBe` [ "Modules (2)",
+                     "",
+                     "  mod-a  installed",
+                     "    First paragraph.",
+                     "",
+                     "    Second paragraph.",
+                     "",
+                     "  mod-b  installed",
+                     "    desc",
+                     "",
+                     "2 modules found (1 sources searched)"
+                   ]
+
+    it "shows text the bounded view would cut" $ do
+      let result = formatListOutputEntries False FullDescriptions scrambledFixture ["p1"] noFilter
+      T.isInfixOf "discovery directories." result `shouldBe` True
+      T.isInfixOf "…" result `shouldBe` False
 
 -- | Four entries in a scrambled order, to prove the grouping and sorting.
 scrambledFixture :: [Entry]

@@ -305,7 +305,8 @@ data ListOpts = ListOpts
     modulesOnly :: !Bool,
     recipesOnly :: !Bool,
     blueprintsOnly :: !Bool,
-    promptsOnly :: !Bool
+    promptsOnly :: !Bool,
+    full :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -808,11 +809,13 @@ listInfo =
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Scans all search paths and lists every available runnable artifact" :: String),
-                  pretty ("(modules, recipes, blueprints, prompts) with its name, kind, description, and" :: String),
-                  pretty ("source location (project, user, or installed). Entries that fail to" :: String),
-                  pretty ("load are shown with an error indicator." :: String),
+                [ pretty ("Scans all search paths and lists every available runnable artifact," :: String),
+                  pretty ("grouped under one heading per kind (Modules, Recipes, Blueprints, Prompts)" :: String),
+                  pretty ("and sorted by name. Each entry shows its name and source (project, user, or" :: String),
+                  pretty ("installed) on one line and its description, cut to one line, indented" :: String),
+                  pretty ("below. Entries that fail to load are shown with an error indicator." :: String),
                   line,
+                  pretty ("Use --full to show complete descriptions, word-wrapped." :: String),
                   pretty ("Use --repo and --tag to filter the output." :: String),
                   pretty ("Use --modules, --recipes, --blueprints, and --prompts to restrict by kind" :: String),
                   pretty ("(combine them to show several kinds; omit all to show every kind)." :: String)
@@ -830,6 +833,7 @@ listParser =
       <*> switch (long "recipes" <> help "Show only recipes")
       <*> switch (long "blueprints" <> help "Show only blueprints")
       <*> switch (long "prompts" <> help "Show only prompts")
+      <*> switch (long "full" <> help "Show complete descriptions, word-wrapped, instead of one truncated line")
 
 newModuleInfo :: ParserInfo Command
 newModuleInfo =

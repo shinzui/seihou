@@ -29,7 +29,7 @@ import Seihou.CLI.Help (handleHelpCommand)
 import Seihou.CLI.Init (handleInit)
 import Seihou.CLI.Install (handleInstall)
 import Seihou.CLI.Kit (runKit)
-import Seihou.CLI.List (ListFilter (..), handleList)
+import Seihou.CLI.List (DescriptionMode (..), ListFilter (..), handleList)
 import Seihou.CLI.Manifest (handleManifest)
 import Seihou.CLI.Migrate (handleMigrate)
 import Seihou.CLI.NewBlueprint (handleNewBlueprint)
@@ -107,7 +107,8 @@ dispatch cmd =
               <> [KindRecipe | listOpts ^. #recipesOnly]
               <> [KindBlueprint | listOpts ^. #blueprintsOnly]
               <> [KindPrompt | listOpts ^. #promptsOnly]
-       in handleList (ListFilter (listOpts ^. #repo) (listOpts ^. #tag) kinds)
+          mode = if listOpts ^. #full then FullDescriptions else BoundedDescriptions
+       in handleList (ListFilter (listOpts ^. #repo) (listOpts ^. #tag) kinds) mode
     NewModule newModOpts ->
       handleNewModule newModOpts
     NewRecipe newRecOpts ->
