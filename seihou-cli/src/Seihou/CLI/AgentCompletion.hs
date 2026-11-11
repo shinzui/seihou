@@ -39,14 +39,16 @@ import Baikai.Trace qualified as BaikaiTrace
 import Baikai.Trace.Sink (TraceSink, silent)
 import Control.Exception (IOException, throwIO, try)
 import Control.Lens ((&), (.~), (^.))
+import Data.ByteString (ByteString)
 import Data.Generics.Labels ()
 import Data.List (nub)
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TE
 import Data.Vector qualified as V
 import GHC.Generics (Generic)
-import Seihou.CLI.AgentMigrationProtocol (validateMigrationOutput)
+import Seihou.CLI.AgentMigrationProtocol (batchRunRefusals, validateBatchRunOutput, validateMigrationOutput)
 import Seihou.CLI.KitConfig (seihouKitConfig)
 import System.Directory (getCurrentDirectory)
 import System.Exit (ExitCode (..))
@@ -257,9 +259,37 @@ runAgentCompletion = runAgentCompletionWith registerAgentProviders
 -- workspace and mounted blueprint references. API providers ignore this local
 -- access configuration. This is the non-interactive counterpart to the
 -- interactive launcher used by normal @seihou agent run@ sessions.
+--
+-- A @claude-cli@ request goes through a Seihou-side adapter rather than
+-- Baikai's stock provider, because Baikai drops Claude's
+-- @permission_denials@. The adapter fails the run when Claude reports any
+-- refused tool call, naming each one ('validateBatchRunOutput', ADR 0025): an
+-- unattended run cannot approve tools, so a refusal is work the blueprint
+-- expected and did not get. Its response carries zero usage, so a trace of
+-- such a run has no token counts. Other providers are unchanged.
 runAgentCompletionWithCliAccess :: [FilePath] -> [String] -> AgentCompletionRequest -> IO (Either Text Text)
-runAgentCompletionWithCliAccess extraDirs tools =
-  runAgentCompletionWith (registerAgentProvidersWithCliAccess extraDirs tools)
+runAgentCompletionWithCliAccess extraDirs tools req =
+  case req ^. #modelConfig . #provider of
+    AgentProviderClaudeCli ->
+      runAgentCompletionUsing
+        (^. #message)
+        ( registerValidatedCli
+            Baikai.AnthropicMessagesCli
+            AgentProviderClaudeCli
+            (claudeAccessArgs extraDirs tools)
+            []
+            batchRunExitFailure
+            validateBatchRunOutput
+        )
+        req
+    _ -> runAgentCompletionWith (registerAgentProvidersWithCliAccess extraDirs tools) req
+  where
+    -- Claude may exit non-zero after refusing tools; the refusals are the
+    -- more useful explanation, so report them when stdout has any.
+    batchRunExitFailure exe n out err =
+      fromMaybe
+        (Text.pack exe <> " exited " <> Text.pack (show n) <> ": " <> Text.take 2000 (Text.strip (Text.pack err <> Text.pack out)))
+        (batchRunRefusals (TE.encodeUtf8 (Text.pack out)))
 
 -- | The shared implementation behind 'runAgentCompletion' and
 -- 'runAgentCompletionWithCliAccess', parameterised by which providers to
@@ -375,56 +405,95 @@ resolveAgentInitialPrompt provider prompt = case provider of
 -- the command's existing sink and ordinary completion callers remain unchanged.
 runAgentMigrationCompletionWithCliAccess :: [FilePath] -> [String] -> AgentCompletionRequest -> IO (Either Text Text)
 runAgentMigrationCompletionWithCliAccess dirs tools req =
-  case req ^. #modelConfig . #provider of
-    AgentProviderClaudeCli -> runAgentCompletionUsing (^. #message) (registerStrict Baikai.AnthropicMessagesCli) req
-    AgentProviderCodexCli -> runAgentCompletionUsing (^. #message) (registerStrict Baikai.OpenAICompletionsCli) req
+  case provider of
+    AgentProviderClaudeCli -> runStrict Baikai.AnthropicMessagesCli
+    AgentProviderCodexCli -> runStrict Baikai.OpenAICompletionsCli
     _ -> runAgentCompletion req
   where
-    registerStrict api = do
-      cwd <- getCurrentDirectory
+    provider = req ^. #modelConfig . #provider
+    runStrict api = do
       sessionArgs <- KitSession.codexSessionArgs seihouKitConfig
-      let complete m ctx options = do
-            let (exe, args) = case req ^. #modelConfig . #provider of
-                  AgentProviderClaudeCli ->
-                    ClaudeCli.claudeCliCommand
-                      (ClaudeCli.defaultClaudeCliConfig {ClaudeCli.extraArgs = ["--permission-mode", "acceptEdits"] <> claudeAccessArgs dirs (migrationAllowedTools tools)})
-                      m
-                      ctx
-                      options
-                  _ ->
-                    CodexCli.codexCliCommand
-                      (CodexCli.defaultCodexCliConfig {CodexCli.extraArgs = codexAccessArgs dirs <> sessionArgs})
-                      m
-                      ctx
-                      options
-            attempted <-
-              try
-                ( Process.readCreateProcessWithExitCode
-                    ((Process.proc exe args) {Process.cwd = Just cwd, Process.create_group = True})
-                    ""
-                ) ::
-                IO (Either IOException (ExitCode, String, String))
-            let result = case attempted of
-                  Left err -> Left ("Could not start " <> Text.pack exe <> ": " <> Text.pack (show err) <> ". Check installation and authentication, then retry.")
-                  Right (code, out, err) -> case code of
-                    ExitFailure n -> Left (Text.pack exe <> " exited " <> Text.pack (show n) <> ": " <> Text.take 2000 (Text.pack err <> Text.pack out) <> ". Inspect partial edits, fix the provider error, then retry.")
-                    ExitSuccess -> validateMigrationOutput (req ^. #modelConfig . #provider == AgentProviderClaudeCli) (TE.encodeUtf8 (Text.pack out))
-            case result of
-              Left err -> throwIO (Baikai.providerError err)
-              Right body ->
-                pure $
-                  BaikaiResponse.emptyResponse
-                    { BaikaiResponse.model = m,
-                      BaikaiResponse.message =
-                        Baikai.AssistantPayload
-                          { Baikai.content = V.singleton (Baikai.AssistantText (Baikai.TextContent body)),
-                            Baikai.usage = Baikai.zeroUsage,
-                            Baikai.stopReason = Baikai.Stop,
-                            Baikai.errorMessage = Nothing,
-                            Baikai.timestamp = Nothing
-                          }
-                    }
-      Baikai.registerApiProvider (Baikai.apiProviderWith api (Baikai.liftCompleteToStream complete) complete)
+      runAgentCompletionUsing
+        (^. #message)
+        ( registerValidatedCli
+            api
+            provider
+            (["--permission-mode", "acceptEdits"] <> claudeAccessArgs dirs (migrationAllowedTools tools))
+            (codexAccessArgs dirs <> sessionArgs)
+            migrationExitFailure
+            (validateMigrationOutput (provider == AgentProviderClaudeCli))
+        )
+        req
+    migrationExitFailure exe n out err =
+      Text.pack exe <> " exited " <> Text.pack (show n) <> ": " <> Text.take 2000 (Text.pack err <> Text.pack out) <> ". Inspect partial edits, fix the provider error, then retry."
+
+-- | Register a narrow adapter for a local CLI provider that runs the process
+-- itself and validates its raw stdout, so evidence Baikai's stock provider
+-- discards (Claude's @permission_denials@) still decides the outcome. It is
+-- registered under the given Baikai API key behind the usual trace wrapper, so
+-- it reports to the command's existing sink.
+--
+-- The adapter runs in the current directory with no stdin. A failure is thrown
+-- as 'Baikai.providerError', which 'runAgentCompletionUsing' with
+-- @(^. #message)@ turns back into @Left@ with the text intact. The response
+-- carries zero usage and no subprocess evidence.
+registerValidatedCli ::
+  Baikai.Api ->
+  -- | Which CLI's argv to build: 'AgentProviderClaudeCli' or 'AgentProviderCodexCli'.
+  AgentProvider ->
+  -- | Extra arguments for @claude@.
+  [Text] ->
+  -- | Extra arguments for @codex@.
+  [Text] ->
+  -- | The error for a non-zero exit: executable, status, stdout, stderr.
+  (String -> Int -> String -> String -> Text) ->
+  -- | The validator for stdout after a zero exit.
+  (ByteString -> Either Text Text) ->
+  IO ()
+registerValidatedCli api provider claudeArgs codexArgs exitFailure validate = do
+  cwd <- getCurrentDirectory
+  let complete m ctx options = do
+        let (exe, args) = case provider of
+              AgentProviderClaudeCli ->
+                ClaudeCli.claudeCliCommand
+                  (ClaudeCli.defaultClaudeCliConfig {ClaudeCli.extraArgs = claudeArgs})
+                  m
+                  ctx
+                  options
+              _ ->
+                CodexCli.codexCliCommand
+                  (CodexCli.defaultCodexCliConfig {CodexCli.extraArgs = codexArgs})
+                  m
+                  ctx
+                  options
+        attempted <-
+          try
+            ( Process.readCreateProcessWithExitCode
+                ((Process.proc exe args) {Process.cwd = Just cwd, Process.create_group = True})
+                ""
+            ) ::
+            IO (Either IOException (ExitCode, String, String))
+        let result = case attempted of
+              Left err -> Left ("Could not start " <> Text.pack exe <> ": " <> Text.pack (show err) <> ". Check installation and authentication, then retry.")
+              Right (code, out, err) -> case code of
+                ExitFailure n -> Left (exitFailure exe n out err)
+                ExitSuccess -> validate (TE.encodeUtf8 (Text.pack out))
+        case result of
+          Left err -> throwIO (Baikai.providerError err)
+          Right body ->
+            pure $
+              BaikaiResponse.emptyResponse
+                { BaikaiResponse.model = m,
+                  BaikaiResponse.message =
+                    Baikai.AssistantPayload
+                      { Baikai.content = V.singleton (Baikai.AssistantText (Baikai.TextContent body)),
+                        Baikai.usage = Baikai.zeroUsage,
+                        Baikai.stopReason = Baikai.Stop,
+                        Baikai.errorMessage = Nothing,
+                        Baikai.timestamp = Nothing
+                      }
+                }
+  Baikai.registerApiProvider (Baikai.apiProviderWith api (Baikai.liftCompleteToStream complete) complete)
 
 -- | Source discovery is part of the ordinary migration workflow. Keep grants
 -- specific to read-only Mori commands; registry writes are never implied.

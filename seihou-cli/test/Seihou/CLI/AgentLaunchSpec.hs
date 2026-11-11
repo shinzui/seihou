@@ -18,6 +18,7 @@ import Seihou.CLI.AgentLaunch
     resolveBlueprintTools,
     setupAllowedTools,
     substitute,
+    undeclaredAllowedToolsWarning,
   )
 import Seihou.Core.Types
   ( Blueprint (..),
@@ -138,6 +139,17 @@ tests = testSpec "Seihou.CLI.AgentLaunch" $ do
       length result `shouldBe` length (nub result)
     it "does not duplicate a declared base tool" $
       resolveBlueprintTools (Just ["Read"]) `shouldBe` setupAllowedTools
+
+  describe "undeclaredAllowedToolsWarning" $ do
+    it "warns when allowedTools is absent, naming the setup tools" $ do
+      let warning = T.concat (undeclaredAllowedToolsWarning Nothing)
+      length (undeclaredAllowedToolsWarning Nothing) `shouldBe` 1
+      warning `shouldSatisfy` T.isPrefixOf "allowedTools is not declared"
+      warning `shouldSatisfy` T.isInfixOf (T.intercalate ", " (map T.pack setupAllowedTools))
+    it "treats an empty list as undeclared" $
+      undeclaredAllowedToolsWarning (Just []) `shouldBe` undeclaredAllowedToolsWarning Nothing
+    it "says nothing when a tool is declared" $
+      undeclaredAllowedToolsWarning (Just ["Bash(nix *)"]) `shouldBe` []
 
   describe "formatBlueprintIdentity" $ do
     let mk v d =

@@ -17,6 +17,7 @@ module Seihou.CLI.AgentLaunch
     formatReferenceFiles,
     formatReferenceFilesDir,
     resolveBlueprintTools,
+    undeclaredAllowedToolsWarning,
   )
 where
 
@@ -278,3 +279,17 @@ formatReferenceFilesDir Nothing =
 resolveBlueprintTools :: Maybe [Text] -> [String]
 resolveBlueprintTools declared =
   nub (setupAllowedTools <> map T.unpack (fromMaybe [] declared))
+
+-- | The @validate-blueprint@ warning for a blueprint that declares no
+-- @allowedTools@ (absent, or an empty list). Such a blueprint gets exactly
+-- 'setupAllowedTools' in a batch run, where Claude refuses everything else and
+-- the run fails (ADR 0025). Empty when at least one tool is declared. The tool
+-- list is rendered from 'setupAllowedTools' so the two cannot drift.
+undeclaredAllowedToolsWarning :: Maybe [Text] -> [Text]
+undeclaredAllowedToolsWarning declared = case fromMaybe [] declared of
+  (_ : _) -> []
+  [] ->
+    [ "allowedTools is not declared, so an unattended run pre-approves only Seihou's setup tools: "
+        <> T.intercalate ", " (map T.pack setupAllowedTools)
+        <> ". Claude refuses every other command the prompt needs. Declare them, for example allowedTools = Some [ \"Bash(nix *)\" ]."
+    ]

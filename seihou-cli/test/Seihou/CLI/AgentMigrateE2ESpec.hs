@@ -8,6 +8,7 @@ import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime)
+import GHC.Generics (Generic)
 import Seihou.CLI.SeihouBinary (seihouBinary)
 import Seihou.Core.Types
   ( AppliedBlueprintMigration (..),
@@ -93,70 +94,32 @@ tests = testSpec "Agent migrate end-to-end" $ do
       checkSession
 
   it "automatically uses the batch CLI provider when stdin is not a terminal" $
-    withSystemTempDirectory "seihou-agent-run-batch" $ \root -> do
-      binary <- seihouBinary
-      let blueprintDir = root </> ".seihou" </> "modules" </> "batch-blueprint"
-          blueprintPath = blueprintDir </> "blueprint.dhall"
-          referencePath = blueprintDir </> "files" </> "reference.md"
-          manifestPath = root </> ".seihou" </> "manifest.json"
-          xdgHome = root </> "xdg"
-          fakeBin = root </> "bin"
-          fakeClaude = fakeBin </> "claude"
-          launchLog = root </> "agent-launch.args"
-          workspaceFile = root </> "batch-ran.txt"
-      createDirectoryIfMissing True blueprintDir
-      createDirectoryIfMissing True (takeDirectory referencePath)
-      createDirectoryIfMissing True xdgHome
-      createDirectoryIfMissing True fakeBin
-      TIO.writeFile blueprintPath batchBlueprintDhall
-      TIO.writeFile referencePath "batch reference"
-      TIO.writeFile
-        fakeClaude
-        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$SEIHOU_FAKE_AGENT_LOG\"\nprintf 'edited\\n' > \"$SEIHOU_FAKE_WORKSPACE_FILE\"\nprintf '%s\\n' '{\"result\":\"batch complete\",\"is_error\":false,\"session_id\":\"fake\"}'\n"
-      permissions <- getPermissions fakeClaude
-      -- Permissions comes from `directory` and has no Generic instance, so it
-      -- has no #executable label. Record update syntax is the only option.
-      setPermissions fakeClaude (permissions {executable = True})
-
-      inherited <- getEnvironment
-      let inheritedPath = fromMaybe "" (lookup "PATH" inherited)
-          overriddenNames =
-            [ "PATH",
-              "XDG_CONFIG_HOME",
-              "SEIHOU_AGENT_PROVIDER",
-              "SEIHOU_AGENT_MODEL",
-              "SEIHOU_CONTEXT",
-              "SEIHOU_FAKE_AGENT_LOG",
-              "SEIHOU_FAKE_WORKSPACE_FILE"
-            ]
-          environment =
-            ("PATH", fakeBin <> [searchPathSeparator] <> inheritedPath)
-              : ("XDG_CONFIG_HOME", xdgHome)
-              : ("SEIHOU_AGENT_PROVIDER", "claude-cli")
-              : ("SEIHOU_FAKE_AGENT_LOG", launchLog)
-              : ("SEIHOU_FAKE_WORKSPACE_FILE", workspaceFile)
-              : filter (\(key, _) -> key `notElem` overriddenNames) inherited
-
-      (exitCode, output, errorOutput) <-
-        runProcessText binary ["agent", "run", "batch-blueprint"] (Just root) (Just environment)
-      case exitCode of
-        ExitSuccess -> pure ()
-        ExitFailure code ->
-          expectationFailure $
-            "batch run exited "
-              <> show code
-              <> "\nstdout:\n"
-              <> T.unpack output
-              <> "\nstderr:\n"
-              <> T.unpack errorOutput
+    withBatchBlueprintRun "{\"result\":\"batch complete\",\"is_error\":false,\"session_id\":\"fake\"}" $ \fixture -> do
+      (exitCode, output, errorOutput) <- (fixture ^. #runSeihou) ["agent", "run", "batch-blueprint"]
+      expectSuccess "batch run" exitCode output errorOutput
       output `shouldSatisfy` T.isInfixOf "batch complete"
-      doesFileExist workspaceFile `shouldReturn` True
-      doesFileExist manifestPath `shouldReturn` True
-      launchArgs <- T.lines <$> TIO.readFile launchLog
+      doesFileExist (fixture ^. #workspaceFile) `shouldReturn` True
+      doesFileExist (fixture ^. #manifestPath) `shouldReturn` True
+      launchArgs <- T.lines <$> TIO.readFile (fixture ^. #launchLog)
       launchArgs `shouldSatisfy` elem "-p"
       launchArgs `shouldSatisfy` elem "--allowedTools"
       launchArgs `shouldSatisfy` elem "--add-dir"
-      launchArgs `shouldSatisfy` elem (T.pack (blueprintDir </> "files"))
+      launchArgs `shouldSatisfy` elem (T.pack (fixture ^. #blueprintDir </> "files"))
+      -- The blueprint run must not receive the migration-only grants.
+      launchArgs `shouldNotSatisfy` elem "--permission-mode"
+      launchArgs `shouldNotSatisfy` any (T.isInfixOf "mori registry")
+
+  -- IR-18: an unattended run cannot approve tools, so a session that ended
+  -- normally after Claude refused a command is a failed run, not a pass.
+  it "fails a batch run whose agent was refused a tool" $
+    withBatchBlueprintRun refusedReply $ \fixture -> do
+      (exitCode, output, _) <- (fixture ^. #runSeihou) ["agent", "run", "batch-blueprint", "--batch"]
+      exitCode `shouldBe` ExitFailure 1
+      output `shouldSatisfy` T.isInfixOf "Claude refused 1 tool call"
+      output `shouldSatisfy` T.isInfixOf "Bash (nix build .#docs)"
+      output `shouldSatisfy` T.isInfixOf "allowedTools"
+      output `shouldNotSatisfy` T.isInfixOf "could not build"
+      doesFileExist (fixture ^. #manifestPath) `shouldReturn` False
 
   -- The two cases below are the end-to-end proof that a blueprint's own launch
   -- declaration reaches the spawned agent process, rather than only reaching
@@ -1178,6 +1141,81 @@ migrationBlueprintDhall =
       "  ]",
       "}"
     ]
+
+-- | Run the batch-blueprint fixture against a fake @claude@ that records its
+-- argv, writes a workspace file, and prints @reply@ as its JSON result. The
+-- callback receives the project root and a runner for seihou commands.
+withBatchBlueprintRun :: T.Text -> (BatchRunFixture -> IO a) -> IO a
+withBatchBlueprintRun reply action =
+  withSystemTempDirectory "seihou-agent-run-batch" $ \root -> do
+    binary <- seihouBinary
+    let blueprintDir = root </> ".seihou" </> "modules" </> "batch-blueprint"
+        blueprintPath = blueprintDir </> "blueprint.dhall"
+        referencePath = blueprintDir </> "files" </> "reference.md"
+        xdgHome = root </> "xdg"
+        fakeBin = root </> "bin"
+        fakeClaude = fakeBin </> "claude"
+        launchLog = root </> "agent-launch.args"
+        workspaceFile = root </> "batch-ran.txt"
+    createDirectoryIfMissing True blueprintDir
+    createDirectoryIfMissing True (takeDirectory referencePath)
+    createDirectoryIfMissing True xdgHome
+    createDirectoryIfMissing True fakeBin
+    TIO.writeFile blueprintPath batchBlueprintDhall
+    TIO.writeFile referencePath "batch reference"
+    TIO.writeFile fakeClaude $
+      T.unlines
+        [ "#!/bin/sh",
+          "printf '%s\\n' \"$@\" > \"$SEIHOU_FAKE_AGENT_LOG\"",
+          "printf 'edited\\n' > \"$SEIHOU_FAKE_WORKSPACE_FILE\"",
+          "cat <<'RESULT'",
+          reply,
+          "RESULT"
+        ]
+    permissions <- getPermissions fakeClaude
+    -- Permissions comes from `directory` and has no Generic instance, so it
+    -- has no #executable label. Record update syntax is the only option.
+    setPermissions fakeClaude (permissions {executable = True})
+
+    inherited <- getEnvironment
+    let inheritedPath = fromMaybe "" (lookup "PATH" inherited)
+        overriddenNames =
+          [ "PATH",
+            "XDG_CONFIG_HOME",
+            "SEIHOU_AGENT_PROVIDER",
+            "SEIHOU_AGENT_MODEL",
+            "SEIHOU_CONTEXT",
+            "SEIHOU_FAKE_AGENT_LOG",
+            "SEIHOU_FAKE_WORKSPACE_FILE"
+          ]
+        environment =
+          ("PATH", fakeBin <> [searchPathSeparator] <> inheritedPath)
+            : ("XDG_CONFIG_HOME", xdgHome)
+            : ("SEIHOU_AGENT_PROVIDER", "claude-cli")
+            : ("SEIHOU_FAKE_AGENT_LOG", launchLog)
+            : ("SEIHOU_FAKE_WORKSPACE_FILE", workspaceFile)
+            : filter (\(key, _) -> key `notElem` overriddenNames) inherited
+    action
+      BatchRunFixture
+        { blueprintDir = blueprintDir,
+          manifestPath = root </> ".seihou" </> "manifest.json",
+          launchLog = launchLog,
+          workspaceFile = workspaceFile,
+          runSeihou = \args -> runProcessText binary args (Just root) (Just environment)
+        }
+
+data BatchRunFixture = BatchRunFixture
+  { blueprintDir :: !FilePath,
+    manifestPath :: !FilePath,
+    launchLog :: !FilePath,
+    workspaceFile :: !FilePath,
+    runSeihou :: !([String] -> IO (ExitCode, T.Text, T.Text))
+  }
+  deriving stock (Generic)
+
+refusedReply :: T.Text
+refusedReply =
+  "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"could not build\",\"permission_denials\":[{\"tool_name\":\"Bash\",\"tool_use_id\":\"t1\",\"tool_input\":{\"command\":\"nix build .#docs\"}}]}"
 
 batchBlueprintDhall :: T.Text
 batchBlueprintDhall =

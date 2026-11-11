@@ -255,6 +255,7 @@ test-suite seihou-cli-test
   hs-source-dirs: test
   main-is: Main.hs
   other-modules:
+    Seihou.CLI.AgentBatchProtocolSpec
     Seihou.CLI.AgentCompletionSpec
     Seihou.CLI.AgentConfigShowSpec
     Seihou.CLI.AgentConfigSpec
@@ -317,6 +318,7 @@ test-suite seihou-cli-test
     Seihou.CLI.UpgradeFixture
     Seihou.CLI.UpgradeRunnablesE2ESpec
     Seihou.CLI.UpgradeSpec
+    Seihou.CLI.ValidateBlueprintE2ESpec
     Seihou.CLI.ValidateRecipeE2ESpec
     Seihou.FzfSpec
 

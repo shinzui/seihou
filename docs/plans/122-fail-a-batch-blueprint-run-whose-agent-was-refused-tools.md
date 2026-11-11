@@ -10,6 +10,12 @@ provenance:
     model: "claude-opus-5-5"
     harness: "claude-code"
     at: 2026-11-11T13:52:47Z
+  revisions:
+    - model: "claude-opus-5-5"
+      harness: "claude-code"
+      at: 2026-11-11T14:48:01Z
+      mode: "implement"
+      note: "Milestones 1-4 implemented"
 ---
 
 # Fail a batch blueprint run whose agent was refused tools
@@ -51,20 +57,54 @@ refusals prints the agent's answer and exits 0 as it does now. In addition,
 
 ## Progress
 
-- [ ] Milestone 1: The real Claude Code CLI's reporting of refusals is recorded in Surprises &
+- [x] Milestone 1: The real Claude Code CLI's reporting of refusals is recorded in Surprises &
   Discoveries, covering an allow-list refusal, shell redirection and a write inside `.git/`.
-- [ ] Milestone 2: A batch `seihou agent run` whose fake `claude` reports a denial exits
+  (2026-11-11: Claude Code 2.1.322 reports all three in `permission_denials`.)
+- [x] Milestone 2: A batch `seihou agent run` whose fake `claude` reports a denial exits
   non-zero, prints the refused command and records no applied blueprint. Existing batch and
-  trace end-to-end tests still pass.
-- [ ] Milestone 3: `seihou validate-blueprint` warns on a blueprint without `allowedTools`
-  and exits 0, covered by a new end-to-end spec.
+  trace end-to-end tests still pass. (2026-11-11: "fails a batch run whose agent was refused
+  a tool" passes and fails with `ExitSuccess` when `AgentCompletion.hs` is reverted. Twelve
+  `AgentBatchProtocolSpec` cases pass. The full suite passes, 905 tests before Milestone 3.)
+- [x] Milestone 3: `seihou validate-blueprint` warns on a blueprint without `allowedTools`
+  and exits 0, covered by a new end-to-end spec. (2026-11-11: three `ValidateBlueprint` e2e
+  cases and three `undeclaredAllowedToolsWarning` unit cases pass. `nix flake check`
+  passes.)
 - [ ] Milestone 4: Help, user documentation and ADR 0025 describe the behavior. IR-18 is
   marked completed with a resolution, and its bundle log is updated.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- Claude Code 2.1.322 reports allow-list refusals and both guard refusals in
+  `permission_denials`, so the second Decision Log entry holds as written. The probe ran the
+  three Milestone 1 commands in a scratch git repository on 2026-11-11. Each exited 0 with
+  `"subtype":"success","is_error":false`, and nothing was written to disk. The trimmed denials:
+
+  ```text
+  run 1 (--allowedTools Read, "nix --version"):
+    [{"tool_name":"Bash","tool_input":{"command":"nix --version",…}}, …]
+  run 2 (--allowedTools "Bash(echo *)", "echo hi > out.txt"):
+    [{"tool_name":"Bash","tool_input":{"command":"echo hi > out.txt",…}}]
+  run 3 (--allowedTools Write, write .git/seihou-probe):
+    [{"tool_name":"Write","tool_input":{"file_path":"…/probe/.git/seihou-probe","content":"probe"}}]
+  ```
+
+- Version 2.1.322 prints `--output-format json` as an array of events (`system`,
+  `assistant`, `user`, `rate_limit_event`, …). Only the final `result` event carries
+  `permission_denials`. Some events have `"subtype": null`.
+
+- A `Write` or `Edit` denial has no `tool_input.command`. Its target is
+  `tool_input.file_path`. Rendering the tool name alone would print a bare `Write` for the
+  `.git/` case, which does not say what was refused. The renderer therefore falls back to
+  `file_path` (see the Decision Log).
+
+- A batch run inherits the user's Claude Code hooks and global instructions. In run 1, the
+  developer's Rex SessionStart hook told the agent to run `rex session rename …`. Claude
+  refused that twice, and the refusals sit next to `nix --version` in `permission_denials`.
+  Under the fail-on-any-denial rule, a batch run in such an environment fails even when the
+  blueprint declares everything it needs. The error names each refused command, so the user
+  can see where it came from, either a hook or the blueprint. The Decision Log keeps the rule,
+  and ADR 0025 and the user docs state this consequence.
 
 
 ## Decision Log
@@ -130,6 +170,22 @@ refusals prints the agent's answer and exits 0 as it does now. In addition,
   `--lint` is accepted by `validate-blueprint` and currently does nothing, so tying the
   warning to it would hide the warning by default. Both spellings give a batch run only the
   setup tools.
+  Date: 2026-11-11
+
+- Decision: Render a denial as `<tool_name> (<command>)`, or else as
+  `<tool_name> (<file_path>)`, or else as the tool name alone.
+  Rationale: The Milestone 1 probe showed a refused `Write` carries `file_path` and no
+  `command`. `Write (/repo/.git/seihou-probe)` names the refused work in the user's own terms,
+  as ADR 0015 asks, and a bare `Write` does not. The migration message shares the renderer
+  and gains the same detail.
+  Date: 2026-11-11
+
+- Decision: Keep failing on every denial, including those caused by the user's own hooks or
+  global instructions.
+  Rationale: The probe showed ambient hooks can add refused calls. Seihou cannot tell those
+  apart from the blueprint's own work, and an exemption list would be guesswork. The error
+  names each command, which is enough to find the cause. A hook that needs a command in
+  unattended runs can be granted it in the user's Claude Code settings.
   Date: 2026-11-11
 
 
@@ -346,11 +402,17 @@ Discoveries.
 Milestones 2 and 3, building and testing:
 
 ```bash
-cabal build seihou-cli:exe:seihou
-cabal test seihou-cli-test --test-options="-p '/refused/'"
-cabal test seihou-cli-test --test-options="-p '/Allowed tools/'"
-cabal test seihou-cli-test
+cabal build seihou-cli:exe:seihou seihou-cli:test:seihou-cli-test
+cd seihou-cli
+$(cabal list-bin seihou-cli-test) -p '/refused/ || /AgentMigrationProtocol/'
+$(cabal list-bin seihou-cli-test) -p '/ValidateBlueprint/ || /undeclaredAllowedToolsWarning/'
+$(cabal list-bin seihou-cli-test)
 ```
+
+Run the test binary from `seihou-cli/`, as `cabal test` does. The end-to-end specs find the
+schema submodule at `../schema`, and from the repository root about 90 of them fail with
+`git -C …/seihou-project/schema … (exit 128)`. A `-p` pattern containing spaces or `||` does
+not survive `cabal test --test-options` quoting, so the commands call the binary directly.
 
 The pre-commit hook runs the module-placement, record-convention and treefmt checks. To run
 them by hand:

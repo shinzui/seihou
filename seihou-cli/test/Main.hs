@@ -1,5 +1,6 @@
 module Main (main) where
 
+import Seihou.CLI.AgentBatchProtocolSpec qualified as AgentBatchProtocolSpec
 import Seihou.CLI.AgentCompletionSpec qualified as AgentCompletionSpec
 import Seihou.CLI.AgentConfigShowSpec qualified as AgentConfigShowSpec
 import Seihou.CLI.AgentConfigSpec qualified as AgentConfigSpec
@@ -58,6 +59,7 @@ import Seihou.CLI.UpdateSpec qualified as UpdateSpec
 import Seihou.CLI.UpgradeDiagnosisSpec qualified as UpgradeDiagnosisSpec
 import Seihou.CLI.UpgradeRunnablesE2ESpec qualified as UpgradeRunnablesE2ESpec
 import Seihou.CLI.UpgradeSpec qualified as UpgradeSpec
+import Seihou.CLI.ValidateBlueprintE2ESpec qualified as ValidateBlueprintE2E
 import Seihou.CLI.ValidateRecipeE2ESpec qualified as ValidateRecipeE2E
 import Seihou.FzfSpec qualified as FzfSpec
 import Test.Tasty
@@ -71,6 +73,8 @@ main = do
         AgentMigrateE2ESpec.tests,
         AgentGuardE2ESpec.tests,
         AgentCompletionSpec.tests,
+        AgentBatchProtocolSpec.tests,
+        ValidateBlueprintE2E.tests,
         AgentConfigSpec.tests,
         AgentConfigShowSpec.tests,
         AgentModelsSpec.tests,

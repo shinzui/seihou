@@ -7,6 +7,7 @@ import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.AgentConfig (agentLaunchDeclaration, validateAgentLaunchDeclaration)
+import Seihou.CLI.AgentLaunch (undeclaredAllowedToolsWarning)
 import Seihou.CLI.Commands (ValidateBlueprintOpts (..))
 import Seihou.CLI.Shared (logIO)
 import Seihou.CLI.Style (bold, cyan, dim, green, red, useColor, yellow)
@@ -87,9 +88,9 @@ handleValidateBlueprint vopts = do
 
 -- | Build a structured validation report for a decoded blueprint by
 -- running each of EP-29's pure and IO check functions and labelling the
--- result. Lint warnings are not yet implemented — the @--lint@ flag is
--- accepted for parity with @validate-module@ but currently has no
--- effect; future work can extend this list.
+-- result. A 'DiagWarning' check prints on every run and never changes the
+-- exit code. The @--lint@ flag is accepted for parity with
+-- @validate-module@ but currently has no effect.
 buildBlueprintReport :: FilePath -> Blueprint -> IO BlueprintReport
 buildBlueprintReport baseDir b = do
   fileErrors <- checkBlueprintFiles baseDir b
@@ -104,6 +105,10 @@ buildBlueprintReport baseDir b = do
           DiagCheck "Reference file existence" DiagError fileErrors,
           DiagCheck "Tags" DiagError (checkBlueprintTags b),
           DiagCheck "Allowed tools" DiagError (checkBlueprintAllowedTools b),
+          -- A warning, not an error: an interactive run can still approve
+          -- tools as they are asked for. It lives here rather than in the
+          -- core validators, which install also runs.
+          DiagCheck "Allowed tools declared" DiagWarning (undeclaredAllowedToolsWarning (b ^. #allowedTools)),
           -- Two layers: the core rule rejects blanks, and the CLI parses the
           -- declared provider and effort against the vocabularies it owns.
           DiagCheck
