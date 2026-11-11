@@ -18,25 +18,44 @@ seihou list [OPTIONS]
 | `--recipes` | Only show recipes |
 | `--blueprints` | Only show blueprints |
 | `--prompts` | Only show prompts |
+| `--full` | Show complete descriptions, word-wrapped, instead of one truncated line |
 
 ## Description
 
-Scans all module search paths and lists every available module, recipe, blueprint, and prompt with:
+Scans all module search paths and lists every available module, recipe,
+blueprint, and prompt. Entries are grouped under one heading per kind
+(`Modules`, `Recipes`, `Blueprints`, `Prompts`), each with a count, and
+sorted by name within it. A kind with nothing to show has no section.
 
-- Name
-- Description
-- Source location (project, user, or installed)
+Each entry takes two lines: its name and source location (`project`, `user`,
+or `installed`) on the first, and its description indented on the second.
+Installed items show their origin repository and version when that
+information is recorded in `.seihou-origin.json`:
 
-Recipes, blueprints, and prompts are shown with `[recipe]`, `[blueprint]`, and
-`[prompt]` suffixes on their source labels to distinguish them from modules.
+```text
+Recipes (2)
 
-Installed items show their origin repository, version, and kind when that
-information is recorded in `.seihou-origin.json`, e.g.
-`(installed: seihou-haskell v1.2.0 [recipe])`,
-`(installed: seihou-services v0.1.0 [blueprint])`, or
-`(installed: team-prompts v0.1.0 [prompt])`.
+  haskell-library   installed: my-templates v1.0.0
+    Haskell library with Nix + Cabal
+  service-starter   installed: my-templates v0.3.0
+    Bootstrap a service repository with CI, container images, and a deploy…
 
-Items that fail to load are shown with an error indicator.
+Blueprints (1)
+
+  api-service       installed: my-templates v0.1.0
+    Agent-guided API service starter
+
+3 items found (3 sources searched)
+```
+
+By default each description is collapsed to one line and cut at 72
+characters with a trailing `…`, so no line is wider than 76 columns and the
+list stays readable in an 80-column terminal however long a description is.
+Pass `--full` to see every description in full, word-wrapped at the same
+width under the same indentation, with a blank line between entries.
+
+Items that fail to load are shown with an error indicator in place of their
+description.
 
 ### Filters
 
@@ -45,10 +64,11 @@ Items that fail to load are shown with an error indicator.
 kind, and `tags` from `seihou-registry.dhall`). Filters combine with AND:
 supplying both `--repo` and `--tag` returns only items matching both.
 Project and user-scope items have no origin metadata and are therefore
-excluded by any active filter.
+excluded by an active `--repo` or `--tag` filter. Kind flags only change
+which sections appear.
 
-When a filter is active, the output header and summary include a
-`[filtered: repo=…, tag=…]` suffix so it is clear the list is a subset.
+When a filter is active, the summary line includes a
+`[filtered: repo=…, tag=…, kind=…]` suffix so it is clear the list is a subset.
 
 ## Examples
 
@@ -67,4 +87,7 @@ seihou list --repo seihou-templates --tag nix
 
 # Only prompts
 seihou list --prompts
+
+# Read every blueprint's whole description
+seihou list --full --blueprints
 ```

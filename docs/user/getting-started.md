@@ -425,18 +425,33 @@ Seihou searches three locations in order:
 2. **User modules**: `~/.config/seihou/modules/`
 3. **Installed modules**: `~/.config/seihou/installed/`
 
-Output shows each item with its name, description, and source. Recipes, blueprints, and prompts are distinguished with `[recipe]`, `[blueprint]`, and `[prompt]` tags:
+Output is grouped under one heading per kind and sorted by name. Each item shows its name and source on one line and its description, cut to one line, indented below:
 
-```
-Available modules, recipes, blueprints, and prompts:
+```text
+Modules (1)
 
-  my-haskell        A Haskell project template   (user)
-  haskell-library   Haskell with Nix + Cabal     (installed: my-templates v1.0.0 [recipe])
-  api-service       Agent-guided API service     (installed: my-templates v0.1.0 [blueprint])
-  review-changes    Review current git changes   (installed: team-prompts v0.1.0 [prompt])
+  my-haskell       user
+    A Haskell project template
+
+Recipes (1)
+
+  haskell-library  installed: my-templates v1.0.0
+    Haskell with Nix + Cabal
+
+Blueprints (1)
+
+  api-service      installed: my-templates v0.1.0
+    Agent-guided API service
+
+Prompts (1)
+
+  review-changes   installed: team-prompts v0.1.0
+    Review current git changes
 
 4 items found (3 sources searched)
 ```
+
+Long descriptions end in `…` so every line fits an 80-column terminal; add `--full` to read them in full.
 
 Restrict the output by kind with `--modules`, `--recipes`, `--blueprints`, or
 `--prompts` (combine them to show several kinds), and filter by source with
@@ -476,7 +491,7 @@ seihou new-recipe haskell-library --module haskell-base --module nix-flake
 seihou run haskell-library
 ```
 
-Recipes are first-class: they appear in `seihou list` (with a `[recipe]` tag), are installable from git repos, and are selectable from the fzf picker. See the [Module Authoring Reference](module-authoring.md#recipes) for the full recipe format.
+Recipes are first-class: they appear in `seihou list` (under the `Recipes` heading), are installable from git repos, and are selectable from the fzf picker. See the [Module Authoring Reference](module-authoring.md#recipes) for the full recipe format.
 
 ### `seihou run` with composition
 

@@ -266,14 +266,25 @@ file alongside each installed directory. This records the source URL,
 repository name, kind, version, and tags. The `seihou list` command uses this
 to show where installed items came from:
 
-```
-Available modules, recipes, blueprints, and prompts:
+```text
+Modules (3)
 
-  haskell-base   Base Haskell project with cabal   (installed: my-templates)
-  nix-flake      Nix flake with devShell           (installed: my-templates)
-  api-service    Agent-guided API service starter  (installed: my-templates [blueprint])
-  review-changes Review current git changes        (installed: my-templates [prompt])
-  my-local-mod   A local module                    (user)
+  haskell-base    installed: my-templates
+    Base Haskell project with cabal
+  my-local-mod    user
+    A local module
+  nix-flake       installed: my-templates
+    Nix flake with devShell
+
+Blueprints (1)
+
+  api-service     installed: my-templates
+    Agent-guided API service starter
+
+Prompts (1)
+
+  review-changes  installed: my-templates
+    Review current git changes
 
 5 items found (3 sources searched)
 ```

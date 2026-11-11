@@ -67,13 +67,33 @@ and observing that no line wraps and every source sits on the same line as its n
   passes; `seihou list --full` on the real artifacts prints no line over 76 columns except
   first lines whose name exceeds the 32-column cap (permitted). The `listInfo` help footer was
   updated here too, ahead of milestone 4, since it lives beside the new flag.
-- [ ] Milestone 4 — user documentation, command help, CHANGELOG, and ADR 0013 describe the new
+- [x] Milestone 4 — user documentation, command help, CHANGELOG, and ADR 0013 describe the new
   output; a manual run against the real installed artifacts confirms the result.
+  Done 2026-11-11: `docs/cli/list.md`, `docs/user/getting-started.md`, and the origin-tracking
+  sample in `docs/user/registries-and-multi-module-repos.md` show the new layout; CHANGELOG
+  `[Unreleased]` has a `### Changed` entry; ADR 0013 points at `TextLayout.hs` and carries a
+  dated `seihou list` amendment. Real run against the 47 installed artifacts: `seihou list`
+  prints four counted sections, no line over 76 columns; `seihou list --recipes --repo
+  seihou-modules` shows only `Recipes` and ends `[filtered: repo=seihou-modules, kind=recipe]`;
+  `seihou list --full --blueprints` prints whole wrapped descriptions. `cabal test all
+  --enable-tests` and `nix flake check` pass.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- The permitted over-wide first line occurs in the real data: blueprint
+  `fix-nix-haskell-flake-customizations` (36 characters) exceeds the 32-column name cap, so its
+  source label starts at column 40 and that one line runs past 76. Description lines never do.
+  Evidence: `seihou list --full --blueprints` on 2026-11-11.
+- `seihou install`'s interactive numbered picker (`seihou-cli/src-exe/Seihou/CLI/Install.hs`,
+  `promptModuleSelection`) still prints the old `Available modules, recipes, blueprints, and
+  prompts:` header. It is a different surface from `seihou list` and was left unchanged, as were
+  the `[recipe]`-style kind labels of `seihou browse`, which the Decision Log already places out
+  of scope.
+- An entry whose description is present but blank would have rendered an indent-only line
+  (trailing spaces) in bounded mode and no description line at all in `--full` mode. The
+  renderer treats a blank description as `(no description)`, the label already used for a
+  missing one, so every entry keeps its two lines and no line has trailing spaces.
 
 
 ## Decision Log
@@ -124,7 +144,24 @@ and observing that no line wraps and every source sits on the same line as its n
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Completed 2026-11-11 in four commits, one per milestone. `seihou list` now renders a grouped,
+name-sorted, two-line-per-entry view whose description lines are at most 76 columns regardless
+of description length, and `seihou list --full` shows every description whole. The truncation
+rule lives in one shared module, `seihou-cli/src/Seihou/CLI/TextLayout.hs`, used by both
+`seihou status` and `seihou list`, and ADR 0013 records the extension. Status output did not
+change (`StatusSpec` untouched and passing).
+
+What went as planned: the golden outputs in Validation and Acceptance were correct as written;
+both matched the implementation on the first run, which made them reliable acceptance tests.
+What differed: the `listInfo` help footer was updated in milestone 3 rather than 4, beside the
+new flag, and the bounded/full renderers share one `formatEntry` keyed by `DescriptionMode`
+rather than two functions.
+
+Friction: none recorded. No surface used during the work cost more than a few minutes.
+
+Remaining gaps, deliberately out of scope: the `seihou install` numbered picker and `seihou
+browse` still use their own one-line layouts with kind labels; a name longer than 32 characters
+still produces one over-wide first line.
 
 
 ## Context and Orientation

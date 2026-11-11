@@ -39,7 +39,7 @@ third such field.
 **`seihou status` renders a view, not the record.** Any unbounded free-text value
 it shows is collapsed to a single line and cut to a fixed width, through one
 shared helper — `truncateForSummary` in
-`seihou-cli/src/Seihou/CLI/StatusRender.hs`. A cut is marked with a trailing
+`seihou-cli/src/Seihou/CLI/TextLayout.hs`. A cut is marked with a trailing
 ellipsis so a reader can see that something was elided. The authoritative copy of
 every such value stays whole in `.seihou/manifest.json`, which
 [ADR 0004](0004-the-manifest-is-the-only-record-of-applied-state.md) already
@@ -95,9 +95,25 @@ intended — the two fields are meant to look alike. And the helper's contract i
 "at most `width` characters", not "exactly `width` when cut", because of that
 strip.
 
-This decision covers the `status` summary. It says nothing about commands whose
-output *is* the value — a future `seihou manifest show` or similar would be
-rendering the record, not a view of it, and would not truncate.
+This decision first covered only the `status` summary. It says nothing about
+commands whose output *is* the value — a future `seihou manifest show` or similar
+would be rendering the record, not a view of it, and would not truncate.
+
+**Amendment, 2026-11-11 — `seihou list`.** The same rule now governs `seihou list`,
+the other scannable summary, whose artifact descriptions are unbounded free text
+written by module authors. The list renders each description through
+`truncateForSummary` with `descriptionWidth = 72` on an indented line of its own,
+so no line depends on the longest description and the view fits an 80-column
+terminal. Its opt-in flag is `seihou list --full`, which prints each description
+whole, delimited by the same four-space indentation, and word-wrapped at that
+fixed 72-column width by `wrapParagraphs`, which lives beside `truncateForSummary`
+in `seihou-cli/src/Seihou/CLI/TextLayout.hs`. Fixed-width wrapping in an opt-in
+full form does not contradict the rejection of wrapping above: what was rejected
+was wrapping the *default* view, which keeps its length proportional to the data,
+and wrapping to the *terminal's* width, which makes output untestable. A full form
+that the reader asked for is meant to be as long as the value, and a fixed width
+renders identically in every shell. See
+`docs/plans/119-make-seihou-list-readable-on-narrow-terminals.md`.
 
 ## References
 
@@ -117,3 +133,7 @@ rendering the record, not a view of it, and would not truncate.
   IR-7, the request this answers.
 - `docs/cli/status.md` — the user-facing description of the bounded prompt line
   and `--full-prompt`.
+- `docs/plans/119-make-seihou-list-readable-on-narrow-terminals.md` — the
+  extension of this decision to `seihou list` and `--full`.
+- `docs/cli/list.md` — the user-facing description of the bounded list and
+  `--full`.

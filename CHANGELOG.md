@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- `seihou list` now fits an 80-column terminal however long a description is. Entries are grouped under one heading per kind (`Modules (N)`, `Recipes (N)`, …), sorted by name, and shown on two lines: name and source, then the description collapsed to one line and cut at 72 characters with `…`. Source labels no longer carry `[recipe]`, `[blueprint]`, or `[prompt]` suffixes; the section heading names the kind. The new `seihou list --full` prints every description in full, word-wrapped at the same width.
+
 ## [0.15.0.0] - 2026-11-01
 
 ### Added
