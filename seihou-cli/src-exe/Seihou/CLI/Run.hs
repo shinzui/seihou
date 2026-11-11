@@ -31,6 +31,7 @@ import Seihou.CLI.CommandExecution
 import Seihou.CLI.Commands (RunOpts (..))
 import Seihou.CLI.CommitMessage (generateCommitMessage)
 import Seihou.CLI.Git (gitAdd, gitCheckIgnore, gitCommit, gitDiffCached, isGitRepo)
+import Seihou.CLI.Judgement.Adopt (applyAdoption, renderAdoptionPlan)
 import Seihou.CLI.Judgement.CommitGate (CommitBlocked (..), gatedCommit, renderBlocked)
 import Seihou.CLI.ManifestCapabilityUpgrade (prepareRecipeInheritance, prepareRecordedSeedOwnership)
 import Seihou.CLI.ManifestGuard
@@ -50,7 +51,7 @@ import Seihou.CLI.PendingMigrations
   ( detectPendingMigrations,
     formatRefusalMessage,
   )
-import Seihou.CLI.RunJudgement (bundledJudgementSource, runJudgementAdoption)
+import Seihou.CLI.RunJudgement (bundledJudgementSource, planReferencedJudgements, resolveReferencedJudgements, runJudgementAdoption)
 import Seihou.CLI.SavePrompted (collectRecipePromptedValues, offerSavePrompted)
 import Seihou.CLI.Shared (deriveNamespace, formatBlueprintRefusal, formatVarError, logIO, resolveAppliedArtifactDir, toVarNameMap, unwrapConfig)
 import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, useColor, yellow)
@@ -446,16 +447,31 @@ handleRun runOpts = do
             [Map.map (^. #value) vs | vs <- Map.elems resolved]
       preview = buildPreview (filter (\case SeedFileOp {} -> False; _ -> True) opsFiltered) (Just diff) ownerMap
 
+  -- Judgements referenced by the composition: resolved, previewed and
+  -- permitted before anything is written, adopted after generation.
+  referencedJudgements <-
+    let moduleSources = [(dir </> "module.dhall", Map.map (^. #value) (resolved Map.! inst)) | (inst, _, dir) <- modulesInOrder]
+        recipeSources = case recipeInfo of
+          Just _ -> let (_, recipeDir, _) = targetInfo in [(recipeDir </> "recipe.dhall", Map.unions [Map.map (^. #value) vs | vs <- Map.elems resolved])]
+          Nothing -> []
+     in resolveReferencedJudgements projectRoot searchPaths (recipeSources <> moduleSources) >>= either (exitError level) pure
+  judgementPlans <-
+    if null referencedJudgements
+      then pure []
+      else planReferencedJudgements runOpts referencedJudgements >>= either (exitError level) pure
+
   -- 6. Handle --dry-run: show plan view and exit
   if runOpts ^. #dryRun
-    then
+    then do
       TIO.putStr (formatPlanViewColor colorEnabled modNames allVarValues preview diff)
+      mapM_ (TIO.putStr . renderAdoptionPlan) judgementPlans
     else
       if runOpts ^. #diff
         then TIO.putStr (formatDiff colorEnabled diff ownerMap)
         else do
           -- Show plan view
           TIO.putStr (formatPlanViewColor colorEnabled modNames allVarValues preview diff)
+          mapM_ (TIO.putStr . renderAdoptionPlan) judgementPlans
 
           -- Prompt for confirmation (skip if --force or non-interactive)
           interactive <- hIsTerminalDevice stdin
@@ -719,6 +735,12 @@ handleRun runOpts = do
                       logIO level $ logError $ "Commands succeeded but their receipts could not be recorded: " <> T.pack (displayException err)
                       exitFailure
                     Right () -> pure ()
+
+              -- Adopt referenced judgements now that generation succeeded.
+              forM_ judgementPlans $ \plan ->
+                applyAdoption plan >>= \case
+                  Left err -> exitError level ("The files were generated, but judgement '" <> plan ^. #active . #definition . #name <> "' could not be activated: " <> err)
+                  Right () -> TIO.putStrLn ("Judgement '" <> plan ^. #active . #definition . #name <> "' is active.")
 
               -- Commit generated files if --commit or --commit-message
               when (runOpts ^. #commit || isJust (runOpts ^. #commitMessage)) $ do

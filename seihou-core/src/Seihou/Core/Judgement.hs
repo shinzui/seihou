@@ -22,6 +22,7 @@
 module Seihou.Core.Judgement
   ( -- * Definitions
     JudgementDefinition (..),
+    JudgementRef (..),
     JudgementCheck (..),
     Answer (..),
     Enforcement (..),
@@ -232,6 +233,16 @@ data JudgementDefinition = JudgementDefinition
     limits :: !CoverageLimits,
     deterministicChecks :: ![DeterministicCheck],
     checks :: !(NonEmpty JudgementCheck)
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | A module's or recipe's reference to a judgement it activates. The
+-- condition is the raw @when@ text, parsed and evaluated by the caller
+-- against the referencing module's variables.
+data JudgementRef = JudgementRef
+  { name :: !Text,
+    source :: !(Maybe Text),
+    when :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 

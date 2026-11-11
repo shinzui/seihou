@@ -13,7 +13,7 @@ import Data.Text.Encoding qualified as TE
 import Data.Time (UTCTime (..), fromGregorian)
 import Seihou.Core.Judgement
 import Seihou.Core.Types (ActiveJudgement (..), JudgementSource (..), Manifest, ManifestSchemaVersion (..))
-import Seihou.Dhall.Eval (evalJudgementFromFile)
+import Seihou.Dhall.Eval (evalJudgementFromFile, evalJudgementRefsFromFile)
 import Seihou.Manifest.Judgement (definitionDigest)
 import Seihou.Manifest.Types (emptyManifest, manifestFromJSON, manifestToJSON)
 import Seihou.Prelude
@@ -100,6 +100,21 @@ tests = testSpec "judgement policy" $ do
     it "encodes nothing provider-specific and no absolute paths" $ do
       let bytes = LBS.toStrict (manifestToJSON manifest)
       T.isInfixOf "/" (TE.decodeUtf8 bytes) `shouldBe` False
+  describe "judgement references" $ do
+    let refsOf file body = withSystemTempDirectory "seihou-judgement-refs" $ \dir -> do
+          cwd <- getCurrentDirectory
+          writeFile (dir </> file) ("let S = " <> cwd <> "/../schema/package.dhall in " <> body)
+          evalJudgementRefsFromFile (dir </> file)
+    it "decodes a module's references with their source and condition" $
+      refsOf "module.dhall" "S.Module::{ name = \"m\", judgements = [ S.JudgementRef::{ name = \"security-review\", when = Some \"Eq ci true\" }, S.JudgementRef::{ name = \"docs-review\", source = Some \"https://example.com/r.git\" } ] }"
+        `shouldReturn` Right [JudgementRef "security-review" Nothing (Just "Eq ci true"), JudgementRef "docs-review" (Just "https://example.com/r.git") Nothing]
+    it "reads none from a module that omits the field or predates it" $ do
+      refsOf "module.dhall" "S.Module::{ name = \"m\" }" `shouldReturn` Right []
+      refsOf "module.dhall" "{ name = \"legacy\" }" `shouldReturn` Right []
+    it "decodes a recipe's references" $
+      refsOf "recipe.dhall" "S.Recipe::{ name = \"r\", modules = [ S.Dependency::{ module = \"m\" } ], judgements = [ S.JudgementRef::{ name = \"security-review\" } ] }"
+        `shouldReturn` Right [JudgementRef "security-review" Nothing Nothing]
+
   describe "decoding judgement.dhall" $ do
     let decode body = withSystemTempDirectory "seihou-judgement" $ \dir -> do
           cwd <- getCurrentDirectory

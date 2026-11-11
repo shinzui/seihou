@@ -9,6 +9,7 @@ module Seihou.Dhall.Eval
     evalRegistryFromFile,
     evalJudgementFromFile,
     evalJudgementFromText,
+    evalJudgementRefsFromFile,
     judgementDecoder,
     moduleDecoder,
     recipeDecoder,
@@ -1038,3 +1039,31 @@ judgementDecoder =
         )
     mkCheck n q c y no cats enf sev bAt pAt gbAt gpAt useGate =
       J.JudgementCheck n q c y no cats enf sev (J.Thresholds bAt pAt) (J.Thresholds gbAt gpAt) useGate
+
+-- | The @judgements@ references of a @module.dhall@ or @recipe.dhall@. The
+-- field is decoded on its own, so artifacts written against a schema pin
+-- without it decode with none, and the module and recipe records stay as
+-- they are.
+evalJudgementRefsFromFile :: FilePath -> IO (Either ModuleLoadError [J.JudgementRef])
+evalJudgementRefsFromFile path = do
+  result <- try $ do
+    text <- TIO.readFile path
+    let settings =
+          set rootDirectory (takeDirectory path) $
+            set sourceName path defaultInputSettings
+    expr <- inputExprWithSettings settings text
+    case extract decoder expr of
+      Success refs -> evaluate refs
+      Failure e -> throwIO e
+  case result of
+    Left (e :: SomeException) -> pure (Left (DhallEvalError (guessModuleName path) (T.pack (show e))))
+    Right refs -> pure (Right refs)
+  where
+    decoder = withDefaults [("judgements", Dhall.ListLit (Just (Dhall.Record mempty)) mempty)] (record (field "judgements" (list refDecoder)))
+    refDecoder =
+      record
+        ( J.JudgementRef
+            <$> field "name" strictText
+            <*> field "source" (maybe strictText)
+            <*> field "when" (maybe strictText)
+        )
