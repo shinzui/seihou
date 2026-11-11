@@ -24,6 +24,7 @@ import Seihou.CLI.ApplicationDisplay (appliedTargetName, parentVarsText)
 import Seihou.CLI.CheckoutSync (renderCheckoutStatus)
 import Seihou.CLI.ManifestGuard (ArtifactCheck (..), ArtifactVerdict (..), summarizeCheck)
 import Seihou.CLI.Style (dim, green, red, yellow)
+import Seihou.CLI.TextLayout (truncateForSummary)
 import Seihou.CLI.VersionCompare
   ( OutdatedEntry (..),
     OutdatedStatus (..),
@@ -457,27 +458,6 @@ renderPrompt PromptTruncated p =
   ["  Prompt: \"" <> truncateForSummary promptWidth p <> "\""]
 renderPrompt PromptFull p =
   "  Prompt:" : map ("    " <>) (T.lines p)
-
--- | Collapse every run of internal whitespace to a single space and cut the
--- result to @width@ characters, marking a cut with a trailing ellipsis.
---
--- @seihou status@ is a scannable summary, and the manifest is the record (see
--- docs/adr/0013-status-is-a-bounded-summary-the-manifest-is-the-record.md). Two
--- values the summary renders are unbounded free text kept in full in
--- @.seihou/manifest.json@ — a migration receipt's not-applicable reason and a
--- blueprint's stored user prompt — and this is the single place that decides how
--- much of such a value the summary shows, so the two cannot drift apart.
---
--- The result is never longer than @width@: a cut keeps at most @width - 1@
--- characters and spends the last on the ellipsis. A cut that lands mid-gap has
--- its trailing space stripped, so the output reads @\"... already…\"@ rather than
--- @\"... already …\"@.
-truncateForSummary :: Int -> Text -> Text
-truncateForSummary width text
-  | T.length oneLine <= width = oneLine
-  | otherwise = T.stripEnd (T.take (width - 1) oneLine) <> "…"
-  where
-    oneLine = T.unwords (T.words text)
 
 -- | How much of a blueprint migration's not-applicable reason the summary
 -- shows. The reason is a clause appended to an already-long receipt line.

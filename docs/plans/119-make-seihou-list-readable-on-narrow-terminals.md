@@ -10,6 +10,12 @@ provenance:
     model: "claude-opus-5-5"
     harness: "claude-code"
     at: 2026-11-11T13:34:41Z
+  revisions:
+    - model: "claude-opus-5-5"
+      harness: "claude-code"
+      at: 2026-11-11T13:47:17Z
+      mode: "implement"
+      note: "Implemented milestones 1-4"
 ---
 
 # Make seihou list readable on narrow terminals
@@ -44,9 +50,11 @@ and observing that no line wraps and every source sits on the same line as its n
 
 ## Progress
 
-- [ ] Milestone 1 — one shared text-layout module: `truncateForSummary` moves out of
+- [x] Milestone 1 — one shared text-layout module: `truncateForSummary` moves out of
   `seihou-cli/src/Seihou/CLI/StatusRender.hs` into a new `Seihou.CLI.TextLayout`, which also
   gains `wrapParagraphs`; status output is byte-identical and the new module's unit tests pass.
+  Done 2026-11-11: `TextLayoutSpec` (10 tests) passes; `cabal test all --enable-tests` passes
+  with `StatusSpec` untouched; fourmolu, placement, and record-convention checks clean.
 - [ ] Milestone 2 — the bounded list view: `seihou list` renders kind sections, name-sorted
   two-line entries, no `[kind]` source suffix, and no rendered line wider than 76 columns;
   `Seihou.CLI.List` tests assert this exact rendering.

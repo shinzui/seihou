@@ -48,6 +48,7 @@ import Seihou.CLI.SeedRunE2ESpec qualified as SeedRunE2E
 import Seihou.CLI.SeedUpdateE2ESpec qualified as SeedUpdateE2E
 import Seihou.CLI.SharedManifestE2ESpec qualified as SharedManifestE2ESpec
 import Seihou.CLI.StatusSpec qualified as StatusSpec
+import Seihou.CLI.TextLayoutSpec qualified as TextLayoutSpec
 import Seihou.CLI.UpdateE2ESpec qualified as UpdateE2ESpec
 import Seihou.CLI.UpdateInteractionSpec qualified as UpdateInteractionSpec
 import Seihou.CLI.UpdateRenderSpec qualified as UpdateRenderSpec
@@ -105,6 +106,7 @@ main = do
         CheckoutSyncE2ESpec.tests,
         SharedManifestE2ESpec.tests,
         StatusSpec.tests,
+        TextLayoutSpec.tests,
         UpgradeSpec.tests,
         UpdateSpec.tests,
         UpdateInteractionSpec.tests,

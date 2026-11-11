@@ -109,6 +109,7 @@ library seihou-cli-internal
     Seihou.CLI.Shared
     Seihou.CLI.StatusRender
     Seihou.CLI.Style
+    Seihou.CLI.TextLayout
     Seihou.CLI.Update
     Seihou.CLI.Update.Interaction
     Seihou.CLI.Update.Migrations
@@ -301,6 +302,7 @@ test-suite seihou-cli-test
     Seihou.CLI.SeihouBinary
     Seihou.CLI.SharedManifestE2ESpec
     Seihou.CLI.StatusSpec
+    Seihou.CLI.TextLayoutSpec
     Seihou.CLI.TwoDeveloperFixture
     Seihou.CLI.UpdateE2ESpec
     Seihou.CLI.UpdateFixture
