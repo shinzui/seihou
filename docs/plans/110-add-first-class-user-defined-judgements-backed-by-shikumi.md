@@ -26,6 +26,11 @@ provenance:
       at: 2026-11-11T16:17:53Z
       mode: "implement"
       note: "M1 started: Baikai 0.10 upgrade, core policy, Shikumi adapter, staged evidence, scanner, execution and reports"
+    - model: "claude-opus-5-5"
+      harness: "claude-code"
+      at: 2026-11-11T18:25:26Z
+      mode: "implement"
+      note: "M1 completed: schema, manifest 15, check, hooks, adoption, live consumer run"
 ---
 
 # Add first-class user-defined judgements backed by Shikumi
@@ -54,7 +59,7 @@ A project may also configure a fast gate. A gate is a judgment-only model, one t
 
 ## Progress
 
-- [ ] M1: Seihou builds on the Baikai 0.10 line that Shikumi 0.5.1.0 requires; a thin real-consumer path then applies a judgement, runs a typed Shikumi review whose checks are probability-backed decisions, and blocks an ordinary commit; the required adoption and hook steps are demonstrated before expanding variants.
+- [x] M1: Seihou builds on the Baikai 0.10 line that Shikumi 0.5.1.0 requires; a thin real-consumer path then applies a judgement, runs a typed Shikumi review whose checks are probability-backed decisions, and blocks an ordinary commit; the required adoption and hook steps are demonstrated before expanding variants. (2026-11-11; the live gate run was not exercised, see the M1 record below.)
 - [ ] M2: Authors can scaffold, validate, discover, install, compose, and evaluate custom judgement artifacts without rebuilding Seihou; the schema is available at a published immutable import.
 - [ ] M3: The manifest records portable active declarations and project policies, and run/update/remove/sync preserve ownership, migration, and fresh-checkout behavior.
 - [ ] M4: Staged and commit-range evidence, deterministic secret detection, the direct Shikumi adapter with per-check decisions, threshold bands and the optional judgment-only gate with escalation, coverage accounting, and redacted results satisfy the security contract.
@@ -62,7 +67,23 @@ A project may also configure a fast gate. A gate is a judgment-only model, one t
 - [ ] M6: Help, authoring documentation, evaluation examples, source-build acceptance, and package checks demonstrate both built-in and user-authored workflows.
 - [ ] M7: Released schema and Seihou artifacts, the packaged scanner dependency, and an installed executable pass the normal workflow in an existing consumer, an empty-cache clone, and a linked worktree.
 
-M1 handoff (2026-11-11, claude-opus-5-5): M1 is in progress, not complete. Done and committed: the Baikai 0.10 upgrade as its own change (`2998d83`; `cabal test all` passed and `nix build .#seihou-cli` built Baikai 0.10.1.0, Shikumi 0.5.1.0 and Seihou with its tests); the pure policy domain `Seihou.Core.Judgement` (`98a33bf`, 32 specs); the Shikumi adapter `Seihou.CLI.Judgement.Runtime` (`5eb2beb`, 6 offline specs through Shikumi's real decode path); staged evidence, the Gitleaks adapter and execution (`ea95ace`, 11 specs against temporary Git repositories and the packaged Gitleaks 8.30.1); and reports with exit codes (`8325111`). Still open for M1: the `Judgement.dhall` schema and bundled `security-review` definition, adoption through `seihou run security-review` (which needs the minimal manifest state from M3), the `seihou check` command, hook wiring, the live provider run that records first probabilities, the live gate run, and a non-security example check through the public path. The next step is the schema record in `mori://shinzui/seihou-schema` and its decoder in `seihou-core/src/Seihou/Dhall/Eval.hs`, then the manifest representation, then `check`.
+M1 record (2026-11-11, claude-opus-5-5). Commits: Baikai 0.10 upgrade `2998d83`; policy domain `98a33bf`; Shikumi adapter `5eb2beb`; staged evidence, Gitleaks and execution `ea95ace`; reports `8325111`; Judgement schema published as `mori://shinzui/seihou-schema` `50fa7bb` and decoded in `9a0395d`; manifest schema 15 `27f9dc9`; `seihou check`, hooks and adoption `460ea4c`. Source checks: core 1750, okf-extension 54 and cli 954 tests passed after `27f9dc9`'s content; the judgement specs passed again after the final hook change.
+
+The real consumer was a disposable `git clone --local` of Seihou at `23b9058`, with manifest schema 10 and the Nix-managed pre-commit framework hook installed by its own `nix develop` (`core.hooksPath=.git/hooks`). The executable was the source build from `cabal list-bin seihou`, copied onto the front of PATH, reporting `seihou v0.15.0.0`. Preparation, counted separately from the developer commands: Gitleaks 8.30.1 from the dev shell; route and consent through `SEIHOU_JUDGEMENT_PROVIDER=claude-cli`, `SEIHOU_JUDGEMENT_MODEL=claude-sonnet-5` and `SEIHOU_JUDGEMENT_DATA_POLICY=approved-remote` in an isolated `XDG_CONFIG_HOME`; an authenticated `claude` CLI. There were no prompts and no manual edits. Developer commands and results:
+
+```text
+seihou run security-review     # previewed; installed .git/hooks/pre-commit.legacy beside the
+                               # framework hook (left byte-identical); manifest 10 -> 15, adding
+                               # only judgements and null recipeChain/recipeInputs evidence
+git commit (the manifest)      # judgement passed (0.02 / 0.05), then Seihou's own hooks passed
+git commit (README change)     # judgement passed (0.00 / 0.02), then Seihou's own hooks passed
+git commit (ghp_ fixture)      # exit 1: "tmpfix/env.sh:1 critical github-pat (deterministic
+                               # secret-scan)", "no request was sent", token absent from output
+```
+
+In a scratch repository the bundled definition blocked a synthetic CRM export (`confidential-data` 0.97, four located findings, exit 10), and a project judgement `docs-review` was adopted from `.seihou/modules/docs-review/judgement.dhall` with `seihou run docs-review` and checked with `seihou check docs-review`. That judgement is not about security. Its enforced no-concern check reported 0.65 (needs review, with a located `missing-example` finding), and its advisory check reported a 0.90 block that did not decide the exit code (exit 11).
+
+Not exercised in M1: the live judgment-only gate, because `TYPESAFE_API_KEY` is unset and `baikai-typesafe` is not yet a dependency (gate thresholds, escalation and clearance are covered only by stubs), and a noninteractive first adoption in a project that has no route configured (it is covered by specs, which check the exact `seihou config set` lines). Next: M2 (artifact references from modules and recipes, `new-judgement`, `validate-judgement`, `judgement eval`, `judgement configure`), then M3 (application owners, removal, sync).
 
 The original plan authorized planning only; implementation began on 2026-11-11 at the user's request. The intention was created with `mina ci --json 'Add first-class user-defined judgements backed by Shikumi'`. Mina returned the frontmatter ID successfully and warned that its configured default parent is outside this project's Rei scope; changing that project association is separate from creating this plan.
 
@@ -90,6 +111,17 @@ Discovery (2026-11-11, implementation): the Baikai 0.8 to 0.10 upgrade was mecha
 Discovery (2026-11-11, implementation): Shikumi's offline test harness (`shikumi-testing`) is not published to Hackage. The adapter therefore exposes a `Runner` newtype, the same boundary production uses, and its tests interpret Shikumi's `LLM` effect directly with a stub that returns a fixed Baikai response. Without routing, Shikumi takes its prompt-fallback path and still decoded a reply mixing a `Noul` with a list of finding records.
 
 Discovery (2026-11-11, implementation): Gitleaks 8.30.1 (nixpkgs) supports `gitleaks dir` with `--config`, `--gitleaks-ignore-path`, `--ignore-gitleaks-allow`, `--redact` and `--report-path`. Its default `github-pat` rule detects a synthetic `ghp_` token, and reports its line, after 4,100 bytes of padding. A configuration that only sets `[extend] useDefault = true` keeps exactly the built-in rules.
+
+
+Discovery (2026-11-11, implementation): the plan's stated schema-submodule state was wrong. The checkout at `d3c78cd` was an ancestor of the recorded `e9f9143`, detached since 2026-10-28 with no local changes, not an advance belonging to other work. It was moved to `origin/master` before authoring the Judgement schema.
+
+Discovery (2026-11-11, implementation): `flake.nix` pins `seihou-schema-src` by GitHub revision, not by `git+file:./schema` as the `update-seihou-schema` skill says, so the revision must be edited by hand before `nix flake update seihou-schema-src`. Recorded as FRIC-14.
+
+Discovery (2026-11-11, implementation): Shikumi delivers attempt receipts only for requests that carry an evidence request. Without `Shikumi.LLM.Defaults.withEvidenceRuns`, the observer never ran and every report claimed no request was sent. The runner now attaches a best-effort evidence request, so reports name the observed model and request count.
+
+Discovery (2026-11-11, implementation): this repository sets `core.hooksPath` to `.git/hooks` (git-hooks.nix does), and its `pre-commit` hook is generated by the pre-commit framework. A rule refusing any `core.hooksPath` would have refused Seihou itself. The hook service refuses only a hook directory outside the repository's Git directory and worktree, and installs `pre-commit.legacy` beside a framework-generated hook, which the framework runs first and keeps when it regenerates its own hook.
+
+Discovery (2026-11-11, implementation): first live probabilities on `claude-cli` with `claude-sonnet-5` (Seihou's catalogue name), using the bundled `security-review` definition. A benign README change gave `credentials` 0.00 and `confidential-data` 0.02, and passed in 7 seconds. A synthetic CRM export with names, personal emails, phone numbers and "exported from prod CRM" notes gave `credentials` 0.03 and `confidential-data` 0.97, with four located `customer-record`/`personal-data` findings on lines 2 and 3, and blocked (exit 10) in 12 seconds. The gate could not be run live: `TYPESAFE_API_KEY` is not set and `baikai-typesafe` is not yet a dependency.
 
 
 ## Decision Log
@@ -133,6 +165,17 @@ Decision (2026-11-11, implementation): Staged evidence comes from one `git diff-
 Decision (2026-11-11, implementation): CLI review routes run in a private empty temporary directory. `claude` gets `--tools "" --strict-mcp-config --disable-slash-commands --setting-sources ""`, and `codex` gets `--sandbox read-only --skip-git-repo-check`. This is how the plan's rule that the reviewer has no tools or agent loop is applied to local CLI providers. API routes need no such flags. `baikai-typesafe` is not yet a dependency. The gate path is generic over a `Runner`, and registering the TypeSafe provider is left to the route configuration work.
 
 Decision (2026-11-11): Name the authoring commands `seihou new-judgement` and `seihou validate-judgement`, matching `new-module`, `new-recipe`, `validate-module` and the other existing artifact commands. `eval` and `configure` have no existing counterpart and stay under the `seihou judgement` group.
+
+
+Decision (2026-11-11, implementation): the Judgement schema uses flat `blockAt`/`passAt` and `gateBlockAt`/`gatePassAt` fields on each `Check`, matching the plan's example and the `configure` flag names, with provisional defaults of 0.7/0.3 and 0.9/0.05. Published as `mori://shinzui/seihou-schema` commit `50fa7bb`. Module and recipe judgement references are left to M2, so this schema commit touches no existing type.
+
+Decision (2026-11-11, implementation): the bundled `security-review` definition is a self-contained, already-normalized Dhall record with no schema import, at `seihou-cli/data/judgements/security-review/judgement.dhall`. `seihou run security-review` therefore evaluates it offline, through the same decoder as custom artifacts. A test decodes and validates it. Its origin is recorded as `BundledJudgement`, not as a weaker artifact identity; the definition version and digest identify what was adopted.
+
+Decision (2026-11-11, implementation): manifest schema 15 adds `judgements`: per active judgement, the source, the definition snapshot, its digest and the policy. The 14 to 15 step is lossless and accepts an empty list, following the existing checkout-commands step. A snapshot whose digest no longer matches its definition, or a policy that does not name exactly the definition's checks, fails to decode with a re-apply instruction. `seihou update` now stages to the newest capability, so it keeps bringing a manifest to the current schema. Application owners for judgements are not recorded yet; that is M3.
+
+Decision (2026-11-11, implementation): the review route is local configuration, not project intent: `judgement.provider` and `judgement.model` (or `SEIHOU_JUDGEMENT_PROVIDER`/`SEIHOU_JUDGEMENT_MODEL`), with no fallback to `agent.*` and no guessed model. Consent to transmit is `judgement.dataPolicy approved-remote` (or `SEIHOU_JUDGEMENT_DATA_POLICY`), or an interactive confirmation during `seihou run`. Without a route, a policy or Gitleaks, adoption names the exact commands and activates nothing. A local-only policy is refused at adoption because no route in this release is local, so such a judgement could never pass. These keys stand in for `seihou judgement configure` until M2.
+
+Decision (2026-11-11, implementation): adoption publishes the hook first and the manifest second. A hook with no active judgement passes, so a failed manifest write never leaves a partial active policy. The hook resolves `seihou` from PATH and stops the commit when it is missing.
 
 
 ## Outcomes & Retrospective
