@@ -8,9 +8,10 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-11-10T22:29:39Z"
-timestamp: 2026-11-10T22:29:39Z
+timestamp: 2026-11-11T13:54:44Z
 requestId: IR-19
-status: proposed
+status: accepted
+targetPlan: docs/plans/120-let-seihou-update-reconcile-module-owned-files-under-seihou.md
 origin: mori://shinzui/kotei-docs
 reviews:
   - kind: model
@@ -31,9 +32,14 @@ reviews:
 
 ## Status
 
-Proposed. Raised from `FRIC-4`
+Accepted and planned in [ExecPlan 120](../plans/120-let-seihou-update-reconcile-module-owned-files-under-seihou.md).
+Raised from `FRIC-4`
 (`mori://shinzui/kotei-docs/okf/friction-log/concepts/FRIC-4`) against Seihou 0.15.0.0.
-No implementation plan exists.
+The plan chooses option 1: a module owns `.seihou/<module-name>/`, which `seihou run` and
+`seihou update` both accept, while an explicit reserved list keeps Seihou's own entries
+(the manifest, `baselines/`, `transactions/`, `modules/`, configuration, context and trace)
+and `.git` unreachable from module output through both commands. Existing applications of
+`docs-mori-bootstrap` need no module change. Implementation remains pending.
 
 ## Context
 
