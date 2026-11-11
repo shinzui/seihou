@@ -2,6 +2,9 @@
 
 ## 2026-11-11
 
+* **Addition**: FRIC-14 records slowdown documentation friction with mori://shinzui/seihou: update-seihou-schema skill describes a superseded flake input
+
+
 * **Addition**: FRIC-13 records detour tooling friction with mori://shinzui/seihou: seihou-cli-test e2e specs fail unless run from seihou-cli/
 
 
