@@ -21,6 +21,11 @@ provenance:
       at: 2026-11-11T15:02:02Z
       mode: "update"
       note: "Generalize judgements to per-check questions with their own thresholds and enforcement; add judgment-only gate with escalation; separate transmission safeguard from secret-scan check"
+    - model: "claude-opus-5-5"
+      harness: "claude-code"
+      at: 2026-11-11T16:17:53Z
+      mode: "implement"
+      note: "M1 started: Baikai 0.10 upgrade, core policy, Shikumi adapter, staged evidence, scanner, execution and reports"
 ---
 
 # Add first-class user-defined judgements backed by Shikumi
@@ -57,7 +62,9 @@ A project may also configure a fast gate. A gate is a judgment-only model, one t
 - [ ] M6: Help, authoring documentation, evaluation examples, source-build acceptance, and package checks demonstrate both built-in and user-authored workflows.
 - [ ] M7: Released schema and Seihou artifacts, the packaged scanner dependency, and an installed executable pass the normal workflow in an existing consumer, an empty-cache clone, and a linked worktree.
 
-Planning only is authorized in the current task. All implementation milestones remain open. The intention was created with `mina ci --json 'Add first-class user-defined judgements backed by Shikumi'`. Mina returned the frontmatter ID successfully and warned that its configured default parent is outside this project's Rei scope; changing that project association is separate from creating this plan.
+M1 handoff (2026-11-11, claude-opus-5-5): M1 is in progress, not complete. Done and committed: the Baikai 0.10 upgrade as its own change (`2998d83`; `cabal test all` passed and `nix build .#seihou-cli` built Baikai 0.10.1.0, Shikumi 0.5.1.0 and Seihou with its tests); the pure policy domain `Seihou.Core.Judgement` (`98a33bf`, 32 specs); the Shikumi adapter `Seihou.CLI.Judgement.Runtime` (`5eb2beb`, 6 offline specs through Shikumi's real decode path); staged evidence, the Gitleaks adapter and execution (`ea95ace`, 11 specs against temporary Git repositories and the packaged Gitleaks 8.30.1); and reports with exit codes (`8325111`). Still open for M1: the `Judgement.dhall` schema and bundled `security-review` definition, adoption through `seihou run security-review` (which needs the minimal manifest state from M3), the `seihou check` command, hook wiring, the live provider run that records first probabilities, the live gate run, and a non-security example check through the public path. The next step is the schema record in `mori://shinzui/seihou-schema` and its decoder in `seihou-core/src/Seihou/Dhall/Eval.hs`, then the manifest representation, then `check`.
+
+The original plan authorized planning only; implementation began on 2026-11-11 at the user's request. The intention was created with `mina ci --json 'Add first-class user-defined judgements backed by Shikumi'`. Mina returned the frontmatter ID successfully and warned that its configured default parent is outside this project's Rei scope; changing that project association is separate from creating this plan.
 
 Revision note (2026-11-11): reviewed against the working tree and the current Shikumi and Baikai releases; no implementation has started. Shikumi 0.5.0.0 and 0.5.1.0 shipped probability-backed decision outputs, so the verdict is now a decision with a project-owned threshold band instead of a model-chosen status. Shikumi 0.5.1.0 requires Baikai 0.10, while Seihou still builds against Baikai 0.8, so M1 now starts with that upgrade. Stale facts about Seihou's own version, manifest schema, schema pin and ADRs were corrected, and the authoring commands were renamed to match the existing `new-*` and `validate-*` commands. Details are in Surprises & Discoveries and the Decision Log.
 
@@ -77,6 +84,12 @@ Discovery (2026-11-11): A judgment-only model cannot produce findings. Baikai's 
 Discovery (2026-11-11): Seihou is two Baikai major lines behind what Shikumi needs. `seihou-cli/seihou-cli.cabal` and `nix/haskell-overlay.nix` pin `baikai ^>=0.8.0.0`; `shikumi` 0.5.1.0 requires `baikai >=0.10.0.0 && <0.11`, `baikai-claude` and `baikai-openai` `>=0.7.3.0`, and `baikai-effectful >=0.4.0.5 && <0.5`. Baikai 0.9.0.0 and 0.10.0.0 both carry breaking changes to public sums and records, and eight existing Seihou agent modules import Baikai. Hackage also lists `baikai-effectful` 0.5.0.0, which Shikumi 0.5.1.0's bound excludes.
 
 Discovery (2026-11-11): The plan's Seihou facts had drifted. Seihou is at 0.15.0.0, not 0.10.1.0. The manifest schema is 14, not 10. The recorded `schema` submodule commit is `e9f91438f081fba90f40f987de93df9f74c7117d`, matching `Seihou.CLI.SchemaVersion`, and the working tree currently holds an uncommitted advance of that submodule to `d3c78cd81d9697ebff3128732ec673a17e65c73f`. ADRs 0019 to 0025 were added after the plan was written.
+
+Discovery (2026-11-11, implementation): the Baikai 0.8 to 0.10 upgrade was mechanical. The library and executable compiled unchanged; only the trace fixtures in `seihou-cli/test/Seihou/CLI/AgentTraceSpec.hs` needed Baikai 0.9's new `structuredData` field. Baikai 0.10.1.0 still hardcodes `/bin/ps`, so the overlay patch remains. No separate upgrade plan was needed.
+
+Discovery (2026-11-11, implementation): Shikumi's offline test harness (`shikumi-testing`) is not published to Hackage. The adapter therefore exposes a `Runner` newtype, the same boundary production uses, and its tests interpret Shikumi's `LLM` effect directly with a stub that returns a fixed Baikai response. Without routing, Shikumi takes its prompt-fallback path and still decoded a reply mixing a `Noul` with a list of finding records.
+
+Discovery (2026-11-11, implementation): Gitleaks 8.30.1 (nixpkgs) supports `gitleaks dir` with `--config`, `--gitleaks-ignore-path`, `--ignore-gitleaks-allow`, `--redact` and `--report-path`. Its default `github-pat` rule detects a synthetic `ghp_` token, and reports its line, after 4,100 bytes of padding. A configuration that only sets `[extend] useDefault = true` keeps exactly the built-in rules.
 
 
 ## Decision Log
@@ -112,6 +125,12 @@ Decision (2026-11-11): Give each check a declared concern direction, at the user
 Decision (2026-11-11): Support a judgment-only gate with escalation, at the user's direction. This supersedes the decision to refuse judgment-only models. The gate has its own threshold pair per check, because its probabilities and a generative model's are not comparable. At or below the gate's pass threshold the check is cleared without a second call. Otherwise the check escalates and the generative review decides, except that a gate probability at or above the gate's block threshold forbids a pass: disagreement between the two models yields needs-review, never a pass. A gate that fails at run time is reported and the check escalates, since the generative route is the complete review and is already a permitted destination. A judgment-only model is still refused as the generative route.
 
 Decision (2026-11-11): Separate the transmission safeguard from the secret-scan check. Scanning outgoing material for credentials before any remote request is project data policy and applies to every judgement on a remote route, whatever its subject. Treating scanner hits as blocking findings is a deterministic check that a definition declares; the bundled security definition does, a documentation-freshness judgement would not. When the safeguard stops a transmission for a judgement that does not declare the check, the affected checks end as errors naming the file, not as findings.
+
+Decision (2026-11-11, implementation): Whether a finding blocks depends on its category's authored severity. A check declares `blockingSeverity` (default high), and a finding blocks when its category's severity is at or above it. The model names a category but never chooses a severity. This makes "a blocking located finding" concrete without a per-finding model verdict.
+
+Decision (2026-11-11, implementation): Staged evidence comes from one `git diff-index --cached --raw -z --no-renames --full-index` call against `HEAD`, or against the empty tree before the first commit. Blob bytes come from `git cat-file blob`, and the snapshot identity is a digest of `git ls-files --stage -z`. A rename appears as a deletion plus an addition. Deleted and pre-change content is never transmitted, so it is not scanned for staged checks. Blocking on it would also stop a developer from deleting a secret that is already committed. Range checking (M4) must still scan every introduced commit.
+
+Decision (2026-11-11, implementation): CLI review routes run in a private empty temporary directory. `claude` gets `--tools "" --strict-mcp-config --disable-slash-commands --setting-sources ""`, and `codex` gets `--sandbox read-only --skip-git-repo-check`. This is how the plan's rule that the reviewer has no tools or agent loop is applied to local CLI providers. API routes need no such flags. `baikai-typesafe` is not yet a dependency. The gate path is generic over a `Runner`, and registering the TypeSafe provider is left to the route configuration work.
 
 Decision (2026-11-11): Name the authoring commands `seihou new-judgement` and `seihou validate-judgement`, matching `new-module`, `new-recipe`, `validate-module` and the other existing artifact commands. `eval` and `configure` have no existing counterpart and stay under the `seihou judgement` group.
 
