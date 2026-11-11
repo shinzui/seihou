@@ -1,5 +1,5 @@
 -- | Acquisition is completed and validated before any installed entry changes.
-module Seihou.CLI.InstallClosure (installClosure, installClosureInto, stageClosuresInto, ClosureArtifact (..), normalizePayload, writeStagedText, publishStagedClosure) where
+module Seihou.CLI.InstallClosure (installClosure, installClosureInto, stageClosuresInto, ClosureArtifact (..), normalizePayload, writeStagedText, publishStagedClosure, readContents) where
 
 import Control.Exception (IOException, displayException, mask, onException, throwIO, try)
 import Control.Monad (forM, forM_, unless, when)

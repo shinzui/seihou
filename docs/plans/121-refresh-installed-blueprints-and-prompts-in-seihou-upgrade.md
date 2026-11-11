@@ -10,6 +10,12 @@ provenance:
     model: "claude-opus-5-5"
     harness: "claude-code"
     at: 2026-11-11T13:50:03Z
+  revisions:
+    - model: "claude-opus-5-5"
+      harness: "claude-code"
+      at: 2026-11-11T14:39:01Z
+      mode: "implement"
+      note: "Milestones 1-3 implemented"
 ---
 
 # Refresh installed blueprints and prompts in seihou upgrade
@@ -59,14 +65,18 @@ After this change:
 
 ## Progress
 
-- [ ] Milestone 1: the library module `Seihou.CLI.InstalledRunnables` refreshes a blueprint or
+- [x] Milestone 1: the library module `Seihou.CLI.InstalledRunnables` refreshes a blueprint or
   prompt closure from its recorded source. A dry run leaves the cache unchanged. A
   different-source or unprovenanced cache entry is refused with the cache byte-identical.
-  Proven by the new `InstalledRunnablesSpec`.
-- [ ] Milestone 2: `seihou upgrade` selects installed blueprints and prompts, with or without
+  Proven by the new `InstalledRunnablesSpec`. (2026-11-11: all 5 cases pass — single blueprint
+  upgrade then up to date, dry run with the cache snapshot unchanged, baseline module refreshed
+  through the blueprint closure, different-source refusal naming both URLs with the module entry
+  and its marker byte-identical, single prompt.)
+- [x] Milestone 2: `seihou upgrade` selects installed blueprints and prompts, with or without
   names. It reports them in text and `--json` and exits non-zero on a failed row. Proven by the
   new end-to-end `UpgradeRunnablesE2ESpec`, including `seihou agent --debug run` printing the new
-  version.
+  version. (2026-11-11: the E2E scenario passes all seven steps, `Version: 0.1.1` included; the
+  `RecipeExtension`, `agent path artifact guard`, and upgrade-related groups pass, 113 tests.)
 - [ ] Milestone 3: `seihou outdated` reports blueprints and prompts. `docs/cli/upgrade.md`,
   `docs/cli/outdated.md`, and both commands' `--help` text mention them. The full test suite and
   `nix flake check` pass.
@@ -127,6 +137,19 @@ After this change:
   document as soon as any installed module has origin metadata. The fix is two guarded `putStrLn`
   calls in the file this plan already edits, and it is needed to make the `--json` acceptance
   reliable.
+  Date: 2026-11-11
+
+
+- Decision: Classify each changed closure member against the real cache before calling
+  `publishStagedClosure`, and give a refused member the one-line
+  `Seihou.CLI.InstallShared.summarizeInstallRefusal` text. Other changed members of the same
+  closure get `not published: <name> in the same closure was refused`.
+  Rationale: `publishStagedClosure` returns the multi-line `formatInstallRefusal` block, which
+  does not fit in a table row and does not say which row it belongs to. The closure is still
+  published all or nothing, and `publishStagedClosure` still re-checks, so a race between the
+  classification and the publish still refuses. The no-origin row names the entry's real path
+  rather than `~/.config/...`, because `XDG_CONFIG_HOME` may move it. `seihou upgrade --json`
+  with nothing to report prints `[]` rather than the text message, so stdout is always JSON.
   Date: 2026-11-11
 
 

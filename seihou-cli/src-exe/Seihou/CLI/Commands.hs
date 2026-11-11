@@ -1350,7 +1350,7 @@ upgradeParser :: Parser Command
 upgradeParser =
   fmap Upgrade $
     UpgradeOpts
-      <$> many (argument (T.pack <$> str) (metavar "MODULE_OR_RECIPE" <> help "Modules or recipes to upgrade (default: all)"))
+      <$> many (argument (T.pack <$> str) (metavar "ARTIFACT" <> help "Installed modules, recipes, blueprints, or prompts to upgrade (default: all)"))
       <*> switch (long "dry-run" <> help "Show what would be upgraded without making changes")
       <*> switch (long "json" <> help "Output as JSON")
       <*> switch (long "skip-unversioned" <> help "Skip unversioned changes (keeps recipe closures together)")
@@ -1362,20 +1362,25 @@ upgradeParser =
 upgradeFooter :: Doc
 upgradeFooter =
   vsep
-    [ pretty ("Refreshes installed modules and recipe closures from their" :: String),
-      pretty ("source repositories. Only artifacts installed via 'seihou install' are checked." :: String),
+    [ pretty ("Refreshes installed modules, recipe closures, and blueprint and prompt" :: String),
+      pretty ("closures from their source repositories. Only artifacts installed via" :: String),
+      pretty ("'seihou install' are checked. A blueprint is refreshed together with its" :: String),
+      pretty ("baseline modules, by content, from the source its origin metadata records." :: String),
       pretty ("It does not reconcile the current project; use 'seihou update' for that." :: String),
       pretty ("Modules without version information are upgraded by default." :: String),
       pretty ("Use --skip-unversioned to skip them." :: String),
       line,
-      pretty ("With no arguments, checks all installed modules and recipes. Pass names to" :: String),
-      pretty ("upgrade selected artifacts and their recipe closures." :: String),
+      pretty ("With no arguments, checks all installed modules, recipes, blueprints, and" :: String),
+      pretty ("prompts. Pass names to upgrade selected artifacts and their closures." :: String),
+      pretty ("Exits 1 when any artifact failed or was refused; an unreachable source" :: String),
+      pretty ("is reported but does not change the exit status." :: String),
       line,
       pretty ("Examples:" :: String),
       indent 2 $
         vsep
           [ pretty ("seihou upgrade                       # upgrade all installed modules" :: String),
             pretty ("seihou upgrade haskell-base           # upgrade a specific module" :: String),
+            pretty ("seihou upgrade my-blueprint           # upgrade a blueprint and its baseline modules" :: String),
             pretty ("seihou upgrade --dry-run              # preview without changes" :: String),
             pretty ("seihou upgrade --skip-unversioned     # skip unversioned modules" :: String),
             pretty ("seihou upgrade --with-migrations      # also run 'seihou migrate' for each upgrade" :: String)

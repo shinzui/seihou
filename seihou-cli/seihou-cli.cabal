@@ -88,6 +88,7 @@ library seihou-cli-internal
     Seihou.CLI.InstallClosure
     Seihou.CLI.InstallHistory
     Seihou.CLI.InstallShared
+    Seihou.CLI.InstalledRunnables
     Seihou.CLI.KitConfig
     Seihou.CLI.List
     Seihou.CLI.Manifest
@@ -119,6 +120,7 @@ library seihou-cli-internal
     Seihou.CLI.Update.Source
     Seihou.CLI.Update.Types
     Seihou.CLI.UpgradeDiagnosis
+    Seihou.CLI.UpgradeReport
     Seihou.CLI.ValidateRecipeReport
     Seihou.CLI.VersionCompare
     Seihou.Effect.Fzf
@@ -280,6 +282,7 @@ test-suite seihou-cli-test
     Seihou.CLI.InstallCollisionSpec
     Seihou.CLI.InstallHistorySpec
     Seihou.CLI.InstallSourceSpec
+    Seihou.CLI.InstalledRunnablesSpec
     Seihou.CLI.ListSpec
     Seihou.CLI.ManifestCapabilityUpgradeSpec
     Seihou.CLI.ManifestGuardSpec
@@ -312,6 +315,7 @@ test-suite seihou-cli-test
     Seihou.CLI.UpdateSpec
     Seihou.CLI.UpgradeDiagnosisSpec
     Seihou.CLI.UpgradeFixture
+    Seihou.CLI.UpgradeRunnablesE2ESpec
     Seihou.CLI.UpgradeSpec
     Seihou.CLI.ValidateRecipeE2ESpec
     Seihou.FzfSpec

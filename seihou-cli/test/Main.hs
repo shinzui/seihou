@@ -27,6 +27,7 @@ import Seihou.CLI.InstallClosureSpec qualified as InstallClosureSpec
 import Seihou.CLI.InstallCollisionSpec qualified as InstallCollisionSpec
 import Seihou.CLI.InstallHistorySpec qualified as InstallHistorySpec
 import Seihou.CLI.InstallSourceSpec qualified as InstallSourceSpec
+import Seihou.CLI.InstalledRunnablesSpec qualified as InstalledRunnablesSpec
 import Seihou.CLI.ListSpec qualified as ListSpec
 import Seihou.CLI.ManifestCapabilityUpgradeSpec qualified as ManifestCapabilityUpgradeSpec
 import Seihou.CLI.ManifestGuardSpec qualified as ManifestGuardSpec
@@ -55,6 +56,7 @@ import Seihou.CLI.UpdateInteractionSpec qualified as UpdateInteractionSpec
 import Seihou.CLI.UpdateRenderSpec qualified as UpdateRenderSpec
 import Seihou.CLI.UpdateSpec qualified as UpdateSpec
 import Seihou.CLI.UpgradeDiagnosisSpec qualified as UpgradeDiagnosisSpec
+import Seihou.CLI.UpgradeRunnablesE2ESpec qualified as UpgradeRunnablesE2ESpec
 import Seihou.CLI.UpgradeSpec qualified as UpgradeSpec
 import Seihou.CLI.ValidateRecipeE2ESpec qualified as ValidateRecipeE2E
 import Seihou.FzfSpec qualified as FzfSpec
@@ -88,6 +90,8 @@ main = do
         InstallCollisionSpec.tests,
         InstallHistorySpec.tests,
         InstallSourceSpec.tests,
+        InstalledRunnablesSpec.tests,
+        UpgradeRunnablesE2ESpec.tests,
         ListSpec.tests,
         ManifestGuardSpec.tests,
         ManifestCapabilityUpgradeSpec.tests,

@@ -6,12 +6,11 @@ where
 import Control.Applicative ((<|>))
 import Control.Exception (SomeException, try)
 import Control.Monad (forM, forM_, when)
-import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time (getCurrentTime)
@@ -19,6 +18,7 @@ import Seihou.CLI.Commands (UpgradeOpts (..))
 import Seihou.CLI.Install (installModuleDir)
 import Seihou.CLI.InstallClosure (ClosureArtifact (..), publishStagedClosure)
 import Seihou.CLI.InstallShared (InstallOutcome (..), OriginInfo (..), installedRoot, readOriginInfo, summarizeInstallRefusal)
+import Seihou.CLI.InstalledRunnables (RefreshOptions (..), installKey, matchesRequest, refreshInstalledRunnables, selectInstalledRunnables)
 import Seihou.CLI.Migrate
   ( MigrateError (..),
     MigrateOpts (..),
@@ -33,6 +33,7 @@ import Seihou.CLI.Style (dim, green, red, useColor, yellow)
 import Seihou.CLI.Update.Render (errorOutput, renderUpdateHuman)
 import Seihou.CLI.Update.Source (hashArtifactDirectory, stageCandidateSources)
 import Seihou.CLI.Update.Types (CandidateArtifact (..), CandidateCatalog (..))
+import Seihou.CLI.UpgradeReport (UpgradeEntry (..), UpgradeStatus (..), isFailedEntry, isRefusedEntry)
 import Seihou.CLI.VersionCompare (OutdatedStatus (..), compareVersions)
 import Seihou.Core.Application (buildAppliedComposition)
 import Seihou.Core.Install (parseModuleName)
@@ -51,38 +52,6 @@ import System.Exit (ExitCode (..), exitFailure)
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process (readProcessWithExitCode)
 
-data UpgradeStatus
-  = Upgraded
-  | AlreadyUpToDate
-  | Skipped
-  | UpgradeFailed Text
-  | SourceUnreachable
-  deriving stock (Eq, Show)
-
-data UpgradeEntry = UpgradeEntry
-  { moduleName :: !Text,
-    oldVersion :: !(Maybe Text),
-    newVersion :: !(Maybe Text),
-    upgradeStatus :: !UpgradeStatus
-  }
-  deriving stock (Eq, Generic, Show)
-
-instance ToJSON UpgradeEntry where
-  toJSON e =
-    object
-      [ "module" .= (e ^. #moduleName),
-        "oldVersion" .= (e ^. #oldVersion),
-        "newVersion" .= (e ^. #newVersion),
-        "status" .= statusText (e ^. #upgradeStatus)
-      ]
-    where
-      statusText :: UpgradeStatus -> Text
-      statusText Upgraded = "upgraded"
-      statusText AlreadyUpToDate = "up to date"
-      statusText Skipped = "skipped"
-      statusText (UpgradeFailed reason) = "failed: " <> reason
-      statusText SourceUnreachable = "unreachable"
-
 handleUpgrade :: UpgradeOpts -> IO ()
 handleUpgrade uopts = do
   searchPaths <- defaultSearchPaths
@@ -93,10 +62,31 @@ handleUpgrade uopts = do
       requested = uopts ^. #modules
       selectedRecipes = [recipe | recipe <- recipes, null requested || recipe ^. #name `elem` requested]
   originsWithModules <- mapM readOriginWithModule installed
+  installedRunnables <- selectInstalledRunnables runnables
   let withOrigins = [(dm, origin) | (dm, Just origin) <- originsWithModules]
+      -- With no names, refresh every blueprint and prompt that records its
+      -- source. A named one is selected even without provenance, so the
+      -- refusal below can say why it cannot be refreshed.
+      selectedRunnables =
+        [ (r, origin)
+        | (r, origin) <- installedRunnables,
+          if null requested then isJust origin else any (`matchesRequest` r) requested
+        ]
       found = map (moduleNameFromDm . fst) withOrigins <> map (^. #name) recipes
-      missing = filter (`notElem` found) requested
-  when (not (null missing)) $ TIO.putStrLn ("Module(s) or recipe(s) not found: " <> T.intercalate ", " missing) >> exitFailure
+      missing = filter (\name -> name `notElem` found && not (any (matchesRequest name . fst) installedRunnables)) requested
+  when (not (null missing)) $ TIO.putStrLn ("Artifact(s) not found: " <> T.intercalate ", " missing) >> exitFailure
+  -- ADR 0006: without provenance Seihou cannot know which source to refresh
+  -- from, and must not guess.
+  let unprovenanced =
+        [ UpgradeEntry (installKey r) Nothing Nothing $
+            UpgradeFailed
+              ( "no origin metadata in "
+                  <> T.pack (r ^. #dir </> ".seihou-origin.json")
+                  <> "; reinstall it with 'seihou install <url> --force'"
+              )
+        | (r, Nothing) <- selectedRunnables
+        ]
+      provenanced = [(r, origin) | (r, Just origin) <- selectedRunnables]
   recipeResult <- upgradeRecipes uopts selectedRecipes
   case recipeResult of
     Left message -> do
@@ -105,17 +95,41 @@ handleUpgrade uopts = do
         else TIO.putStrLn ("Recipe upgrade failed: " <> message)
       exitFailure
     Right (recipeEntries, covered) -> do
-      let filtered = [(dm, origin) | (dm, origin) <- withOrigins, null requested || moduleNameFromDm dm `elem` requested, moduleNameFromDm dm `notElem` covered]
+      cache <- installedRoot
+      (runnableEntries, runnableCovered) <-
+        refreshInstalledRunnables (RefreshOptions (uopts ^. #dryRun) (uopts ^. #skipUnversioned)) cache provenanced
+      let filtered =
+            [ (dm, origin)
+            | (dm, origin) <- withOrigins,
+              null requested || moduleNameFromDm dm `elem` requested,
+              moduleNameFromDm dm `notElem` covered,
+              moduleNameFromDm dm `notElem` runnableCovered
+            ]
           grouped = Map.toList $ Map.fromListWith (++) [(origin ^. #sourceUrl, [(dm, origin)]) | (dm, origin) <- filtered]
       moduleEntries <- concat <$> mapM (upgradeSource uopts) grouped
-      let entries = recipeEntries <> moduleEntries
+      let entries = dedupeEntries (recipeEntries <> unprovenanced <> runnableEntries <> moduleEntries)
       if null entries
-        then TIO.putStrLn "No installed modules or recipes with origin metadata found."
+        then
+          if uopts ^. #json
+            then LBS.putStr (encodePretty entries)
+            else TIO.putStrLn "No installed modules, recipes, blueprints, or prompts with origin metadata found."
         else do
           if uopts ^. #json then LBS.putStr (encodePretty entries) else renderUpgradeTable (uopts ^. #dryRun) entries
           unless (uopts ^. #dryRun) $ do
             handlePostUpgradeMigrations uopts entries
             when (not (uopts ^. #json)) $ forM_ selectedRecipes $ \recipe -> TIO.putStrLn $ "Run 'seihou update " <> recipe ^. #name <> "' to reconcile the recorded project application."
+          -- ADR 0006: a cache write that did not fully succeed exits
+          -- non-zero. An unreachable source is transient and does not.
+          when (any isRefusedEntry entries) exitFailure
+
+-- | One row per artifact name; the first path to report a name wins.
+dedupeEntries :: [UpgradeEntry] -> [UpgradeEntry]
+dedupeEntries = go []
+  where
+    go _ [] = []
+    go seen (entry : rest)
+      | entry ^. #moduleName `elem` seen = go seen rest
+      | otherwise = entry : go (entry ^. #moduleName : seen) rest
 
 -- Refresh each selected recipe's complete candidate closure, including an
 -- unchanged child whose base has changed. Publication uses staged bytes only.
@@ -162,7 +176,8 @@ upgradeRecipes opts recipes = withSystemTempDirectory "seihou-recipe-upgrade" $ 
 upgradeSource :: UpgradeOpts -> (Text, [(DiscoveredModule, OriginInfo)]) -> IO [UpgradeEntry]
 upgradeSource uopts (sourceUrl, modulesWithOrigins) = do
   let repoName = parseModuleName sourceUrl
-  TIO.putStrLn $ "  Cloning " <> T.pack repoName <> "..."
+  -- Under --json, stdout carries only the JSON document.
+  when (not (uopts ^. #json)) $ TIO.putStrLn $ "  Cloning " <> T.pack repoName <> "..."
 
   result <- try $ withSystemTempDirectory "seihou-upgrade" $ \tmpDir -> do
     let cloneDir = tmpDir </> repoName
@@ -202,7 +217,7 @@ upgradeModule uopts cloneDir contents sourceUrl (dm, origin) = do
       | uopts ^. #dryRun ->
           pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Upgraded}
       | otherwise ->
-          doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer
+          doUpgrade uopts cloneDir contents sourceUrl origin name installedVer availableVer
     UpToDate ->
       pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = AlreadyUpToDate}
     Unversioned
@@ -211,12 +226,12 @@ upgradeModule uopts cloneDir contents sourceUrl (dm, origin) = do
       | uopts ^. #dryRun ->
           pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Upgraded}
       | otherwise ->
-          doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer
+          doUpgrade uopts cloneDir contents sourceUrl origin name installedVer availableVer
     Unreachable ->
       pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = Nothing, upgradeStatus = SourceUnreachable}
 
-doUpgrade :: FilePath -> RepoContents -> Text -> OriginInfo -> Text -> Maybe Text -> Maybe Text -> IO UpgradeEntry
-doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer = do
+doUpgrade :: UpgradeOpts -> FilePath -> RepoContents -> Text -> OriginInfo -> Text -> Maybe Text -> Maybe Text -> IO UpgradeEntry
+doUpgrade uopts cloneDir contents sourceUrl origin name installedVer availableVer = do
   let result = case contents of
         SingleModule rootDir -> Just (rootDir, origin ^. #repoName)
         MultiModule registry ->
@@ -270,7 +285,7 @@ doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer = do
                         upgradeStatus = UpgradeFailed (summarizeInstallRefusal sourceUrl collision)
                       }
                 InstallPerformed -> do
-                  TIO.putStrLn $ "    Upgraded " <> name
+                  when (not (uopts ^. #json)) $ TIO.putStrLn $ "    Upgraded " <> name
                   pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Upgraded}
 
 renderUpgradeTable :: Bool -> [UpgradeEntry] -> IO ()
@@ -320,12 +335,6 @@ renderUpgradeTable dryRun entries = do
       <> (if failed > 0 then ", " <> T.pack (show failed) <> " failed" else "")
       <> (if skipped > 0 then ", " <> T.pack (show skipped) <> " skipped" else "")
       <> "."
-
-isFailedEntry :: UpgradeEntry -> Bool
-isFailedEntry e = case e ^. #upgradeStatus of
-  UpgradeFailed _ -> True
-  SourceUnreachable -> True
-  _ -> False
 
 -- | After the upgrade table is printed, look at the project's local
 -- manifest for each module that was just upgraded. If the upgrade
