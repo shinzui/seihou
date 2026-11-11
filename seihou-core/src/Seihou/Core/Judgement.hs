@@ -558,7 +558,7 @@ data DecisionReason
 renderDecisionReason :: DecisionReason -> Text
 renderDecisionReason = \case
   BlockingFinding f -> "blocking " <> renderSeverity (f ^. #severity) <> " finding '" <> f ^. #category <> "' at " <> renderLoc (f ^. #location)
-  ConcernAtOrAboveBlock p t -> "model-reported probability " <> fmt p <> " is at or above block threshold " <> fmt t <> "; the review gave no location"
+  ConcernAtOrAboveBlock p t -> "model-reported probability " <> fmt p <> " is at or above block threshold " <> fmt t <> "; the review located no blocking finding"
   ConcernInBand p t -> "model-reported probability " <> fmt p <> " is between pass at " <> fmt (t ^. #passAt) <> " and block at " <> fmt (t ^. #blockAt)
   ConcernAtOrBelowPass p t -> "model-reported probability " <> fmt p <> " is at or below pass threshold " <> fmt t
   ModelRequestedReview -> "the model requested human review"
