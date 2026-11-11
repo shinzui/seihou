@@ -184,6 +184,27 @@ objects, so a change cannot weaken the policy it is checked against. Fetch the b
 history first (`fetch-depth: 0`); a shallow clone without it is refused. A base with no
 adopted judgements has no trusted policy, and first adoption needs explicit review.
 
+## Reference a judgement from a module or recipe
+
+A module or recipe can activate judgements when it is applied:
+
+```dhall
+in  S.Module::{
+    , name = "service-base"
+    , judgements =
+      [ S.JudgementRef::{ name = "security-review" }
+      , S.JudgementRef::{ name = "docs-review", when = Some "Eq docs.enabled true" }
+      ]
+    }
+```
+
+`seihou run` collects the references of every module in the composition, including
+dependencies, and of the applied recipe, keeps those whose `when` holds for that
+artifact's variables, and resolves each name through the ordinary search paths and then
+the built-in catalogue. The adoption is previewed with the generation plan and needs
+the same consent as `seihou run NAME`; it is applied after the files are generated and
+before any `--commit`.
+
 ## Change policy
 
 A project's thresholds and enforcement are recorded in the manifest when a judgement
@@ -218,5 +239,5 @@ and a hand-edited snapshot is refused.
 - `git commit --no-verify` skips the hook. Local hooks cover cooperative development,
   not a process deliberately bypassing them; enforce in CI with
   `seihou check --range origin/main..HEAD --policy-ref origin/main`.
-- Judgements cannot yet be referenced from modules or recipes; adopt each with
-  `seihou run NAME`.
+- `seihou install` does not yet fetch a judgement named only by a module's reference
+  `source`; install it explicitly first.

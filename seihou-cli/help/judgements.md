@@ -85,6 +85,12 @@ WRITING A JUDGEMENT
   examples.json holds synthetic labelled cases. Evaluation sends them to the
   configured route; validation scans them for credentials first.
 
+REFERENCES FROM MODULES AND RECIPES
+
+  A module or recipe lists judgements = [ S.JudgementRef::{ name = "..." } ],
+  optionally with when = Some "<condition>". seihou run adopts the referenced
+  judgements of the whole composition after generating its files.
+
 CHANGING POLICY
 
   seihou judgement configure NAME --check CHECK --block-at 0.6 --pass-at 0.2
