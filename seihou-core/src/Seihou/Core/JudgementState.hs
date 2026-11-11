@@ -11,13 +11,16 @@ module Seihou.Core.JudgementState
     adoptWithOwner,
     pruneJudgementOwners,
     retireOwner,
+    policyWeakenings,
   )
 where
 
 import Data.Generics.Labels ()
 import Data.List (nub)
+import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
+import Seihou.Core.Judgement (Enforcement (..), renderProbability)
 import Seihou.Core.Types
 import Seihou.Prelude
 
@@ -71,3 +74,31 @@ pruneJudgementOwners m =
 
 settle :: [ActiveJudgement] -> ([ActiveJudgement], [Text])
 settle js = ([j | j <- js, not (null (j ^. #owners))], [j ^. #definition . #name | j <- js, null (j ^. #owners)])
+
+-- | How a proposed set of active judgements is weaker than a trusted one:
+-- a judgement removed, a check made advisory, or a review threshold raised.
+-- Used to report a staged policy change instead of letting it pass as an
+-- ordinary clean result.
+policyWeakenings :: [ActiveJudgement] -> [ActiveJudgement] -> [Text]
+policyWeakenings trusted proposed = concatMap one trusted
+  where
+    one t = case [p | p <- proposed, p ^. #definition . #name == name] of
+      [] -> ["judgement '" <> name <> "' is no longer active"]
+      (p : _) ->
+        concat
+          [ [ "check '" <> c <> "' of '" <> name <> "' is now advisory"
+            | tc ^. #enforcement == Enforced,
+              pc ^. #enforcement == Advisory
+            ]
+              <> [ "check '" <> c <> "' of '" <> name <> "' blocks at " <> renderProbability (pc ^. #review . #blockAt) <> " instead of " <> renderProbability (tc ^. #review . #blockAt)
+                 | pc ^. #review . #blockAt > tc ^. #review . #blockAt
+                 ]
+              <> [ "check '" <> c <> "' of '" <> name <> "' passes at " <> renderProbability (pc ^. #review . #passAt) <> " instead of " <> renderProbability (tc ^. #review . #passAt)
+                 | pc ^. #review . #passAt > tc ^. #review . #passAt
+                 ]
+          | (c, tc) <- Map.toList (t ^. #policy . #checks),
+            Just pc <- [Map.lookup c (p ^. #policy . #checks)]
+          ]
+          <> ["check '" <> c <> "' of '" <> name <> "' was removed" | c <- Map.keys (t ^. #policy . #checks), not (Map.member c (p ^. #policy . #checks))]
+      where
+        name = t ^. #definition . #name

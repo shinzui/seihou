@@ -12,7 +12,7 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Time (UTCTime (..), fromGregorian)
 import Seihou.Core.Judgement
-import Seihou.Core.JudgementState (AdoptionChange (..), adoptWithOwner, pruneJudgementOwners, retireOwner)
+import Seihou.Core.JudgementState (AdoptionChange (..), adoptWithOwner, policyWeakenings, pruneJudgementOwners, retireOwner)
 import Seihou.Core.Types (ActiveJudgement (..), ApplicationId (..), JudgementOwner (..), JudgementSource (..), Manifest, ManifestSchemaVersion (..))
 import Seihou.Dhall.Eval (evalJudgementFromFile, evalJudgementRefsFromFile)
 import Seihou.Manifest.Judgement (definitionDigest)
@@ -120,6 +120,13 @@ tests = testSpec "judgement policy" $ do
       let shared = record def & #owners .~ [DirectAdoption, app]
       retireOwner DirectAdoption [shared] `shouldBe` ([shared & #owners .~ [app]], [])
       retireOwner app [shared & #owners .~ [app]] `shouldBe` ([], ["demo"])
+    it "names a removed judgement, an advisory check and a raised threshold as weakenings" $ do
+      let base = record def
+          loosened = base & #policy . #checks . ix "a" . #review . #blockAt .~ 0.8 & #policy . #checks . ix "a" . #enforcement .~ Advisory
+      policyWeakenings [base] [base] `shouldBe` []
+      policyWeakenings [base] [] `shouldBe` ["judgement 'demo' is no longer active"]
+      policyWeakenings [base] [loosened] `shouldBe` ["check 'a' of 'demo' is now advisory", "check 'a' of 'demo' blocks at 0.80 instead of 0.50"]
+      policyWeakenings [loosened] [base] `shouldBe` []
     it "drops application owners whose application is no longer recorded" $ do
       let m = emptyManifest (UTCTime (fromGregorian 2026 11 11) 0) & #judgements .~ [record def & #owners .~ [app]]
       pruneJudgementOwners m `shouldBe` (m & #judgements .~ [], ["demo"])
