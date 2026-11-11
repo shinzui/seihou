@@ -8,9 +8,10 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-11-10T22:29:39Z"
-timestamp: 2026-11-10T22:29:39Z
+timestamp: 2026-11-11T13:55:57Z
 requestId: IR-18
-status: proposed
+status: accepted
+targetPlan: docs/plans/122-fail-a-batch-blueprint-run-whose-agent-was-refused-tools.md
 origin: mori://shinzui/kotei-docs
 reviews:
   - kind: model
@@ -32,9 +33,16 @@ reviews:
 
 ## Status
 
-Proposed. Raised from `FRIC-5`
+Accepted. Raised from `FRIC-5`
 (`mori://shinzui/kotei-docs/okf/friction-log/concepts/FRIC-5`) against Seihou 0.15.0.0.
-No implementation plan exists.
+Planned on 2026-11-11 in
+[ExecPlan 122](../plans/122-fail-a-batch-blueprint-run-whose-agent-was-refused-tools.md).
+The plan detects refusals in a batch `agent run` with a Seihou-side adapter, like the one
+`agent migrate` uses, that reads Claude's `permission_denials`. It also adds the
+`validate-blueprint` warning. It answers the design question below by failing a run on every
+reported refusal, guard refusals included, after a first milestone confirms that real Claude
+Code reports them. It leaves the optional early stop and Codex batch runs out of scope.
+Implementation has not started.
 
 ## Context
 
