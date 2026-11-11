@@ -58,7 +58,7 @@ import Seihou.Core.Types
   )
 import Seihou.Core.Version (renderVersion)
 import Seihou.Engine.Checkout (CheckoutExecution (..))
-import Seihou.Engine.Migrate (MigrationExecError (..))
+import Seihou.Engine.Migrate (ExecutedMigrationPlan (..), MigrationExecError (..), MigrationOpInstance (..))
 import Seihou.Engine.Reconcile
   ( DesiredFile (..),
     FileConflictChoice (..),
@@ -143,6 +143,7 @@ renderUpdateHuman _ (UpdatePlanOutput (UpdatePlanView plan)) =
       <> ["  checkout " <> (if isUpdateNoOp plan then "not-run-no-update" else dispositionText (command ^. #disposition)) <> ": " <> fromMaybe "" (commandText (command ^. #operation)) | command <- plan ^. #commandPlan . #commands, isCheckoutCommand (command ^. #operation)]
       <> T.lines (renderCheckoutPlan True (plan ^. #checkoutPlan))
       <> ["Adopt link: " <> T.pack path <> " (stop tracking in Git; keep working link)" | path <- Map.keys (plan ^. #checkoutAdoptions)]
+      <> ["  Remove exact line " <> line <> " from " <> T.pack path | migration <- plan ^. #migrations, RemoveLineInst path line <- migration ^. #stagedPlan . #ops]
       <> conflictLines (plan ^. #reconciliation)
       <> warningLines (plan ^. #warnings)
 renderUpdateHuman _ (UpdateAppliedOutput (UpdateResultView result)) =
@@ -382,7 +383,8 @@ migrationValue migration =
       "from" .= showText (migration ^. #sourcePlan . #from),
       "to" .= showText (migration ^. #sourcePlan . #to),
       "steps" .= length (migration ^. #sourcePlan . #steps),
-      "containsCommands" .= (migration ^. #containsCommands)
+      "containsCommands" .= (migration ^. #containsCommands),
+      "lineRemovals" .= [object ["op" .= ("remove-line" :: Text), "path" .= path, "line" .= line] | RemoveLineInst path line <- migration ^. #stagedPlan . #ops]
     ]
 
 fileValue :: (FilePath, FileReconciliation) -> Value

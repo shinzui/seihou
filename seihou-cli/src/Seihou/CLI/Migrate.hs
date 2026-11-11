@@ -662,6 +662,7 @@ commitMigratedFiles opts manifestPath plan = do
       MoveDirInst src dest -> [src, dest]
       DeleteFileInst path _ -> [path]
       DeleteDirInst path -> [path]
+      RemoveLineInst path _ -> [path]
       RunCommandInst _ _ -> []
 
 resolveTarget ::
@@ -737,6 +738,8 @@ renderOp c op = case op of
     TIO.putStrLn $ "    " <> applyColor c yellow "delete    " <> T.pack path
   DeleteDir {path} ->
     TIO.putStrLn $ "    " <> applyColor c yellow "delete-dir" <> " " <> T.pack path
+  RemoveLine {path, line} ->
+    TIO.putStrLn $ "    remove exact line " <> line <> " from " <> T.pack path
   RunCommand {run, workDir} ->
     let suffix = case workDir of
           Just wd -> applyColor c dim (" (in " <> T.pack wd <> ")")
@@ -775,6 +778,8 @@ opToJson op = case op of
     object ["op" .= ("delete-file" :: Text), "path" .= T.pack path]
   DeleteDir {path} ->
     object ["op" .= ("delete-dir" :: Text), "path" .= T.pack path]
+  RemoveLine {path, line} ->
+    object ["op" .= ("remove-line" :: Text), "path" .= T.pack path, "line" .= line]
   RunCommand {run, workDir} ->
     object ["op" .= ("run-command" :: Text), "run" .= run, "workDir" .= fmap T.pack workDir]
 
@@ -798,6 +803,8 @@ instToJson inst = case inst of
       ]
   DeleteDirInst p ->
     object ["op" .= ("delete-dir" :: Text), "path" .= T.pack p]
+  RemoveLineInst p line ->
+    object ["op" .= ("remove-line" :: Text), "path" .= T.pack p, "line" .= line]
   RunCommandInst run wd ->
     object ["op" .= ("run-command" :: Text), "run" .= run, "workDir" .= fmap T.pack wd]
 

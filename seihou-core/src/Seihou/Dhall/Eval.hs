@@ -262,15 +262,22 @@ entailedEdgeDecoder =
 -- | Decoder for a 'MigrationOp' from a Dhall union value.
 -- The union variants must match @schema/MigrationOp.dhall@.
 migrationOpDecoder :: Decoder MigrationOp
-migrationOpDecoder =
-  union
-    ( (mkMoveFile <$> constructor "MoveFile" srcDestRecord)
-        <> (mkMoveDir <$> constructor "MoveDir" srcDestRecord)
-        <> (mkDeleteFile <$> constructor "DeleteFile" pathRecord)
-        <> (mkDeleteDir <$> constructor "DeleteDir" pathRecord)
-        <> (mkRunCommand <$> constructor "RunCommand" runCommandRecord)
-    )
+migrationOpDecoder = Decoder decode (expected extended)
   where
+    decode expr = case extract extended expr of
+      Success value -> Success value
+      Failure _ -> extract legacy expr
+    extended = union (variants <> (mkRemoveLine <$> constructor "RemoveLine" removeLineRecord))
+    legacy = union variants
+    variants =
+      ( (mkMoveFile <$> constructor "MoveFile" srcDestRecord)
+          <> (mkMoveDir <$> constructor "MoveDir" srcDestRecord)
+          <> (mkDeleteFile <$> constructor "DeleteFile" pathRecord)
+          <> (mkDeleteDir <$> constructor "DeleteDir" pathRecord)
+          <> (mkRunCommand <$> constructor "RunCommand" runCommandRecord)
+      )
+    removeLineRecord = record ((,) <$> field "path" string <*> field "line" strictText)
+    mkRemoveLine (p, l) = RemoveLine {path = p, line = l}
     srcDestRecord :: Decoder (FilePath, FilePath)
     srcDestRecord =
       record ((,) <$> field "src" string <*> field "dest" string)

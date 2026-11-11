@@ -1153,6 +1153,7 @@ transactionTargetPaths manifest reconciliation migrations =
     targets (MoveDirInst source destination) =
       concatMap (moveDirectoryTarget source destination) (Map.keys (manifest ^. #files))
     targets (DeleteDirInst path) = filter (isPathAtOrBelow path) (Map.keys (manifest ^. #files))
+    targets (RemoveLineInst path _) = [path]
     targets RunCommandInst {} = []
     moveDirectoryTarget source destination path
       | isPathAtOrBelow source path = [path, replacePrefix source destination path]

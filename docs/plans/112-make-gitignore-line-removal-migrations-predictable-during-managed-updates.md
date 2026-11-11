@@ -22,6 +22,11 @@ provenance:
       at: 2026-10-28T02:41:58Z
       mode: "update"
       note: "Isolate all consumer replays with temporary XDG_CONFIG_HOME and verify the real installed cache remains unchanged."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-11-11T21:37:09Z
+      mode: "implement"
+      note: "Begin declarative removal implementation and verify infrastructure prerequisites"
 ---
 
 # Make gitignore line-removal migrations predictable during managed updates
@@ -74,10 +79,28 @@ not itself the fix for this defect.
 - [ ] Milestone 4: the delivered executable and public module pass the installed-consumer workflow, and the original FRIC-1 changes from accepted workaround to resolved product fix with versioned evidence.
 
 
+Implementation handoff (2026-11-11): a source-only foundation now adds `RemoveLine`,
+legacy/extended Dhall extraction, exact LF/CRLF-preserving transformation, seed/path
+protection, execution-time file-kind validation, standalone rendering, managed preview
+line-removal detail, and transaction/touched-path enumeration. `cabal build exe:seihou` succeeds and `cabal test seihou-core-test` passes all
+1,782 tests, including old/new union file evaluation and removal execution.
+`git diff --check` passes. These checks establish the source foundation only.
+No milestone is complete:
+the early representative consumer proof has not run. Remaining engine integration includes
+untracked declared-target snapshots, post-migration observations/baseline reconciliation,
+full rollback/retry coverage, and path-level shell-drift diagnostics. Schema, producer,
+release, installed-consumer replay, documentation, and original FRIC-1 closure remain open.
+
 ## Surprises & Discoveries
 
 
-(None yet.)
+Discovery (2026-11-11): required Mori discovery is unavailable: `mori registry list`
+and `mori registry search dhall` fail with PostgreSQL `NotifierConnectError` at the
+sungkyung-clients socket. The tunnel log reports SSH timeouts to its remote host.
+[FRIC-16](../friction-log/16-mori-registry-unavailable-through-database-tunnel.md)
+records this environment blocker and remains logged. Cross-repository discovery and the
+required early consumer replay must resume after registry connectivity is restored;
+no producer/schema release or consumer amendment has been attempted.
 
 
 ## Decision Log

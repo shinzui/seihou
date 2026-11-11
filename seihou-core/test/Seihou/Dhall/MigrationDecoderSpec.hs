@@ -21,6 +21,20 @@ tests = testSpec "Seihou.Dhall.MigrationDecoder" spec
 spec :: Spec
 spec = do
   describe "moduleDecoder migrations field" $ do
+    it "decodes the extended union through evalModuleFromFile" $ do
+      let extended = T.replace " >" " | RemoveLine : { path : Text, line : Text } >" migrationOpType
+          removal = "(" <> extended <> ").RemoveLine { path = \".gitignore\", line = \".envrc\" }"
+      withModuleDhall (oneMigration removal) $ \result ->
+        case result of
+          Right m -> map (^. #ops) (m ^. #migrations) `shouldBe` [[RemoveLine ".gitignore" ".envrc"]]
+          Left err -> expectationFailure (show err)
+    it "decodes older constructors in the extended union" $ do
+      let extended = T.replace " >" " | RemoveLine : { path : Text, line : Text } >" (oneMigration moveFileOp)
+      withModuleDhall extended $ \result ->
+        case result of
+          Right m -> map (^. #ops) (m ^. #migrations) `shouldBe` [[MoveFile "old/Path.hs" "new/Path.hs"]]
+          Left err -> expectationFailure (show err)
+
     it "decodes a module with no migrations field as []" $
       withModuleDhall noMigrationsField $ \result ->
         case result of

@@ -23,6 +23,7 @@ import Seihou.Engine.Migrate
     MigrationOpInstance (..),
     classifyMigration,
     executeMigration,
+    removeExactLine,
   )
 import Seihou.Manifest.Hash (hashContent)
 import Seihou.Manifest.Types (emptyManifest)
@@ -105,6 +106,40 @@ runExecute fs manifest plan force =
 
 spec :: Spec
 spec = do
+  describe "removeExactLine" $ do
+    it "preserves CRLF, LF, whitespace variants and the final unterminated line" $
+      removeExactLine ".envrc" ".envrc\r\n.envrc.local\r\n .envrc\n/.envrc\n.envrc\n# comment" `shouldBe` ".envrc.local\r\n .envrc\n/.envrc\n# comment"
+    it "removes duplicate matches and an unterminated match" $
+      removeExactLine ".envrc" ".envrc\n.envrc" `shouldBe` ""
+    it "preserves a nonmatching final carriage return" $
+      removeExactLine ".envrc" ".envrc\r" `shouldBe` ".envrc\r"
+    it "is idempotent" $
+      removeExactLine ".envrc" (removeExactLine ".envrc" "x\n.envrc\n") `shouldBe` "x\n"
+
+  describe "RemoveLine execution" $ do
+    it "preserves unrelated edits without force and retains manifest file metadata" $ do
+      let manifest = mkManifest [(".gitignore", ".envrc\noriginal\n")]
+          fs = mkFS [(".gitignore", ".envrc\noriginal\nuser edit\n")]
+          plan = runClassify fs manifest (chain1 "1.0.0" "2.0.0" [RemoveLine ".gitignore" ".envrc"])
+          (result, finalFS) = runExecute fs manifest plan False
+      Map.lookup ".gitignore" (finalFS ^. #files) `shouldBe` Just "original\nuser edit\n"
+      fmap (^. #files) result `shouldBe` Right (manifest ^. #files)
+    it "does not create a missing target" $ do
+      let manifest = mkManifest []
+          fs = mkFS []
+          plan = runClassify fs manifest (chain1 "1.0.0" "2.0.0" [RemoveLine ".gitignore" ".envrc"])
+          (_, finalFS) = runExecute fs manifest plan False
+      finalFS `shouldBe` fs
+    it "rejects a symlink target without editing its referent" $ do
+      let manifest = mkManifest []
+          fs = (mkFS [("real", ".envrc\n")]) & #links .~ Map.singleton ".gitignore" "real"
+          plan = runClassify fs manifest (chain1 "1.0.0" "2.0.0" [RemoveLine ".gitignore" ".envrc"])
+          (result, finalFS) = runExecute fs manifest plan False
+      result `shouldSatisfy` either (const True) (const False)
+      finalFS `shouldBe` fs
+    it "rejects empty and multiline removal arguments" $ do
+      let manifest = mkManifest []
+      mapM_ (\line -> runClassifyResult (mkFS []) manifest (chain1 "1.0.0" "2.0.0" [RemoveLine ".gitignore" line]) `shouldSatisfy` either (const True) (const False)) ["", "a\nb", "a\rb"]
   describe "classifyMigration" $ do
     it "marks a move-file safe when disk hash matches manifest" $ do
       let manifest = mkManifest [("app/Main.hs", "module Main where")]

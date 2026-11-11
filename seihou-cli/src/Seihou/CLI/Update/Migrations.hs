@@ -204,16 +204,29 @@ commandMocks (_, sourcePlan) =
 
 snapshotTrackedFiles :: FilePath -> Manifest -> IO PureFS
 snapshotTrackedFiles projectRoot manifest = do
-  files <- fmap Map.fromList . fmap concat $ traverse readTracked (Map.keys (manifest ^. #files))
+  let tracked = Map.keys (manifest ^. #files)
+      components = Set.toAscList (Set.fromList (tracked <> concatMap parents tracked))
+  links <- fmap Map.fromList . fmap concat $ traverse readLink components
+  files <- fmap Map.fromList . fmap concat $ traverse (readTracked links) tracked
   let directories =
         Set.fromList
           [ directory
           | path <- Map.keys files,
             directory <- parents path
           ]
-  pure PureFS {files, dirs = directories, links = Map.empty}
+  pure PureFS {files, dirs = directories, links}
   where
-    readTracked path = do
+    readLink path = do
+      let fullPath = projectRoot </> path
+      exists <- Directory.doesPathExist fullPath
+      symlink <- if exists then Directory.pathIsSymbolicLink fullPath else pure False
+      if symlink
+        then do
+          target <- Directory.getSymbolicLinkTarget fullPath
+          pure [(path, target)]
+        else pure []
+    readTracked links path | any (`Map.member` links) (path : parents path) = pure []
+    readTracked _ path = do
       let fullPath = projectRoot </> path
       exists <- Directory.doesFileExist fullPath
       if exists
@@ -231,6 +244,7 @@ migrationTouchedPaths = Set.fromList . concatMap (concatMap touched . (^. #stage
     touched (MoveDirInst source destination) = [source, destination]
     touched (DeleteFileInst path _) = [path]
     touched (DeleteDirInst path) = [path]
+    touched (RemoveLineInst path _) = [path]
     touched RunCommandInst {} = []
 
 migrationTouchesDirectories :: PlannedUpdateMigration -> Bool

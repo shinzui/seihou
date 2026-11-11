@@ -2,6 +2,9 @@
 
 ## 2026-11-11
 
+* **Addition**: FRIC-16 records blocked environment friction with mori://shinzui/mori: Mori registry unavailable through database tunnel
+
+
 * **Addition**: FRIC-15 records slowdown interface friction with mori://shinzui/seihou: Non-interactive seihou update cancels without naming --json
 
 

@@ -47,6 +47,7 @@ data MigrationOp
   | MoveDir {src :: !FilePath, dest :: !FilePath}
   | DeleteFile {path :: !FilePath}
   | DeleteDir {path :: !FilePath}
+  | RemoveLine {path :: !FilePath, line :: !Text}
   | RunCommand {run :: !Text, workDir :: !(Maybe FilePath)}
   deriving stock (Eq, Show, Generic)
 

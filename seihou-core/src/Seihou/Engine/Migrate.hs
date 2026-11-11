@@ -9,12 +9,15 @@ module Seihou.Engine.Migrate
     classifyMigration,
     executeMigration,
     validateSeedMigration,
+    removeExactLine,
   )
 where
 
+import Control.Monad (when)
 import Data.Generics.Labels ()
 import Data.List (nub, sortBy)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.Ord (Down (..))
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -35,13 +38,16 @@ import Seihou.Core.Types
 import Seihou.Core.Version (renderVersion)
 import Seihou.Effect.Filesystem
   ( Filesystem,
+    PathEntry (..),
     createDirectoryIfMissing,
     doesFileExist,
+    inspectPath,
     readFileText,
     removeDirectoryIfEmpty,
     removeDirectoryRecursive,
     removeFile,
     renamePath,
+    writeFileText,
   )
 import Seihou.Effect.Process (Process, runProcess)
 import Seihou.Manifest.Hash (hashContent)
@@ -75,6 +81,7 @@ data MigrationOpInstance
   | MoveDirInst FilePath FilePath
   | DeleteFileInst FilePath MigrationFileStatus
   | DeleteDirInst FilePath
+  | RemoveLineInst FilePath Text
   | RunCommandInst Text (Maybe FilePath)
   deriving stock (Eq, Show, Generic)
 
@@ -157,6 +164,11 @@ classifyOp manifest op = case op of
       case validateMigrationPath "delete-dir path" path of
         Left err -> Left err
         Right safePath -> Right (DeleteDirInst safePath)
+  RemoveLine {path, line} -> pure $ do
+    safePath <- validateMigrationPath "remove-line path" path
+    if T.null line || T.any (`elem` ['\r', '\n']) line
+      then Left (MigrationUnsafePath "remove-line line" path "line must be nonempty and contain no newline")
+      else Right (RemoveLineInst safePath line)
   RunCommand {run, workDir} ->
     pure $
       case traverse (validateMigrationWorkDir "run-command workDir") workDir of
@@ -235,6 +247,7 @@ executeMigration force plan manifest now = case validateProtectedMutationPaths (
     instancePaths (MoveDirInst source dest) = [source, dest]
     instancePaths (DeleteFileInst path _) = [path]
     instancePaths (DeleteDirInst path) = [path]
+    instancePaths (RemoveLineInst path _) = [path]
     instancePaths RunCommandInst {} = []
 
 executeUnprotectedMigration :: (Filesystem :> es, Process :> es) => Bool -> ExecutedMigrationPlan -> Manifest -> UTCTime -> Eff es (Either MigrationExecError Manifest)
@@ -310,6 +323,17 @@ runOps (op : rest) manifest acc = case op of
   DeleteDirInst p -> do
     removeDirectoryRecursive p
     runOps rest (dropDirFromManifest p manifest) (p : acc)
+  RemoveLineInst path line -> do
+    safe <- validateEditablePath path
+    case safe of
+      Left err -> pure (Left err)
+      Right () -> do
+        exists <- doesFileExist path
+        when exists $ do
+          content <- readFileText path
+          let edited = removeExactLine line content
+          when (edited /= content) (writeFileText path edited)
+        runOps rest manifest acc
   RunCommandInst run mWorkDir -> do
     (code, _stdout, stderr) <- runProcess "/bin/sh" ["-c", run] mWorkDir
     case code of
@@ -409,9 +433,35 @@ validateSeedMigration seeds = validateProtectedMutationPaths seeds . concatMap p
     paths MoveDir {src, dest} = [src, dest]
     paths DeleteFile {path} = [path]
     paths DeleteDir {path} = [path]
+    paths RemoveLine {path} = [path]
     paths RunCommand {} = []
 
 validateProtectedMutationPaths :: Set FilePath -> [FilePath] -> Either MigrationExecError ()
 validateProtectedMutationPaths seeds paths = case [path | path <- paths, seed <- Set.toAscList seeds, pathsOverlap (P.normalise path) (P.normalise seed) || pathsHaveConflictingSpelling (P.normalise path) (P.normalise seed)] of
   path : _ -> Left (MigrationUnsafePath "seed ownership" path "declarative migrations must not mutate a project-owned seed or a path being released to the project; publish a compatible producer migration")
   [] -> Right ()
+
+-- | Remove matching logical lines without rewriting surviving terminators.
+removeExactLine :: Text -> Text -> Text
+removeExactLine target = go
+  where
+    go content
+      | T.null content = ""
+      | otherwise =
+          let (payload, suffix) = T.breakOn "\n" content
+              logical = if T.null suffix then payload else fromMaybe payload (T.stripSuffix "\r" payload)
+              kept = if logical == target then "" else payload <> if T.null suffix then "" else "\n"
+           in kept <> if T.null suffix then "" else go (T.drop 1 suffix)
+
+-- Inspect every component without following links, including parent directories.
+validateEditablePath :: (Filesystem :> es) => FilePath -> Eff es (Either MigrationExecError ())
+validateEditablePath path = go (reverse (path : allParents path))
+  where
+    go [] = pure (Right ())
+    go (component : rest) = do
+      entry <- inspectPath component
+      case entry of
+        EntryMissing -> pure (Right ())
+        EntryDirectory | component /= path -> go rest
+        EntryFile | component == path -> go rest
+        _ -> pure (Left (MigrationUnsafePath "remove-line path" path "target must be a regular file with no symbolic-link components"))
