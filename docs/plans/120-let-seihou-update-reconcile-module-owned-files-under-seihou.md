@@ -77,12 +77,16 @@ succeeds and the file contains both the user's edit and the new release's change
   `UpdateTransactionSpec` cases pass alongside the existing suite. (2026-11-11: all 1423 core
   tests pass; the stray-copy grep prints nothing; the reserved-list grep prints only reserved
   entries. Recovery has no direct unit test; Milestone 4's end-to-end update covers it.)
-- [ ] Milestone 3: generation enforces the same rule — load-time refusal of control paths,
+- [x] Milestone 3: generation enforces the same rule — load-time refusal of control paths,
   plan-time refusal of `.seihou/` paths outside the module's own directory, a
   `validate-module` check, and control-path refusal for migration and removal paths.
-- [ ] Milestone 4: an end-to-end test through the `seihou` executable shows `run` then `update`
+  (2026-11-11: 1435 core tests pass, 12 new in ModuleSpec, PlanSpec, ValidateSpec, MigrateSpec and
+  RemoveSpec; the CLI suite's 877 tests still pass.)
+- [x] Milestone 4: an end-to-end test through the `seihou` executable shows `run` then `update`
   merging a user edit in `.seihou/demo/helper.txt`, and `run` refusing `.seihou/manifest.json`
-  and `.seihou/other/x`.
+  and `.seihou/other/x`. (2026-11-11: 4 cases pass under
+  `-p "/module state directory end-to-end/"`, including `validate-module` exiting non-zero with
+  "Module state destinations".)
 - [ ] Milestone 5: user documentation, changelogs, ADR 0025, and IR-19 updated; full test suite
   and `nix flake check` pass.
 
@@ -116,6 +120,17 @@ Findings made while writing this plan, recorded here because they shaped its des
 - (Implementation, 2026-11-11.) `validateProjectRelativePath` accepts `.` segments, so
   `./.seihou/manifest.json` and `.seihou/./manifest.json` name the manifest. The classifier drops
   `.` segments as well as empty ones before looking at the first two.
+- (Implementation, 2026-11-11.) The Milestone 4 fixture as first written (`top`, `middle v1`,
+  `bottom`, with the user editing `top` and the release editing `middle`) does not merge cleanly:
+  diff3, like `git merge`, treats edits to adjacent lines as overlapping, and the update stopped
+  with `unresolved_conflicts ... .seihou/demo/helper.txt`. That run is itself evidence the path
+  check no longer blocks the update. The test separates the two edits with an unchanged line.
+  The pre-Milestone-2 `reconciliation_failed` output was not re-captured; IR-19 already records it.
+- (Implementation, 2026-11-11.) A literal step `dest` in Seihou's own state is refused when the
+  module loads ("step destination path targets Seihou's own state at .seihou/manifest.json"), so
+  `seihou run` stops before planning and the manifest is untouched. The own-directory rule shows up
+  at plan time as "step destination .seihou/other/x is outside this module's state directory; a
+  module may write under .seihou/ only inside .seihou/demo/".
 - Checkout outputs and seed files already refuse `.seihou` and `.git` components anywhere in a
   path, through `validateCanonicalProjectPath` in `seihou-core/src/Seihou/Core/Path.hs`.
 
@@ -352,7 +367,7 @@ ordinary; `.git`, `.git/config`, `.GIT/HEAD` are control; `.seihou/manifest.json
 `.seihou/manifest.json` are refused, the last with the control reason. With directory operands,
 `.seihou` and `.seihou/demo` pass and `.seihou/other` and `.seihou/baselines` are refused.
 
-Acceptance: `cabal test seihou-core-test --test-options='-p PathSpec'` passes and lists the new
+Acceptance: `cabal test seihou-core-test --test-options='-p "/project path classification/"'` passes and lists the new
 cases.
 
 ### Milestone 2: the update path accepts module state
@@ -440,7 +455,7 @@ exits non-zero, mentions `.seihou/manifest.json`, and leaves the manifest byte-i
 state before the command; and that a step `dest` of `.seihou/other/x` exits non-zero with the
 own-directory message naming `.seihou/demo/`.
 
-Acceptance: `cabal test seihou-cli-test --test-options='-p ModuleStateE2ESpec'` passes. Before
+Acceptance: `cabal test seihou-cli-test --test-options='-p "/module state directory end-to-end/"'` passes. Before
 Milestone 2 the update case fails with `reconciliation_failed` and the IR's message; recording
 that failing output once in Surprises & Discoveries is useful evidence.
 
@@ -480,10 +495,10 @@ Build and run the focused tests while developing:
 
 ```bash
 cabal build all
-cabal test seihou-core-test --test-options='-p PathSpec'
-cabal test seihou-core-test --test-options='-p ReconcileSpec'
-cabal test seihou-core-test --test-options='-p UpdateTransactionSpec'
-cabal test seihou-cli-test --test-options='-p ModuleStateE2ESpec'
+cabal test seihou-core-test --test-options='-p "/project path classification/"'
+cabal test seihou-core-test --test-options='-p "/Seihou.Engine.Reconcile/"'
+cabal test seihou-core-test --test-options='-p "/Seihou.Engine.UpdateTransaction/"'
+cabal test seihou-cli-test --test-options='-p "/module state directory end-to-end/"'
 ```
 
 Confirm no stray copy of the old check remains after Milestone 2:

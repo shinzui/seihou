@@ -286,6 +286,7 @@ test-suite seihou-cli-test
     Seihou.CLI.ManifestRepairOriginsSpec
     Seihou.CLI.ManifestUpgradeSpec
     Seihou.CLI.MigrateSpec
+    Seihou.CLI.ModuleStateE2ESpec
     Seihou.CLI.PendingMigrationSpec
     Seihou.CLI.PromptRenderSpec
     Seihou.CLI.RecipeExtensionE2ESpec
