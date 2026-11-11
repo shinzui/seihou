@@ -1,7 +1,9 @@
 module Seihou.CLI.JudgementExecuteSpec (tests) where
 
 import Control.Monad (void)
+import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as BL
 import Data.Either (isLeft)
 import Data.Generics.Labels ()
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
@@ -10,6 +12,7 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Seihou.CLI.Judgement.Evidence
 import Seihou.CLI.Judgement.Execute
+import Seihou.CLI.Judgement.Report
 import Seihou.CLI.Judgement.Runtime (ChunkRequest, JudgementBackend (..))
 import Seihou.CLI.Judgement.Scanner (findScanner)
 import Seihou.Core.Judgement
@@ -130,6 +133,13 @@ tests = testSpec "judgement evidence and execution" $ do
       map (\f -> (f ^. #location . #path, f ^. #location . #line)) (d ^. #deterministic) `shouldBe` [("config/app.env", Just 2)]
       readIORef seen >>= (`shouldBe` [])
       T.pack (show d) `shouldNotSatisfy` T.isInfixOf fakeToken
+      let human = renderHuman def d
+          json = TE.decodeUtf8 (BL.toStrict (Aeson.encode (renderJson [(def, d)])))
+      human `shouldSatisfy` T.isInfixOf "config/app.env:2  critical  github-pat"
+      human `shouldNotSatisfy` T.isInfixOf fakeToken
+      json `shouldNotSatisfy` T.isInfixOf fakeToken
+      json `shouldSatisfy` T.isInfixOf "\"exitCode\":10"
+      exitCodeFor (d ^. #status) `shouldBe` 10
     it "stops a non-security judgement with an error and no finding when the safeguard flags material" $ withRepo $ \dir -> do
       writeAt dir "docs/guide.md" ("Use " <> fakeToken <> " to log in.\n")
       writeAt dir "docs/other.md" "Plain text.\n"
