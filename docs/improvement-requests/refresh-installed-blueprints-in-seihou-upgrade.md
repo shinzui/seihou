@@ -8,9 +8,10 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-11-10T22:29:39Z"
-timestamp: 2026-11-10T22:29:39Z
+timestamp: 2026-11-11T14:10:00Z
 requestId: IR-17
-status: proposed
+status: accepted
+targetPlan: docs/plans/121-refresh-installed-blueprints-and-prompts-in-seihou-upgrade.md
 origin: mori://shinzui/kotei-docs
 reviews:
   - kind: model
@@ -31,9 +32,13 @@ reviews:
 
 ## Status
 
-Proposed. Raised from `FRIC-5`
+Accepted. Raised from `FRIC-5`
 (`mori://shinzui/kotei-docs/okf/friction-log/concepts/FRIC-5`) against Seihou 0.15.0.0.
-No implementation plan exists.
+Planned on 2026-11-11 in
+[ExecPlan 121](../plans/121-refresh-installed-blueprints-and-prompts-in-seihou-upgrade.md).
+The plan answers the scope question below by covering prompts as well as blueprints. It
+refreshes each blueprint together with its `baseModules` closure, and it extends
+`seihou outdated`. Implementation has not started.
 
 ## Context
 
@@ -93,3 +98,4 @@ adding blueprints alone.
 - `mori://shinzui/kotei-docs/okf/friction-log/concepts/FRIC-5`
 - [ADR 0006](../adr/0006-the-install-cache-will-not-silently-substitute-an-artifact.md)
 - [IR-18](fail-a-batch-blueprint-run-whose-agent-was-refused-tools.md), the other half of FRIC-5
+- [ExecPlan 121](../plans/121-refresh-installed-blueprints-and-prompts-in-seihou-upgrade.md), the implementation plan
