@@ -19,6 +19,8 @@ where
 
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
+import Data.List (isPrefixOf)
+import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
@@ -102,7 +104,7 @@ validateJudgementDir dir = do
               Left errs -> pure (JudgementValidation dir (Just def) Nothing errs [])
               Right Nothing -> pure (JudgementValidation dir (Just def) Nothing [] ["no examples.json; judgement eval needs labelled examples"])
               Right (Just ex) -> do
-                (scanErrors, scanNotes) <- scanExamples ex
+                (scanErrors, scanNotes) <- scanExamples def ex
                 pure (JudgementValidation dir (Just def) (Just ex) scanErrors scanNotes)
   where
     loadErrorText = \case
@@ -110,17 +112,24 @@ validateJudgementDir dir = do
       DhallDecodeError _ reason -> T.take 2000 reason
       _ -> "judgement.dhall could not be loaded"
 
-scanExamples :: JudgementExamples -> IO ([JudgementError], [Text])
-scanExamples ex =
+-- | Scan the examples. A hit is an error unless the judgement declares the
+-- secret scan and the example expects a block: that material is stopped by
+-- the scanner before any request, so it is a valid deterministic case.
+scanExamples :: JudgementDefinition -> JudgementExamples -> IO ([JudgementError], [Text])
+scanExamples def ex =
   findScanner >>= \case
     Nothing -> pure ([], ["gitleaks was not found, so the examples were not scanned for credentials"])
     Just sc -> do
       let files = concatMap exampleEvidence (ex ^. #examples)
+          expectsBlock e = ExpectBlocked `elem` Map.elems (e ^. #expect)
+          allowed = [T.unpack (e ^. #id) | SecretScan `elem` (def ^. #deterministicChecks), e <- ex ^. #examples, expectsBlock e]
+          exempt p = any (\i -> (i <> "/") `isPrefixOf` p) allowed
       scanCaptured sc files [] <&> \case
         Left err -> ([judgementError "judgement_examples_scan_failed" ("the examples could not be scanned: " <> err)], [])
         Right result ->
-          ( [ judgementError "judgement_example_secret" ("'" <> T.pack p <> "' looks like a real credential to the secret scanner; examples must be synthetic and are sent to the evaluation route")
-            | p <- flaggedPaths result
+          ( [ judgementError "judgement_example_secret" ("'" <> T.pack p <> "' looks like a real credential to the secret scanner; examples must be synthetic, and only a block expected under the declared secret scan may contain one")
+            | p <- flaggedPaths result,
+              not (exempt p)
             ],
             []
           )

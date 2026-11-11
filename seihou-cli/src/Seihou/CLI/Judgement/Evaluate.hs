@@ -89,10 +89,14 @@ evaluateOffline sc def ex
       Just exe -> fmap sequence . forM (ex ^. #examples) $ \e ->
         scanCaptured exe (exampleEvidence e) [] <&> fmap (\r -> (e ^. #id, length (r ^. #findings)))
 
+-- | A deterministic finding blocks the whole judgement before any check is
+-- reviewed, so it counts as a block for every check.
 actualStatus :: JudgementDecision -> Text -> Maybe CheckStatus
-actualStatus d name = case [c ^. #status | c <- d ^. #checks, c ^. #check == name] of
-  (s : _) -> Just s
-  [] -> Nothing
+actualStatus d name
+  | not (null (d ^. #deterministic)) = Just CheckBlocked
+  | otherwise = case [c ^. #status | c <- d ^. #checks, c ^. #check == name] of
+      (s : _) -> Just s
+      [] -> Nothing
 
 -- | Score one check across every case that states an expectation for it.
 tally :: [(JudgementExample, JudgementDecision)] -> Text -> CheckTally
@@ -139,7 +143,11 @@ renderEvalReport r =
     def = r ^. #judgement
     rows = [(c ^. #example, c ^. #decision) | c <- r ^. #cases]
     secs x = T.pack (show (fromIntegral (round (x * 10) :: Int) / (10 :: Double))) <> "s"
-    perCase c =
+    perCase c
+      | not (null (c ^. #decision . #deterministic)) =
+          ["  " <> c ^. #example . #id <> ": " <> renderJudgementStatus (c ^. #decision . #status) <> " by the secret scan before any request (counts as blocked for every check)"]
+      | otherwise = perReviewed c
+    perReviewed c =
       ("  " <> c ^. #example . #id <> ": " <> renderJudgementStatus (c ^. #decision . #status))
         : [ "    " <> d ^. #check <> " " <> renderCheckStatus (d ^. #status) <> maybe "" (\p -> " at " <> renderProbability p) (d ^. #reviewConcern) <> maybe "" (\want -> " (expected " <> renderExpectedStatus want <> ")") (Map.lookup (d ^. #check) (c ^. #example . #expect))
           | d <- c ^. #decision . #checks

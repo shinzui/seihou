@@ -764,6 +764,33 @@ and [ADR 0002](../../adr/0002-artifact-identity-is-origin-url-plus-name.md), and
 [Sharing a Seihou Project Across a Team](../../user/teams.md) for the workflow
 this enables.
 
+### Judgements Decide in Pure Policy, Not in the Model
+
+A judgement ([ADR 0027](../../adr/0027-judgements-decide-from-model-evidence-through-recorded-project-policy.md))
+is split along the library boundaries:
+
+- `seihou-core/src/Seihou/Core/Judgement.hs` holds the definition types, structural
+  validation and the decision functions (`decideChunk`, `decideCheck`,
+  `decideJudgement`). It has no Shikumi or transport dependency; every probability it
+  sees is already the probability of the concern.
+  `Seihou/Core/JudgementState.hs` holds the owner, retirement and weakening rules;
+  `Seihou/Core/JudgementExamples.hs` the examples format; and
+  `Seihou/Manifest/Judgement.hs` the manifest encoding (schema 15).
+- `seihou-cli/src/Seihou/CLI/Judgement/` holds the services. `Evidence` captures the
+  staged index or a commit range from Git objects, never the worktree. `Scanner` runs
+  gitleaks on exactly those bytes. `Runtime` is the only module that imports Shikumi:
+  it builds the review and gate programs, converts yes-probabilities to
+  concern-probabilities, and runs CLI routes in an empty directory with tools
+  disabled. `Execute` fixes the order scan → withhold → data policy → gate → review.
+  `Check`, `CommitGate`, `Adopt`, `Hooks`, `Validate`, `Evaluate` and `Configure` back
+  the commands.
+- `seihou-cli/src-exe/Seihou/CLI/RunJudgement.hs` embeds the bundled catalogue
+  (`data/judgements/`) with `Data.FileEmbed`; `Check.hs` and `Judgement.hs` are thin
+  dispatchers.
+
+Tests interpret Shikumi's `LLM` effect through the `Runner` boundary, the same one
+production uses, so decoding and ordering are exercised without a provider.
+
 ### Three-State Diff Model
 
 The diff engine compares three sources: the manifest (last known generated state), the plan (what would be generated now), and disk (current filesystem state). This enables precise conflict classification without requiring version control.

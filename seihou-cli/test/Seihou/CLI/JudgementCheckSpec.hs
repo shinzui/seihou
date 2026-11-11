@@ -6,6 +6,7 @@ import Data.Either (isLeft)
 import Data.Generics.Labels ()
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
@@ -16,7 +17,9 @@ import Seihou.CLI.Judgement.Evidence (gitBytes)
 import Seihou.CLI.Judgement.Hooks
 import Seihou.CLI.Judgement.Runtime (JudgementBackend (..), JudgementRoute (..))
 import Seihou.CLI.Judgement.Scanner (findScanner)
+import Seihou.CLI.Judgement.Validate (validateJudgementDir)
 import Seihou.Core.Judgement
+import Seihou.Core.JudgementExamples (ExpectedStatus (..))
 import Seihou.Core.Types (ActiveJudgement (..), ApplicationId (..), JudgementOwner (..), JudgementSource (..), ManifestSchemaVersion (..))
 import Seihou.Dhall.Eval (evalJudgementFromFile)
 import Seihou.Manifest.Judgement (definitionDigest)
@@ -84,7 +87,7 @@ request = CheckRequest Nothing Nothing False False
 
 tests :: IO TestTree
 tests = testSpec "judgement check, adoption and hooks" $ do
-  describe "the bundled catalogue" $
+  describe "the bundled catalogue" $ do
     it "decodes and validates security-review with the secret scan declared" $ do
       r <- evalJudgementFromFile "data/judgements/security-review/judgement.dhall"
       case r of
@@ -93,6 +96,13 @@ tests = testSpec "judgement check, adoption and hooks" $ do
           d ^. #name `shouldBe` "security-review"
           d ^. #deterministicChecks `shouldBe` [SecretScan]
           validateDefinition d `shouldBe` Right ()
+    it "ships a valid release corpus of at least 20 benign and 20 unsafe cases" $ do
+      v <- validateJudgementDir "data/judgements/security-review"
+      v ^. #errors `shouldBe` []
+      let cases = maybe [] (^. #examples) (v ^. #examples)
+          benign = [e | e <- cases, all (== ExpectPassed) (Map.elems (e ^. #expect))]
+      length benign `shouldSatisfy` (>= 20)
+      (length cases - length benign) `shouldSatisfy` (>= 20)
 
   describe "seihou check" $ do
     it "reports nothing to check when no judgement is active" $ withRepo $ \dir -> do

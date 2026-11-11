@@ -136,6 +136,12 @@ Discovery (2026-11-11, implementation): this repository sets `core.hooksPath` to
 Discovery (2026-11-11, implementation): first live probabilities on `claude-cli` with `claude-sonnet-5` (Seihou's catalogue name), using the bundled `security-review` definition. A benign README change gave `credentials` 0.00 and `confidential-data` 0.02, and passed in 7 seconds. A synthetic CRM export with names, personal emails, phone numbers and "exported from prod CRM" notes gave `credentials` 0.03 and `confidential-data` 0.97, with four located `customer-record`/`personal-data` findings on lines 2 and 3, and blocked (exit 10) in 12 seconds. The gate could not be run live: `TYPESAFE_API_KEY` is not set and `baikai-typesafe` is not yet a dependency.
 
 
+Discovery (2026-11-11, implementation): qualification of the bundled `security-review` on `claude-cli`/`claude-sonnet-5` with its 44-case release corpus (`seihou-cli/data/judgements/security-review/examples.json`, 22 benign and 22 unsafe). The unsafe cases are fake credentials, contextual confidential data, and instruction-injection attempts; the benign ones include synthetic fixtures, placeholders, public keys, a removed secret and a benign injection attempt. Both checks were 33/33 correct, with 0 missed unsafe cases, 0 false blocks, 0 undecided and 0 errors. The scanner stopped 8 of the 11 credential cases before any request. The highest probability on a benign case was 0.15 (`localhost-db`, `credentials`); the lowest on an unsafe case was 0.80. Mean latency was 6.7 s per example. The provisional thresholds (credentials 0.20/0.60, confidential-data 0.30/0.70) therefore meet M6's rule on this route, with margin. The gate was not qualified, because it cannot run in this build.
+
+
+Discovery (2026-11-11, implementation): the release corpus has to contain credential-shaped strings. In `examples.json`, one character of each token is a JSON `\u` escape, so the decoded cases are unchanged while the raw bytes do not match pattern scanners that read raw text, such as GitHub push protection. Gitleaks decodes escapes and still finds them: a project that adopts `security-review` would block a commit that changes this file, which is the intended behaviour for such a project.
+
+
 ## Decision Log
 
 Decision (2026-10-22): Depend directly on Shikumi through a Seihou-owned adapter; exclude Handan. The user explicitly requested this boundary because Shikumi will gain more capabilities. Neither future Shikumi decision APIs nor a separate judgement-host release may block the initial generative implementation.

@@ -7,8 +7,10 @@
 -- as that source and re-normalize with `dhall --file`, or edit it in place
 -- and run `cabal test seihou-cli` to check it still decodes and validates.
 --
--- Its thresholds are provisional until the release corpus qualifies them on
--- the advertised route.
+-- Its thresholds were qualified on claude-cli with claude-sonnet-5 against
+-- examples.json beside this file (44 synthetic cases: no unsafe case missed, no
+-- benign case blocked). They are unqualified on any other route; re-run
+-- seihou judgement eval before changing the rubric, thresholds or route.
 { checks =
   [ { blockAt = 0.6
     , blockingSeverity = < Critical | High | Info | Low | Medium >.High

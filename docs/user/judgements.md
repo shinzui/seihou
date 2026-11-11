@@ -61,8 +61,11 @@ exit code. All enforced checks of all active judgements must pass for a commit t
 proceed.
 
 The probabilities are stated by the model in its reply. They are not calibrated, and
-the same numbers mean different things on a different model. The bundled thresholds
-are provisional. Use `seihou judgement eval` on your own examples to see where a
+the same numbers mean different things on a different model. The bundled
+`security-review` thresholds were qualified on `claude-cli` with `claude-sonnet-5`
+against its 44-case synthetic corpus (`seihou-cli/data/judgements/security-review/examples.json`):
+no unsafe case was missed and no benign case was blocked. On any other route they are
+unqualified. Use `seihou judgement eval` on your own examples to see where a
 route's probabilities fall before trusting a threshold.
 
 ## Write a judgement
