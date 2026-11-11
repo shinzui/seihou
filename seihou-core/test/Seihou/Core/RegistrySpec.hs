@@ -184,7 +184,8 @@ spec = do
                   modules = [RegistryEntry (ModuleName "mod-a") Nothing "mod-a" Nothing []],
                   recipes = [],
                   blueprints = [],
-                  prompts = []
+                  prompts = [],
+                  judgements = []
                 }
         errs <- validateRegistry tmpDir reg
         errs `shouldBe` []
@@ -200,7 +201,8 @@ spec = do
                   modules = [RegistryEntry (ModuleName "Bad_Name") Nothing "Bad_Name" Nothing []],
                   recipes = [],
                   blueprints = [],
-                  prompts = []
+                  prompts = [],
+                  judgements = []
                 }
         errs <- validateRegistry tmpDir reg
         length errs `shouldSatisfy` (> 0)
@@ -215,7 +217,8 @@ spec = do
                   modules = [RegistryEntry (ModuleName "missing") Nothing "nonexistent" Nothing []],
                   recipes = [],
                   blueprints = [],
-                  prompts = []
+                  prompts = [],
+                  judgements = []
                 }
         errs <- validateRegistry tmpDir reg
         length errs `shouldSatisfy` (> 0)
@@ -230,7 +233,8 @@ spec = do
                   modules = [RegistryEntry (ModuleName "bad-path") Nothing "../escape" Nothing []],
                   recipes = [],
                   blueprints = [],
-                  prompts = []
+                  prompts = [],
+                  judgements = []
                 }
         errs <- validateRegistry tmpDir reg
         any ("must not contain" `isInfixOf`) (map show errs) `shouldBe` True
@@ -247,7 +251,8 @@ spec = do
                   modules = [RegistryEntry (ModuleName "mod-a") (Just "1.0.0") "mod-a" Nothing []],
                   recipes = [],
                   blueprints = [],
-                  prompts = []
+                  prompts = [],
+                  judgements = []
                 }
             lookups = [(ModuleEntry, ModuleName "mod-a", Just "1.0.0")]
         report <- validateRegistryFull tmpDir reg lookups
@@ -268,7 +273,8 @@ spec = do
                   modules = [RegistryEntry (ModuleName "mod-a") Nothing "mod-a" Nothing []],
                   recipes = [],
                   blueprints = [],
-                  prompts = []
+                  prompts = [],
+                  judgements = []
                 }
             lookups = [(ModuleEntry, ModuleName "mod-a", Just "1.0.0")]
         report <- validateRegistryFull tmpDir reg lookups
@@ -287,7 +293,8 @@ spec = do
                   modules = [RegistryEntry (ModuleName "mod-a") (Just "1.0.0") "mod-a" Nothing []],
                   recipes = [],
                   blueprints = [],
-                  prompts = []
+                  prompts = [],
+                  judgements = []
                 }
             lookups = [(ModuleEntry, ModuleName "mod-a", Just "2.0.0")]
         report <- validateRegistryFull tmpDir reg lookups
@@ -306,7 +313,8 @@ spec = do
                   modules = [RegistryEntry (ModuleName "Bad_Name") Nothing "Bad_Name" Nothing []],
                   recipes = [],
                   blueprints = [],
-                  prompts = []
+                  prompts = [],
+                  judgements = []
                 }
             lookups = [(ModuleEntry, ModuleName "Bad_Name", Nothing)]
         report <- validateRegistryFull tmpDir reg lookups
@@ -322,7 +330,8 @@ spec = do
                   modules = [RegistryEntry (ModuleName "escape") Nothing "../escape" Nothing []],
                   recipes = [],
                   blueprints = [],
-                  prompts = []
+                  prompts = [],
+                  judgements = []
                 }
         report <- validateRegistryFull tmpDir reg []
         let structurals = [msg | StructuralError msg <- report ^. #issues]
@@ -345,7 +354,8 @@ spec = do
                     ],
                   recipes = [],
                   blueprints = [],
-                  prompts = []
+                  prompts = [],
+                  judgements = []
                 }
             lookups =
               [ (ModuleEntry, ModuleName "good", Just "1.0.0"),
@@ -452,7 +462,8 @@ spec = do
                   modules = [],
                   recipes = [],
                   blueprints = [RegistryEntry (ModuleName "Bad_Bp") Nothing "Bad_Bp" Nothing []],
-                  prompts = []
+                  prompts = [],
+                  judgements = []
                 }
         errs <- validateRegistry tmpDir reg
         any ("blueprint name must match" `isInfixOf`) (map show errs) `shouldBe` True
@@ -466,7 +477,8 @@ spec = do
                   modules = [],
                   recipes = [],
                   blueprints = [RegistryEntry (ModuleName "ghost") Nothing "ghost" Nothing []],
-                  prompts = []
+                  prompts = [],
+                  judgements = []
                 }
         errs <- validateRegistry tmpDir reg
         any ("missing blueprint.dhall" `isInfixOf`) (map show errs) `shouldBe` True
@@ -480,7 +492,8 @@ spec = do
                   modules = [],
                   recipes = [],
                   blueprints = [RegistryEntry (ModuleName "escape") Nothing "../escape" Nothing []],
-                  prompts = []
+                  prompts = [],
+                  judgements = []
                 }
         errs <- validateRegistry tmpDir reg
         any ("blueprint path must not contain" `isInfixOf`) (map show errs) `shouldBe` True
@@ -505,7 +518,8 @@ spec = do
                     [ RegistryEntry (ModuleName "duped") Nothing "shared-bp1" Nothing [],
                       RegistryEntry (ModuleName "other") Nothing "shared-bp2" Nothing []
                     ],
-                  prompts = []
+                  prompts = [],
+                  judgements = []
                 }
         errs <- validateRegistry tmpDir reg
         any ("appears as both a module and a blueprint" `isInfixOf`) (map show errs)
@@ -528,7 +542,8 @@ spec = do
                   modules = [RegistryEntry (ModuleName "tripled") Nothing "trip-m" Nothing []],
                   recipes = [RegistryEntry (ModuleName "tripled") Nothing "trip-r" Nothing []],
                   blueprints = [RegistryEntry (ModuleName "tripled") Nothing "trip-b" Nothing []],
-                  prompts = []
+                  prompts = [],
+                  judgements = []
                 }
         errs <- validateRegistry tmpDir reg
         let messages = map show errs
@@ -546,7 +561,8 @@ spec = do
                 blueprints =
                   [ RegistryEntry (ModuleName "bp-stale") (Just "0.1.0") "blueprints/bp-stale" Nothing []
                   ],
-                prompts = []
+                prompts = [],
+                judgements = []
               }
           lookups = [(BlueprintEntry, ModuleName "bp-stale", Just "0.2.0")]
           SyncReport diffs updated = computeRegistrySync reg lookups
@@ -575,7 +591,8 @@ spec = do
                     [ RegistryEntry (ModuleName "bp-a") (Just "1.0.0") "bp-a" Nothing [],
                       RegistryEntry (ModuleName "bp-b") (Just "1.0.0") "bp-b" Nothing []
                     ],
-                  prompts = []
+                  prompts = [],
+                  judgements = []
                 }
             lookups =
               [ (BlueprintEntry, ModuleName "bp-a", Just "1.0.0"),
@@ -597,7 +614,8 @@ spec = do
                   modules = [],
                   recipes = [],
                   blueprints = [],
-                  prompts = [RegistryEntry (ModuleName "Bad_Prompt") Nothing "Bad_Prompt" Nothing []]
+                  prompts = [RegistryEntry (ModuleName "Bad_Prompt") Nothing "Bad_Prompt" Nothing []],
+                  judgements = []
                 }
         errs <- validateRegistry tmpDir reg
         any ("prompt name must match" `isInfixOf`) (map show errs) `shouldBe` True
@@ -611,7 +629,8 @@ spec = do
                   modules = [],
                   recipes = [],
                   blueprints = [],
-                  prompts = [RegistryEntry (ModuleName "ghost") Nothing "ghost" Nothing []]
+                  prompts = [RegistryEntry (ModuleName "ghost") Nothing "ghost" Nothing []],
+                  judgements = []
                 }
         errs <- validateRegistry tmpDir reg
         any ("missing prompt.dhall" `isInfixOf`) (map show errs) `shouldBe` True
@@ -625,7 +644,8 @@ spec = do
                   modules = [],
                   recipes = [],
                   blueprints = [],
-                  prompts = [RegistryEntry (ModuleName "escape") Nothing "../escape" Nothing []]
+                  prompts = [RegistryEntry (ModuleName "escape") Nothing "../escape" Nothing []],
+                  judgements = []
                 }
         errs <- validateRegistry tmpDir reg
         any ("prompt path must not contain" `isInfixOf`) (map show errs) `shouldBe` True
@@ -655,7 +675,8 @@ spec = do
                     [ RegistryEntry (ModuleName "as-module") Nothing "shared-prompt1" Nothing [],
                       RegistryEntry (ModuleName "as-recipe") Nothing "shared-prompt2" Nothing [],
                       RegistryEntry (ModuleName "as-blueprint") Nothing "shared-prompt3" Nothing []
-                    ]
+                    ],
+                  judgements = []
                 }
         errs <- validateRegistry tmpDir reg
         let messages = map show errs
@@ -673,7 +694,8 @@ spec = do
                 blueprints = [],
                 prompts =
                   [ RegistryEntry (ModuleName "prompt-stale") (Just "0.1.0") "prompts/prompt-stale" Nothing []
-                  ]
+                  ],
+                judgements = []
               }
           lookups = [(PromptEntry, ModuleName "prompt-stale", Just "0.2.0")]
           SyncReport diffs updated = computeRegistrySync reg lookups
@@ -702,7 +724,8 @@ spec = do
                   prompts =
                     [ RegistryEntry (ModuleName "prompt-a") (Just "1.0.0") "prompt-a" Nothing [],
                       RegistryEntry (ModuleName "prompt-b") (Just "1.0.0") "prompt-b" Nothing []
-                    ]
+                    ],
+                  judgements = []
                 }
             lookups =
               [ (PromptEntry, ModuleName "prompt-a", Just "1.0.0"),

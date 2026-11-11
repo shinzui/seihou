@@ -71,6 +71,7 @@ import Seihou.CLI.MigrationCohort
     resolveMigrationCohort,
   )
 import Seihou.CLI.Shared (formatVarError, logIO)
+import Seihou.Core.ArtifactFiles (renderAmbiguousArtifact)
 import Seihou.Core.Migration
   ( BlueprintMigration (..),
     BlueprintMigrationPlan (..),
@@ -845,6 +846,8 @@ renderModuleLoadError = \case
     "Missing source file in '" <> name ^. #unModuleName <> "': " <> T.pack path
   RegistryEvalError path msg ->
     "Failed to evaluate registry at '" <> path <> "': " <> msg
+  AmbiguousArtifact name dir files ->
+    renderAmbiguousArtifact name dir files
 
 exitErr :: LogLevel -> Text -> IO a
 exitErr level msg = do

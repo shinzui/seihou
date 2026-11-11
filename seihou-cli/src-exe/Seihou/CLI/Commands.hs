@@ -328,6 +328,7 @@ data ListOpts = ListOpts
     recipesOnly :: !Bool,
     blueprintsOnly :: !Bool,
     promptsOnly :: !Bool,
+    judgementsOnly :: !Bool,
     full :: !Bool
   }
   deriving stock (Eq, Show, Generic)
@@ -778,12 +779,12 @@ installInfo =
   info
     (installParser <**> helper)
     ( fullDesc
-        <> progDesc "Install module(s), recipe(s), blueprint(s), or prompt(s) from git"
+        <> progDesc "Install module(s), recipe(s), blueprint(s), prompt(s), or judgement(s) from git"
         <> footerDoc
           ( Just $
               vsep
                 [ pretty ("Clones the git repository and installs modules, recipes," :: String),
-                  pretty ("blueprints, or prompts to ~/.config/seihou/installed/<name>/." :: String),
+                  pretty ("blueprints, prompts, or judgements to ~/.config/seihou/installed/<name>/." :: String),
                   line,
                   pretty ("If the repository contains a seihou-registry.dhall file, it is" :: String),
                   pretty ("treated as a multi-module registry. Use --module to pick specific" :: String),
@@ -871,7 +872,7 @@ listInfo =
   info
     (listParser <**> helper)
     ( fullDesc
-        <> progDesc "List available modules, recipes, blueprints, and prompts"
+        <> progDesc "List available modules, recipes, blueprints, prompts, and judgements"
         <> footerDoc
           ( Just $
               vsep
@@ -899,6 +900,7 @@ listParser =
       <*> switch (long "recipes" <> help "Show only recipes")
       <*> switch (long "blueprints" <> help "Show only blueprints")
       <*> switch (long "prompts" <> help "Show only prompts")
+      <*> switch (long "judgements" <> help "Show only judgements")
       <*> switch (long "full" <> help "Show complete descriptions, word-wrapped, instead of one truncated line")
 
 newModuleInfo :: ParserInfo Command
@@ -1374,12 +1376,12 @@ browseInfo =
   info
     (browseParser <**> helper)
     ( fullDesc
-        <> progDesc "Browse modules, recipes, blueprints, and prompts in a git repository"
+        <> progDesc "Browse modules, recipes, blueprints, prompts, and judgements in a git repository"
         <> footerDoc
           ( Just $
               vsep
                 [ pretty ("Clones the repository and shows available modules, recipes," :: String),
-                  pretty ("blueprints, and prompts without installing anything. For multi-artifact repos" :: String),
+                  pretty ("blueprints, prompts, and judgements without installing anything. For multi-artifact repos" :: String),
                   pretty ("with a seihou-registry.dhall, displays all entries with descriptions," :: String),
                   pretty ("kind labels, and tags. Use --tag to filter by tag." :: String),
                   line,
@@ -1405,7 +1407,7 @@ outdatedInfo =
   info
     (outdatedParser <**> helper)
     ( fullDesc
-        <> progDesc "Check installed modules, blueprints, and prompts for newer versions"
+        <> progDesc "Check installed modules, blueprints, prompts, and judgements for newer versions"
         <> footerDoc
           ( Just $
               vsep
@@ -1442,7 +1444,7 @@ upgradeParser :: Parser Command
 upgradeParser =
   fmap Upgrade $
     UpgradeOpts
-      <$> many (argument (T.pack <$> str) (metavar "ARTIFACT" <> help "Installed modules, recipes, blueprints, or prompts to upgrade (default: all)"))
+      <$> many (argument (T.pack <$> str) (metavar "ARTIFACT" <> help "Installed modules, recipes, blueprints, prompts, or judgements to upgrade (default: all)"))
       <*> switch (long "dry-run" <> help "Show what would be upgraded without making changes")
       <*> switch (long "json" <> help "Output as JSON")
       <*> switch (long "skip-unversioned" <> help "Skip unversioned changes (keeps recipe closures together)")
@@ -1828,11 +1830,11 @@ validateRegistryInfo =
                 [ pretty ("Validates a multi-artifact repository's seihou-registry.dhall:" :: String),
                   indent 2 $
                     vsep
-                      [ pretty ("- every entry path resolves to a module.dhall, recipe.dhall, blueprint.dhall, or prompt.dhall" :: String),
+                      [ pretty ("- every entry path resolves to a module.dhall, recipe.dhall, blueprint.dhall, prompt.dhall, or judgement.dhall" :: String),
                         pretty ("- entry names match [a-z][a-z0-9-]*" :: String),
-                        pretty ("- no name collisions between modules, recipes, blueprints, and prompts" :: String),
+                        pretty ("- no name collisions between modules, recipes, blueprints, prompts, and judgements" :: String),
                         pretty ("- entry paths are relative and contain no '..'" :: String),
-                        pretty ("- each entry's `version` matches the underlying module/recipe/blueprint/prompt" :: String)
+                        pretty ("- each entry's `version` matches the underlying module/recipe/blueprint/prompt/judgement" :: String)
                       ],
                   line,
                   pretty ("Exits 1 on any failure. Run from a writable checkout of the registry repo." :: String)

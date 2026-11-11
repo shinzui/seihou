@@ -115,6 +115,7 @@ dispatch cmd =
               <> [KindRecipe | listOpts ^. #recipesOnly]
               <> [KindBlueprint | listOpts ^. #blueprintsOnly]
               <> [KindPrompt | listOpts ^. #promptsOnly]
+              <> [KindJudgement | listOpts ^. #judgementsOnly]
           mode = if listOpts ^. #full then FullDescriptions else BoundedDescriptions
        in handleList (ListFilter (listOpts ^. #repo) (listOpts ^. #tag) kinds) mode
     NewModule newModOpts ->

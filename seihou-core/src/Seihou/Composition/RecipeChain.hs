@@ -10,6 +10,7 @@ import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Seihou.Composition.Recipe
 import Seihou.Composition.Resolve (verifyDependencySources)
+import Seihou.Core.ArtifactFiles (renderAmbiguousArtifact)
 import Seihou.Core.ArtifactIdentity (sameArtifactIdentity, sameRepositoryOrigin)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin, readOriginInfo)
 import Seihou.Core.Module (discoverModule, discoverRunnable)
@@ -78,6 +79,7 @@ describe (ValidationError _ reasons) = T.intercalate "; " reasons
 describe (CircularDependency names) = "Dependency cycle: " <> T.intercalate " -> " [name | ModuleName name <- names]
 describe (MissingSourceFile (ModuleName name) path) = "Member '" <> name <> "' is missing " <> T.pack path
 describe (RegistryEvalError source reason) = "Cannot evaluate registry '" <> source <> "': " <> reason
+describe (AmbiguousArtifact name dir files) = renderAmbiguousArtifact name dir files
 
 -- | Descriptor evidence is normalized Dhall, independent of import/cache paths.
 recordRecipeChain :: ExpandedRecipe -> IO [AppliedRecipeNode]

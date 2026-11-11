@@ -173,6 +173,7 @@ summaryNoun kinds = case kinds of
     kindBase KindRecipe = "recipe"
     kindBase KindBlueprint = "blueprint"
     kindBase KindPrompt = "prompt"
+    kindBase KindJudgement = "judgement"
 
 -- | Append @s@ to a singular noun unless the count is exactly one.
 pluralize :: Int -> Text -> Text
@@ -198,6 +199,7 @@ formatFilterSuffix opts =
     kindNoun KindRecipe = "recipe"
     kindNoun KindBlueprint = "blueprint"
     kindNoun KindPrompt = "prompt"
+    kindNoun KindJudgement = "judgement"
 
 -- | Apply repo and tag filters to a list of entries.  Both filters combine
 -- with AND: an entry must match all active filters to be included.
@@ -278,6 +280,7 @@ briefError (ModuleNotFound _ _) = "not found"
 briefError (MissingSourceFile _ _) = "missing source file"
 briefError (CircularDependency _) = "circular dependency"
 briefError (RegistryEvalError _ _) = "registry eval failed"
+briefError (AmbiguousArtifact _ _ _) = "ambiguous artifact"
 
 -- | How much of an entry's description the bounded list shows: one line
 -- indented by four spaces, so the description line never exceeds 76 columns
@@ -298,7 +301,8 @@ kindSections =
   [ (KindModule, "Modules"),
     (KindRecipe, "Recipes"),
     (KindBlueprint, "Blueprints"),
-    (KindPrompt, "Prompts")
+    (KindPrompt, "Prompts"),
+    (KindJudgement, "Judgements")
   ]
 
 -- | Render entries as one section per kind, each a heading with a count, a

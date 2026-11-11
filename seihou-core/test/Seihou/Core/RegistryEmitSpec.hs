@@ -47,7 +47,8 @@ spec = describe "renderRegistryDhall" $ do
                     }
                 ],
               blueprints = [],
-              prompts = []
+              prompts = [],
+              judgements = []
             }
     roundTrip reg
 
@@ -67,7 +68,8 @@ spec = describe "renderRegistryDhall" $ do
                 ],
               recipes = [],
               blueprints = [],
-              prompts = []
+              prompts = [],
+              judgements = []
             }
     roundTrip reg
 
@@ -87,7 +89,8 @@ spec = describe "renderRegistryDhall" $ do
                 ],
               recipes = [],
               blueprints = [],
-              prompts = []
+              prompts = [],
+              judgements = []
             }
     roundTrip reg
 
@@ -107,7 +110,8 @@ spec = describe "renderRegistryDhall" $ do
                 ],
               recipes = [],
               blueprints = [],
-              prompts = []
+              prompts = [],
+              judgements = []
             }
     roundTrip reg
 
@@ -119,7 +123,8 @@ spec = describe "renderRegistryDhall" $ do
               modules = [],
               recipes = [],
               blueprints = [],
-              prompts = []
+              prompts = [],
+              judgements = []
             }
     roundTrip reg
 
@@ -170,7 +175,8 @@ spec = describe "renderRegistryDhall" $ do
                       description = Just "Prompt entry",
                       tags = ["agent"]
                     }
-                ]
+                ],
+              judgements = []
             }
     roundTrip reg
 

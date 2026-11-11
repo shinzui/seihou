@@ -545,6 +545,10 @@ data ModuleLoadError
   | CircularDependency [ModuleName]
   | MissingSourceFile ModuleName FilePath
   | RegistryEvalError Text Text
+  | -- | An artifact directory holds a @judgement.dhall@ next to another
+    --   artifact definition file, so its kind is ambiguous. Carries the
+    --   requested name, the directory, and every definition file present.
+    AmbiguousArtifact ModuleName FilePath [FilePath]
   deriving stock (Eq, Show, Generic)
 
 -- | Tracks where a variable's value came from (for provenance / @--explain@).

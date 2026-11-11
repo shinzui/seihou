@@ -34,6 +34,7 @@ import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap (..), EvidenceSour
 import Seihou.CLI.ManifestGuard (blockingChecks, checkRecipeChain, formatGuardOverride)
 import Seihou.CLI.Shared (formatVarError)
 import Seihou.CLI.Update.Types
+import Seihou.Core.ArtifactFiles (renderAmbiguousArtifact)
 import Seihou.Core.ArtifactRef (renderArtifactRefError)
 import Seihou.Core.Checkout (CheckoutAction (..), CheckoutEntry (..), CheckoutError (..), CheckoutPlan (..))
 import Seihou.Core.CommandFingerprint (isCheckoutCommand)
@@ -710,6 +711,8 @@ loadErrorText (MissingSourceFile name path) =
   moduleNameText name <> " is missing its source file " <> T.pack path
 loadErrorText (RegistryEvalError source reason) =
   "evaluating registry " <> source <> " failed: " <> reason
+loadErrorText (AmbiguousArtifact name dir files) =
+  renderAmbiguousArtifact name dir files
 
 migrationPlanErrorText :: MigrationPlanError -> Text
 migrationPlanErrorText (MigrationVersionUnparseable version) =

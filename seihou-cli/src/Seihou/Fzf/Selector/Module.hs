@@ -43,6 +43,7 @@ formatRunnableCandidate dr
             KindRecipe -> " [recipe]"
             KindBlueprint -> " [blueprint]"
             KindPrompt -> " [prompt]"
+            KindJudgement -> " [judgement]"
           sourceTag = case dr ^. #source of
             SourceProject -> "[project]"
             SourceUser -> "[user]"

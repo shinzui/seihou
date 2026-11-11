@@ -100,6 +100,10 @@ renderValidationReport r
             <> T.pack (show (r ^. #promptCount))
             <> " "
             <> pluralize (r ^. #promptCount) "prompt" "prompts"
+            <> ", "
+            <> T.pack (show (r ^. #judgementCount))
+            <> " "
+            <> pluralize (r ^. #judgementCount) "judgement" "judgements"
             <> ", all versions in sync."
         ]
   | otherwise =

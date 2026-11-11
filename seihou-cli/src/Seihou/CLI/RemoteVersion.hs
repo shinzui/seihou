@@ -11,7 +11,7 @@ import Data.Text qualified as T
 import Seihou.Core.Module (RunnableKind (..))
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents)
 import Seihou.Core.Types (AgentPrompt (..), Blueprint (..), Module (..), ModuleName (..))
-import Seihou.Dhall.Eval (evalAgentPromptFromFile, evalBlueprintFromFile, evalModuleFromFile, evalRegistryFromFile)
+import Seihou.Dhall.Eval (evalAgentPromptFromFile, evalBlueprintFromFile, evalJudgementFromFile, evalModuleFromFile, evalRegistryFromFile)
 import Seihou.Prelude
 import System.Directory (doesFileExist)
 
@@ -70,6 +70,7 @@ fetchTrueModuleVersion clonedRepoPath name = do
     SingleRecipe _ -> pure (Left (RegistryNotFound clonedRepoPath))
     SingleBlueprint _ -> pure (Left (RegistryNotFound clonedRepoPath))
     SinglePrompt _ -> pure (Left (RegistryNotFound clonedRepoPath))
+    SingleJudgement _ -> pure (Left (RegistryNotFound clonedRepoPath))
     EmptyRepo -> pure (Left (RegistryNotFound clonedRepoPath))
   where
     findEntry :: Registry -> Maybe RegistryEntry
@@ -83,7 +84,8 @@ fetchTrueModuleVersion clonedRepoPath name = do
 --
 -- A blueprint is found through the registry's @blueprints@ entry of that name,
 -- or at the root of a single-blueprint repository; a prompt likewise through
--- @prompts@ or a single-prompt root. Recipes are not version-checked by
+-- @prompts@ or a single-prompt root, and a judgement through @judgements@ or a
+-- single-judgement root. Recipes are not version-checked by
 -- @seihou outdated@ and report 'RegistryNotFound'.
 fetchTrueRunnableVersion :: FilePath -> RunnableKind -> Text -> IO (Either FetchError (Maybe Text))
 fetchTrueRunnableVersion clonedRepoPath kind name = case kind of
@@ -93,9 +95,12 @@ fetchTrueRunnableVersion clonedRepoPath kind name = case kind of
     fmap (^. #version) <$> evalBlueprintFromFile path
   KindPrompt -> located (^. #prompts) singlePrompt "prompt.dhall" $ \path ->
     fmap (^. #version) <$> evalAgentPromptFromFile path
+  KindJudgement -> located (^. #judgements) singleJudgement "judgement.dhall" $ \path ->
+    fmap (^. #version) <$> evalJudgementFromFile path
   where
     singleBlueprint = \case SingleBlueprint root -> Just root; _ -> Nothing
     singlePrompt = \case SinglePrompt root -> Just root; _ -> Nothing
+    singleJudgement = \case SingleJudgement root -> Just root; _ -> Nothing
     located :: (Show e) => (Registry -> [RegistryEntry]) -> (RepoContents -> Maybe FilePath) -> FilePath -> (FilePath -> IO (Either e (Maybe Text))) -> IO (Either FetchError (Maybe Text))
     located entriesOf single file readVersion = do
       contents <- discoverRepoContents evalRegistryFromFile clonedRepoPath

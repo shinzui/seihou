@@ -184,6 +184,11 @@ spec = do
       let result = applyFilters (ListFilter Nothing Nothing [KindPrompt]) mixed
       map (^. #name) result `shouldBe` ["prompt-a"]
 
+    it "keeps only judgements with --judgements" $ do
+      let withJudgement = mixed <> [mkEntryK KindJudgement "guard" Nothing []]
+          result = applyFilters (ListFilter Nothing Nothing [KindJudgement]) withJudgement
+      map (^. #name) result `shouldBe` ["guard"]
+
     it "unions kinds when several flags are given" $ do
       let result = applyFilters (ListFilter Nothing Nothing [KindModule, KindRecipe]) mixed
       map (^. #name) result `shouldBe` ["mod-a", "rec-a", "mod-b"]
@@ -214,6 +219,18 @@ spec = do
       let entries = [mkEntryK KindPrompt "review" Nothing [], mkEntryK KindPrompt "explain" Nothing []]
           result = formatListOutputEntries False BoundedDescriptions entries ["p1"] noFilterF
       T.isInfixOf "2 prompts found" result `shouldBe` True
+
+    it "lists judgements under their own section with the judgement noun" $ do
+      let entries = [mkEntryK KindJudgement "guard" Nothing []]
+          result = formatListOutputEntries False BoundedDescriptions entries ["p1"] noFilterF
+      T.isInfixOf "Judgements (1)" result `shouldBe` True
+      T.isInfixOf "  guard" result `shouldBe` True
+      T.isInfixOf "1 judgement found" result `shouldBe` True
+
+    it "names judgements in the empty message when filtered to judgements" $ do
+      let result = formatListOutputEntries False BoundedDescriptions [] ["p1"] (ListFilter Nothing Nothing [KindJudgement])
+      T.isInfixOf "No judgements found." result `shouldBe` True
+      T.isInfixOf "kind=judgement" result `shouldBe` True
 
     it "falls back to the neutral noun for a mix of kinds" $ do
       let entries = [mkEntryK KindModule "mod-a" Nothing [], mkEntryK KindRecipe "rec-a" Nothing []]

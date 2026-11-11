@@ -304,6 +304,7 @@ test-suite seihou-cli-test
     Seihou.CLI.InstallHistorySpec
     Seihou.CLI.InstallSourceSpec
     Seihou.CLI.InstalledRunnablesSpec
+    Seihou.CLI.JudgementArtifactE2ESpec
     Seihou.CLI.JudgementAuthoringSpec
     Seihou.CLI.JudgementCheckSpec
     Seihou.CLI.JudgementExecuteSpec

@@ -159,6 +159,23 @@ spec = do
         Just c -> T.isInfixOf "[prompt]" (c ^. #display) `shouldBe` True
         Nothing -> expectationFailure "expected Just"
 
+    it "tags judgement candidates with [judgement] and selects them by name" $ do
+      let dr =
+            DiscoveredRunnable
+              { name = "customer-data-review",
+                description = Just "Review customer data handling",
+                kind = KindJudgement,
+                source = SourceInstalled,
+                dir = "/tmp/customer-data-review",
+                isError = False,
+                error = Nothing
+              }
+      case formatRunnableCandidate dr of
+        Just c -> do
+          T.isInfixOf "[judgement]" (c ^. #display) `shouldBe` True
+          c ^. #value `shouldBe` ModuleName "customer-data-review"
+        Nothing -> expectationFailure "expected Just"
+
 -- | Helper to create a valid discovered module for testing.
 validModule :: String -> String -> ModuleSource -> DiscoveredModule
 validModule name desc src =

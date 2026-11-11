@@ -39,6 +39,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust, maybeToList)
 import Data.Set qualified as Set
 import Data.Text qualified as T
+import Seihou.Core.ArtifactFiles (judgementAmbiguity)
 import Seihou.Core.Checkout (CheckoutError (..), validateCheckoutPaths)
 import Seihou.Core.Path (PathOperand (..), controlPathReason, ownStateDirectoryViolation, validateProjectRelativePath)
 import Seihou.Core.Types
@@ -70,7 +71,9 @@ discoverModule searchPaths name = go searchPaths
 -- (returning 'RunnableAgentPrompt'). Within a single candidate directory
 -- the priority is module > recipe > blueprint > prompt, so a stray
 -- @module.dhall@ next to a @blueprint.dhall@ silently surfaces the
--- module — the more specific, deterministic artifact. Returns
+-- module — the more specific, deterministic artifact. A @judgement.dhall@
+-- (returning 'RunnableJudgement') does not join that precedence: next to any
+-- other definition file it is 'AmbiguousArtifact'. Returns
 -- 'ModuleNotFound' if none is found in any search path.
 discoverRunnable :: [FilePath] -> ModuleName -> IO (Either ModuleLoadError Runnable)
 discoverRunnable searchPaths name = go searchPaths
@@ -79,7 +82,12 @@ discoverRunnable searchPaths name = go searchPaths
     go [] = pure $ Left (ModuleNotFound name searchPaths)
     go (dir : rest) = do
       let candidate = dir </> nameStr
-          moduleDhall = candidate </> "module.dhall"
+      ambiguity <- judgementAmbiguity candidate
+      case ambiguity of
+        Just files -> pure (Left (AmbiguousArtifact name candidate files))
+        Nothing -> probe candidate rest
+    probe candidate rest = do
+      let moduleDhall = candidate </> "module.dhall"
           recipeDhall = candidate </> "recipe.dhall"
           blueprintDhall = candidate </> "blueprint.dhall"
           promptDhall = candidate </> "prompt.dhall"
@@ -449,7 +457,7 @@ discoverAllModules searchPaths = do
       pure DiscoveredModule {result = result, source = src, dir = moduleDir}
 
 -- | Whether a discovered item is a module, recipe, blueprint, or prompt.
-data RunnableKind = KindModule | KindRecipe | KindBlueprint | KindPrompt
+data RunnableKind = KindModule | KindRecipe | KindBlueprint | KindPrompt | KindJudgement
   deriving stock (Eq, Show, Generic)
 
 -- | A runnable discovered during enumeration, with its load result, kind, and source.
@@ -464,8 +472,10 @@ data DiscoveredRunnable = DiscoveredRunnable
   }
   deriving stock (Generic, Show)
 
--- | Enumerate all modules, recipes, blueprints, and prompts across the given search paths.
--- Returns a unified list of discovered items, each tagged with its kind.
+-- | Enumerate all modules, recipes, blueprints, prompts, and judgements across
+-- the given search paths. Returns a unified list of discovered items, each
+-- tagged with its kind. A directory whose @judgement.dhall@ shares it with
+-- another definition file is listed once, as an erroring judgement.
 discoverAllRunnables :: [FilePath] -> IO [DiscoveredRunnable]
 discoverAllRunnables searchPaths = do
   let tagged = zip searchPaths (sources ++ repeat SourceInstalled)
@@ -484,6 +494,24 @@ discoverAllRunnables searchPaths = do
 
     loadRunnable :: FilePath -> ModuleSource -> FilePath -> IO [DiscoveredRunnable]
     loadRunnable dir src entry = do
+      ambiguity <- judgementAmbiguity (dir </> entry)
+      case ambiguity of
+        Just files ->
+          pure
+            [ DiscoveredRunnable
+                { name = T.pack entry,
+                  description = Nothing,
+                  kind = KindJudgement,
+                  source = src,
+                  dir = dir </> entry,
+                  isError = True,
+                  error = Just ("ambiguous: " <> T.intercalate ", " (map T.pack files))
+                }
+            ]
+        Nothing -> loadUnambiguous dir src entry
+
+    loadUnambiguous :: FilePath -> ModuleSource -> FilePath -> IO [DiscoveredRunnable]
+    loadUnambiguous dir src entry = do
       let entryDir = dir </> entry
           moduleDhall = entryDir </> "module.dhall"
           recipeDhall = entryDir </> "recipe.dhall"
@@ -600,7 +628,39 @@ discoverAllRunnables searchPaths = do
                                   error = Nothing
                                 }
                         ]
-                    else pure []
+                    else loadJudgement src entry entryDir
+
+    loadJudgement :: ModuleSource -> FilePath -> FilePath -> IO [DiscoveredRunnable]
+    loadJudgement src entry entryDir = do
+      let judgementDhall = entryDir </> "judgement.dhall"
+      isJudgement <- doesFileExist judgementDhall
+      if not isJudgement
+        then pure []
+        else do
+          decoded <- evalJudgementFromFile judgementDhall
+          pure
+            [ case decoded of
+                Left err ->
+                  DiscoveredRunnable
+                    { name = T.pack entry,
+                      description = Nothing,
+                      kind = KindJudgement,
+                      source = src,
+                      dir = entryDir,
+                      isError = True,
+                      error = Just (briefLoadError err)
+                    }
+                Right j ->
+                  DiscoveredRunnable
+                    { name = j ^. #name,
+                      description = j ^. #description,
+                      kind = KindJudgement,
+                      source = src,
+                      dir = entryDir,
+                      isError = False,
+                      error = Nothing
+                    }
+            ]
 
     briefLoadError :: ModuleLoadError -> Text
     briefLoadError (DhallEvalError _ _) = "Dhall evaluation failed"
@@ -610,6 +670,7 @@ discoverAllRunnables searchPaths = do
     briefLoadError (MissingSourceFile _ _) = "missing source file"
     briefLoadError (CircularDependency _) = "circular dependency"
     briefLoadError (RegistryEvalError _ _) = "registry eval failed"
+    briefLoadError (AmbiguousArtifact _ _ _) = "ambiguous artifact"
 
 -- | A seed creates an entire file and must never be subject to automatic removal.
 checkSeedSteps :: Module -> [Text]

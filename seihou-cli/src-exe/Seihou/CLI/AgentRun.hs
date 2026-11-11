@@ -72,6 +72,7 @@ import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Composition.Plan (ComposedPlan (..), compileComposedPlan)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts, verifyDependencySources)
 import Seihou.Core.Application (attachApplication, buildAppliedComposition, mkApplicationId, replaceAppliedComposition)
+import Seihou.Core.ArtifactFiles (renderAmbiguousArtifact)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.Checkout
 import Seihou.Core.CommandFingerprint (checkoutCommandsFromOperations)
@@ -693,3 +694,5 @@ renderModuleLoadError = \case
       <> T.pack path
   RegistryEvalError path msg ->
     "Failed to evaluate registry at '" <> path <> "': " <> msg
+  AmbiguousArtifact name dir files ->
+    renderAmbiguousArtifact name dir files

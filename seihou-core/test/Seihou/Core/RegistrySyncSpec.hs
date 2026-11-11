@@ -162,5 +162,6 @@ mkReg mods recs =
       modules = mods,
       recipes = recs,
       blueprints = [],
-      prompts = []
+      prompts = [],
+      judgements = []
     }

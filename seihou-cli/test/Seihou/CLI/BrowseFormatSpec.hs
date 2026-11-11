@@ -1,7 +1,7 @@
 module Seihou.CLI.BrowseFormatSpec (tests) where
 
 import Data.Text (Text, pack)
-import Seihou.CLI.BrowseFormat (formatBrowseRegistry, formatBrowseSingleBlueprint, formatBrowseSingleModule, formatBrowseSinglePrompt)
+import Seihou.CLI.BrowseFormat (formatBrowseRegistry, formatBrowseSingleBlueprint, formatBrowseSingleJudgement, formatBrowseSingleModule, formatBrowseSinglePrompt)
 import Seihou.Core.Registry (EntryKind (..), Registry (..), RegistryEntry (..))
 import Seihou.Core.Types (ModuleName (..))
 import Test.Hspec
@@ -29,7 +29,8 @@ mkRegistry n desc ms =
       modules = ms,
       recipes = [],
       blueprints = [],
-      prompts = []
+      prompts = [],
+      judgements = []
     }
 
 asModules :: [RegistryEntry] -> [(EntryKind, RegistryEntry)]
@@ -182,6 +183,27 @@ spec = do
                    \2 entries available. Install with:\n\
                    \  seihou install source --module <name>\n\
                    \  seihou install source --all\n"
+
+    it "labels a judgement entry with [judgement], aligned with the other kinds" $ do
+      let modEntry = mkEntry "haskell-base" "modules/haskell-base" (Just "Module entry") []
+          judgementEntry = mkEntry "guard" "judgements/guard" (Just "Judgement entry") []
+          registry = mkRegistry "mixed-repo" Nothing [modEntry]
+          result = formatBrowseRegistry "source" registry [(ModuleEntry, modEntry), (JudgementEntry, judgementEntry)] Nothing
+      result
+        `shouldBe` "mixed-repo\n\
+                   \\n\
+                   \Available entries:\n\
+                   \\n\
+                   \  [module]     haskell-base   Module entry\n\
+                   \  [judgement]  guard          Judgement entry\n\
+                   \\n\
+                   \2 entries available. Install with:\n\
+                   \  seihou install source --module <name>\n\
+                   \  seihou install source --all\n"
+
+    it "formats a single-judgement repository" $ do
+      formatBrowseSingleJudgement "source" "guard" (Just "Guards data")
+        `shouldBe` "guard\n  Guards data\n\nSingle-judgement repository. Install with:\n  seihou install source\n"
 
     it "formats a mixed-kind registry with module, recipe, blueprint, and prompt labels" $ do
       let modEntry = mkEntry "haskell-base" "modules/haskell-base" (Just "Module entry") ["haskell"]

@@ -14,8 +14,10 @@ import Seihou.CLI.InstallShared
 import Seihou.CLI.ValidateRecipeReport (recipeLoadErrorText)
 import Seihou.Composition.RecipeChain (loadRecipeChain)
 import Seihou.Core.AgentPrompt (validateAgentPrompt)
+import Seihou.Core.ArtifactFiles (judgementAmbiguity, renderAmbiguousArtifact)
 import Seihou.Core.ArtifactIdentity (repositoryOriginKey)
 import Seihou.Core.Blueprint (validateBlueprintForInstall)
+import Seihou.Core.Judgement (validateDefinition)
 import Seihou.Core.Module (validateModule)
 import Seihou.Core.Recipe (validateRecipe, validateRecipeVersion)
 import Seihou.Core.Registry
@@ -24,7 +26,7 @@ import Seihou.Dhall.Eval
 import Seihou.Prelude
 import System.Directory
 import System.Exit (ExitCode (..))
-import System.FilePath (isAbsolute, makeRelative, splitDirectories)
+import System.FilePath (isAbsolute, makeRelative, splitDirectories, takeFileName)
 import System.IO.Temp (createTempDirectory, withSystemTempDirectory)
 import System.Process (readProcessWithExitCode)
 
@@ -238,7 +240,7 @@ safeName :: Text -> Bool
 safeName name = not (T.null name) && name /= "." && name /= ".." && T.all (\c -> c /= '/' && c /= '\\' && c /= '\0') name
 
 entries :: Registry -> [RegistryEntry]
-entries reg = reg ^. #modules ++ reg ^. #recipes ++ reg ^. #blueprints ++ reg ^. #prompts
+entries reg = reg ^. #modules ++ reg ^. #recipes ++ reg ^. #blueprints ++ reg ^. #prompts ++ reg ^. #judgements
 
 locate :: Repo -> Text -> ExpectedArtifact -> IO FilePath
 locate (Repo dir origin contents) name expected = case contents of
@@ -285,6 +287,11 @@ decoded = either (throwIO . userError . show) pure
 
 inspect :: FilePath -> ExpectedArtifact -> IO (FilePath, [Requirement], Maybe Text)
 inspect dir expected = do
+  -- A judgement shares no precedence with the other kinds; next to another
+  -- definition file it is rejected before anything is evaluated.
+  ambiguity <- judgementAmbiguity dir
+  forM_ ambiguity $ \files ->
+    throwIO (userError (T.unpack (renderAmbiguousArtifact (ModuleName (T.pack (takeFileName dir))) dir files)))
   hasModule <- doesFileExist (dir </> "module.dhall")
   hasRecipe <- doesFileExist (dir </> "recipe.dhall")
   case expected of
@@ -306,9 +313,17 @@ inspect dir expected = do
           _ <- validateBlueprintForInstall dir b >>= decoded
           pure ("blueprint.dhall", moduleRequirements (b ^. #baseModules), b ^. #version)
         else do
-          p <- evalAgentPromptFromFile (dir </> "prompt.dhall") >>= decoded
-          _ <- validateAgentPrompt dir p >>= decoded
-          pure ("prompt.dhall", [], p ^. #version)
+          prompt <- doesFileExist (dir </> "prompt.dhall")
+          judgement <- doesFileExist (dir </> "judgement.dhall")
+          if prompt || not judgement
+            then do
+              p <- evalAgentPromptFromFile (dir </> "prompt.dhall") >>= decoded
+              _ <- validateAgentPrompt dir p >>= decoded
+              pure ("prompt.dhall", [], p ^. #version)
+            else do
+              j <- evalJudgementFromFile (dir </> "judgement.dhall") >>= decoded
+              _ <- either (\e -> throwIO (userError (T.unpack (e ^. #code <> ": " <> e ^. #message)))) pure (validateDefinition j)
+              pure ("judgement.dhall", [], j ^. #version)
   where
     wrong kind = throwIO (userError ("Expected " <> kind <> " at " <> dir))
     recipe requirement = do

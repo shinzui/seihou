@@ -27,6 +27,7 @@ import Seihou.CLI.Shared
 import Seihou.Composition.Instance (primaryInstance)
 import Seihou.Composition.Resolve (resolveWithPrompts)
 import Seihou.Core.AgentPrompt (validateAgentPrompt)
+import Seihou.Core.ArtifactFiles (renderAmbiguousArtifact)
 import Seihou.Core.CommandVar (resolveCommandVars)
 import Seihou.Core.Context (resolveContext)
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
@@ -201,3 +202,5 @@ renderModuleLoadError = \case
       <> T.pack path
   RegistryEvalError path msg ->
     "Failed to evaluate registry at '" <> path <> "': " <> msg
+  AmbiguousArtifact name dir files ->
+    renderAmbiguousArtifact name dir files

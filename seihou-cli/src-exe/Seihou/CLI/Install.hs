@@ -144,13 +144,13 @@ promptUrlSelection entries = do
       TIO.putStrLn "Invalid selection."
       exitFailure
 
--- | All registry entries (modules, recipes, blueprints, prompts) in display order.
--- Used wherever installation must treat all four kinds uniformly.
+-- | All registry entries (modules, recipes, blueprints, prompts, judgements)
+-- in display order. Used wherever installation must treat every kind uniformly.
 allEntries :: Registry -> [RegistryEntry]
-allEntries registry = registry ^. #modules ++ registry ^. #recipes ++ registry ^. #blueprints ++ (registry ^. #prompts)
+allEntries registry = registry ^. #modules ++ registry ^. #recipes ++ registry ^. #blueprints ++ registry ^. #prompts ++ registry ^. #judgements
 
 -- | Pair each registry entry with its 'EntryKind' tag, preserving the
--- module → recipe → blueprint → prompt display order. Used by the install picker
+-- module → recipe → blueprint → prompt → judgement display order. Used by the install picker
 -- to render per-kind labels and by callers that need to discriminate
 -- after selection.
 labelledEntries :: Registry -> [(EntryKind, RegistryEntry)]
@@ -159,6 +159,7 @@ labelledEntries registry =
     ++ map ((,) RecipeEntry) (registry ^. #recipes)
     ++ map ((,) BlueprintEntry) (registry ^. #blueprints)
     ++ map ((,) PromptEntry) (registry ^. #prompts)
+    ++ map ((,) JudgementEntry) (registry ^. #judgements)
 
 -- | Select which modules to install from a registry.
 selectModules :: InstallOpts -> Registry -> IO [RegistryEntry]
@@ -223,7 +224,7 @@ promptModuleSelection registry = do
     Just desc -> TIO.putStrLn $ "  " <> desc
     Nothing -> pure ()
   TIO.putStrLn ""
-  TIO.putStrLn "Available modules, recipes, blueprints, and prompts:"
+  TIO.putStrLn "Available modules, recipes, blueprints, prompts, and judgements:"
   let entries = zip [1 :: Int ..] (labelledEntries registry)
   mapM_
     ( \(i, (kind, entry)) ->

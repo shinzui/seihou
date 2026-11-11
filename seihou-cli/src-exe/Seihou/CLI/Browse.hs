@@ -6,14 +6,14 @@ where
 import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Seihou.CLI.BrowseFormat (formatBrowseRegistry, formatBrowseSingleBlueprint, formatBrowseSingleModule, formatBrowseSinglePrompt)
+import Seihou.CLI.BrowseFormat (formatBrowseRegistry, formatBrowseSingleBlueprint, formatBrowseSingleJudgement, formatBrowseSingleModule, formatBrowseSinglePrompt)
 import Seihou.CLI.Commands (BrowseOpts (..))
 import Seihou.CLI.Registry.Sync (checkRegistryVersionDrift)
 import Seihou.CLI.Shared (logIO)
 import Seihou.Core.Install (parseModuleName)
 import Seihou.Core.Registry (EntryKind (..), Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents)
 import Seihou.Core.Types
-import Seihou.Dhall.Eval (evalAgentPromptFromFile, evalBlueprintFromFile, evalModuleFromFile, evalRecipeFromFile, evalRegistryFromFile)
+import Seihou.Dhall.Eval (evalAgentPromptFromFile, evalBlueprintFromFile, evalJudgementFromFile, evalModuleFromFile, evalRecipeFromFile, evalRegistryFromFile)
 import Seihou.Effect.Logger (logError, logWarn)
 import Seihou.Prelude
 import System.Exit (ExitCode (..), exitFailure)
@@ -79,6 +79,14 @@ handleBrowse bopts = do
             exitFailure
           Right p ->
             TIO.putStr $ formatBrowseSinglePrompt source (p ^. #name . #unModuleName) (p ^. #description)
+      SingleJudgement rootDir -> do
+        decoded <- evalJudgementFromFile (rootDir </> "judgement.dhall")
+        case decoded of
+          Left err -> do
+            logIO LogNormal (logError $ "failed to load judgement: " <> T.pack (show err))
+            exitFailure
+          Right j ->
+            TIO.putStr $ formatBrowseSingleJudgement source (j ^. #name) (j ^. #description)
       MultiModule registry -> do
         driftWarnings <- checkRegistryVersionDrift cloneDir registry
         logIO LogNormal (mapM_ logWarn driftWarnings)
@@ -90,4 +98,5 @@ handleBrowse bopts = do
                 ++ [(RecipeEntry, e) | e <- registry ^. #recipes, matchTag e]
                 ++ [(BlueprintEntry, e) | e <- registry ^. #blueprints, matchTag e]
                 ++ [(PromptEntry, e) | e <- registry ^. #prompts, matchTag e]
+                ++ [(JudgementEntry, e) | e <- registry ^. #judgements, matchTag e]
         TIO.putStr $ formatBrowseRegistry source registry tagged (bopts ^. #tag)

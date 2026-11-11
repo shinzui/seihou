@@ -32,6 +32,7 @@ import Seihou.Core.Types qualified as Types
 import Seihou.Dhall.Eval
   ( evalAgentPromptFromFile,
     evalBlueprintFromFile,
+    evalJudgementFromFile,
     evalModuleFromFile,
     evalRecipeFromFile,
     evalRegistryFromFile,
@@ -118,7 +119,8 @@ resolveOnDiskVersions repoRoot reg = do
   recipePairs <- mapM (loadRecipe repoRoot) (reg ^. #recipes)
   blueprintPairs <- mapM (loadBlueprint repoRoot) (reg ^. #blueprints)
   promptPairs <- mapM (loadPrompt repoRoot) (reg ^. #prompts)
-  pure (concat modulePairs <> concat recipePairs <> concat blueprintPairs <> concat promptPairs)
+  judgementPairs <- mapM (loadJudgement repoRoot) (reg ^. #judgements)
+  pure (concat modulePairs <> concat recipePairs <> concat blueprintPairs <> concat promptPairs <> concat judgementPairs)
   where
     loadModule :: FilePath -> RegistryEntry -> IO [(EntryKind, ModuleName, Maybe Text)]
     loadModule root entry = do
@@ -147,6 +149,13 @@ resolveOnDiskVersions repoRoot reg = do
       decoded <- evalAgentPromptFromFile path
       case decoded of
         Right p -> pure [(PromptEntry, entry ^. #name, promptVersion p)]
+        Left _ -> pure []
+    loadJudgement :: FilePath -> RegistryEntry -> IO [(EntryKind, ModuleName, Maybe Text)]
+    loadJudgement root entry = do
+      let path = root </> entry ^. #path </> "judgement.dhall"
+      decoded <- evalJudgementFromFile path
+      case decoded of
+        Right j -> pure [(JudgementEntry, entry ^. #name, j ^. #version)]
         Left _ -> pure []
 
 -- | Extract the @version@ field from a 'Module' by pattern match. A direct
@@ -223,12 +232,14 @@ kindPrefix ModuleEntry = "modules."
 kindPrefix RecipeEntry = "recipes."
 kindPrefix BlueprintEntry = "blueprints."
 kindPrefix PromptEntry = "prompts."
+kindPrefix JudgementEntry = "judgements."
 
 entryFile :: EntryKind -> Text
 entryFile ModuleEntry = "module.dhall"
 entryFile RecipeEntry = "recipe.dhall"
 entryFile BlueprintEntry = "blueprint.dhall"
 entryFile PromptEntry = "prompt.dhall"
+entryFile JudgementEntry = "judgement.dhall"
 
 renderVersion :: Maybe Text -> Text
 renderVersion Nothing = "(none)"

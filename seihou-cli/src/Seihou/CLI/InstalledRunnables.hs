@@ -1,4 +1,4 @@
--- | Refreshing installed blueprints and prompts from the source each one
+-- | Refreshing installed blueprints, prompts, and judgements from the source each one
 -- records in its @.seihou-origin.json@.
 --
 -- A blueprint is installed together with its @baseModules@ (its install
@@ -48,7 +48,8 @@ data RefreshOptions = RefreshOptions
   }
   deriving stock (Eq, Show, Generic)
 
--- | Installed blueprints and prompts, each paired with its recorded origin.
+-- | Installed blueprints, prompts, and judgements, each paired with its
+-- recorded origin.
 -- Entries whose descriptor fails to load are kept: a broken installed copy is
 -- exactly what a refresh can repair.
 selectInstalledRunnables :: [DiscoveredRunnable] -> IO [(DiscoveredRunnable, Maybe OriginInfo)]
@@ -59,6 +60,7 @@ selectInstalledRunnables runnables =
   where
     isRefreshable KindBlueprint = True
     isRefreshable KindPrompt = True
+    isRefreshable KindJudgement = True
     isRefreshable _ = False
 
 -- | The install-cache key: the entry's directory name under @installed/@.
@@ -191,14 +193,16 @@ checkInstalledRunnablesForUpdates progress inputs = do
             available <- either (const Nothing) id <$> fetchTrueRunnableVersion cloneDir (r ^. #kind) (installKey r)
             pure (OutdatedEntry (installKey r) (origin ^. #version) available (compareVersions (origin ^. #version) available))
 
--- | Find a blueprint or prompt in a cloned source, by the key it is installed
+-- | Find a blueprint, prompt, or judgement in a cloned source, by the key it is installed
 -- under.
 locateArtifact :: FilePath -> RepoContents -> RunnableKind -> Text -> Maybe FilePath
 locateArtifact cloneDir contents kind key = case (contents, kind) of
   (MultiModule registry, KindBlueprint) -> byName (registry ^. #blueprints)
   (MultiModule registry, KindPrompt) -> byName (registry ^. #prompts)
+  (MultiModule registry, KindJudgement) -> byName (registry ^. #judgements)
   (SingleBlueprint root, KindBlueprint) -> Just root
   (SinglePrompt root, KindPrompt) -> Just root
+  (SingleJudgement root, KindJudgement) -> Just root
   _ -> Nothing
   where
     byName = fmap (\entry -> cloneDir </> entry ^. #path) . find (\entry -> entry ^. #name . #unModuleName == key)
@@ -207,6 +211,7 @@ kindLabel :: RunnableKind -> Text
 kindLabel = \case
   KindBlueprint -> "blueprint"
   KindPrompt -> "prompt"
+  KindJudgement -> "judgement"
   KindRecipe -> "recipe"
   KindModule -> "module"
 

@@ -2,6 +2,7 @@ module Seihou.CLI.ValidateRecipeReport (recipeLoadErrorText) where
 
 import Data.Text (Text)
 import Data.Text qualified as T
+import Seihou.Core.ArtifactFiles (renderAmbiguousArtifact)
 import Seihou.Core.Types (ModuleLoadError (..), ModuleName (..))
 
 -- Keep the evaluator's useful parser/type diagnostic without exposing the
@@ -18,3 +19,5 @@ recipeLoadErrorText (MissingSourceFile (ModuleName name) path) =
   "Module '" <> name <> "' is missing source file " <> T.pack path
 recipeLoadErrorText (RegistryEvalError source reason) =
   "Cannot evaluate registry '" <> source <> "': " <> reason
+recipeLoadErrorText (AmbiguousArtifact name dir files) =
+  renderAmbiguousArtifact name dir files

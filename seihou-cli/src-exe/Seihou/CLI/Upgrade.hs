@@ -64,7 +64,7 @@ handleUpgrade uopts = do
   originsWithModules <- mapM readOriginWithModule installed
   installedRunnables <- selectInstalledRunnables runnables
   let withOrigins = [(dm, origin) | (dm, Just origin) <- originsWithModules]
-      -- With no names, refresh every blueprint and prompt that records its
+      -- With no names, refresh every blueprint, prompt, and judgement that records its
       -- source. A named one is selected even without provenance, so the
       -- refusal below can say why it cannot be refreshed.
       selectedRunnables =
@@ -112,7 +112,7 @@ handleUpgrade uopts = do
         then
           if uopts ^. #json
             then LBS.putStr (encodePretty entries)
-            else TIO.putStrLn "No installed modules, recipes, blueprints, or prompts with origin metadata found."
+            else TIO.putStrLn "No installed modules, recipes, blueprints, prompts, or judgements with origin metadata found."
         else do
           if uopts ^. #json then LBS.putStr (encodePretty entries) else renderUpgradeTable (uopts ^. #dryRun) entries
           unless (uopts ^. #dryRun) $ do
@@ -241,6 +241,7 @@ doUpgrade uopts cloneDir contents sourceUrl origin name installedVer availableVe
         SingleRecipe _ -> Nothing
         SingleBlueprint _ -> Nothing
         SinglePrompt _ -> Nothing
+        SingleJudgement _ -> Nothing
         EmptyRepo -> Nothing
 
   case result of
