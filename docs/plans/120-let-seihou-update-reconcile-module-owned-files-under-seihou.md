@@ -10,6 +10,12 @@ provenance:
     model: "claude-opus-5-5"
     harness: "claude-code"
     at: 2026-11-11T13:49:25Z
+  revisions:
+    - model: "claude-opus-5-5"
+      harness: "claude-code"
+      at: 2026-11-11T14:03:28Z
+      mode: "implement"
+      note: "Implement milestones 1-5"
 ---
 
 # Let seihou update reconcile module-owned files under .seihou
@@ -62,9 +68,10 @@ succeeds and the file contains both the user's edit and the new release's change
 
 ## Progress
 
-- [ ] Milestone 1: one shared path classifier in `seihou-core/src/Seihou/Core/Path.hs` that
+- [x] Milestone 1: one shared path classifier in `seihou-core/src/Seihou/Core/Path.hs` that
   distinguishes ordinary project paths, a module's state directory, and Seihou or Git control
-  paths, with unit tests in `seihou-core/test/Seihou/Core/PathSpec.hs` passing.
+  paths, with unit tests in `seihou-core/test/Seihou/Core/PathSpec.hs` passing. (2026-11-11:
+  16 cases pass under `-p "/project path classification/"`.)
 - [ ] Milestone 2: reconciliation, the update transaction, and update recovery accept
   `.seihou/<module>/` paths and still refuse control paths; new `ReconcileSpec` and
   `UpdateTransactionSpec` cases pass alongside the existing suite.
@@ -100,6 +107,13 @@ Findings made while writing this plan, recorded here because they shaped its des
   `transactions-quarantine/`, `modules/` (the project-local module search directory),
   `context`, `config.dhall`, `trace.jsonl`, and `.migrate-signal`. Several of these
   (`baselines`, `transactions`, `modules`, `context`) are also valid module names.
+- (Implementation, 2026-11-11.) The plan's focused test commands such as
+  `--test-options='-p PathSpec'` select nothing: tasty matches the `testSpec` group title, not the
+  Haskell module name, and reports "All 0 tests passed". Use the group title instead, for example
+  `--test-options='-p "/project path classification/"'`. Concrete Steps is corrected below.
+- (Implementation, 2026-11-11.) `validateProjectRelativePath` accepts `.` segments, so
+  `./.seihou/manifest.json` and `.seihou/./manifest.json` name the manifest. The classifier drops
+  `.` segments as well as empty ones before looking at the first two.
 - Checkout outputs and seed files already refuse `.seihou` and `.git` components anywhere in a
   path, through `validateCanonicalProjectPath` in `seihou-core/src/Seihou/Core/Path.hs`.
 
