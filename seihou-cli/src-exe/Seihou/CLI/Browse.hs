@@ -39,11 +39,15 @@ handleBrowse bopts = do
       ExitSuccess -> pure ()
 
     contents <- discoverRepoContents evalRegistryFromFile cloneDir
+    let wanted k = null (bopts ^. #kinds) || k `elem` bopts ^. #kinds
+        single k label act
+          | wanted k = act
+          | otherwise = TIO.putStrLn (source <> " provides a single " <> label <> ", which the kind filter excludes.")
     case contents of
       EmptyRepo -> do
         logIO LogNormal (logError "repository contains neither seihou-registry.dhall nor module.dhall.")
         exitFailure
-      SingleModule rootDir -> do
+      SingleModule rootDir -> single ModuleEntry "module" $ do
         let dhallFile = rootDir </> "module.dhall"
         decoded <- evalModuleFromFile dhallFile
         case decoded of
@@ -52,7 +56,7 @@ handleBrowse bopts = do
             exitFailure
           Right m ->
             TIO.putStr $ formatBrowseSingleModule source (m ^. #name . #unModuleName) (m ^. #description)
-      SingleRecipe rootDir -> do
+      SingleRecipe rootDir -> single RecipeEntry "recipe" $ do
         let dhallFile = rootDir </> "recipe.dhall"
         decoded <- evalRecipeFromFile dhallFile
         case decoded of
@@ -61,7 +65,7 @@ handleBrowse bopts = do
             exitFailure
           Right r ->
             TIO.putStr $ formatBrowseSingleModule source (r ^. #name . #unRecipeName) (r ^. #description)
-      SingleBlueprint rootDir -> do
+      SingleBlueprint rootDir -> single BlueprintEntry "blueprint" $ do
         let dhallFile = rootDir </> "blueprint.dhall"
         decoded <- evalBlueprintFromFile dhallFile
         case decoded of
@@ -70,7 +74,7 @@ handleBrowse bopts = do
             exitFailure
           Right b -> do
             TIO.putStr $ formatBrowseSingleBlueprint source (b ^. #name . #unModuleName) (b ^. #description)
-      SinglePrompt rootDir -> do
+      SinglePrompt rootDir -> single PromptEntry "prompt" $ do
         let dhallFile = rootDir </> "prompt.dhall"
         decoded <- evalAgentPromptFromFile dhallFile
         case decoded of
@@ -79,7 +83,7 @@ handleBrowse bopts = do
             exitFailure
           Right p ->
             TIO.putStr $ formatBrowseSinglePrompt source (p ^. #name . #unModuleName) (p ^. #description)
-      SingleJudgement rootDir -> do
+      SingleJudgement rootDir -> single JudgementEntry "judgement" $ do
         decoded <- evalJudgementFromFile (rootDir </> "judgement.dhall")
         case decoded of
           Left err -> do
@@ -99,4 +103,7 @@ handleBrowse bopts = do
                 ++ [(BlueprintEntry, e) | e <- registry ^. #blueprints, matchTag e]
                 ++ [(PromptEntry, e) | e <- registry ^. #prompts, matchTag e]
                 ++ [(JudgementEntry, e) | e <- registry ^. #judgements, matchTag e]
-        TIO.putStr $ formatBrowseRegistry source registry tagged (bopts ^. #tag)
+            shown = filter (wanted . fst) tagged
+        if null shown && not (null tagged)
+          then TIO.putStrLn (registry ^. #repoName <> ": no entries of the selected kinds" <> maybe "" (\t -> " with tag '" <> t <> "'") (bopts ^. #tag) <> ".")
+          else TIO.putStr $ formatBrowseRegistry source registry shown (bopts ^. #tag)

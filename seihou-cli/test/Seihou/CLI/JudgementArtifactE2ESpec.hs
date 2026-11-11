@@ -60,6 +60,19 @@ tests = testSpec "JudgementArtifactE2E" $ do
       -- Browse labels the registry entry with its kind.
       (browsed, _) <- expectExit ExitSuccess =<< run ["browse", T.unpack source]
       browsed `shouldSatisfy` T.isInfixOf "[judgement]  guard"
+      -- Kind filters narrow browse the way they narrow list.
+      (judgementsOnly, _) <- expectExit ExitSuccess =<< run ["browse", T.unpack source, "--judgements"]
+      judgementsOnly `shouldSatisfy` T.isInfixOf "guard"
+      judgementsOnly `shouldNotSatisfy` T.isInfixOf "helper"
+      (modulesOnly, _) <- expectExit ExitSuccess =<< run ["browse", T.unpack source, "--modules"]
+      modulesOnly `shouldSatisfy` T.isInfixOf "helper"
+      modulesOnly `shouldNotSatisfy` T.isInfixOf "guard"
+      (noneShown, _) <- expectExit ExitSuccess =<< run ["browse", T.unpack source, "--prompts"]
+      noneShown `shouldSatisfy` T.isInfixOf "no entries of the selected kinds"
+
+      -- Shell completion offers installed judgement names.
+      (completed, _) <- expectExit ExitSuccess =<< run ["--bash-completion-index", "2", "--bash-completion-word", "seihou", "--bash-completion-word", "validate-judgement", "--bash-completion-word", "g"]
+      T.lines completed `shouldContain` ["guard"]
 
       -- A newer version is published: outdated sees it, upgrade refreshes it.
       writeJudgement (producer </> "guard") "guard" "0.2.0"

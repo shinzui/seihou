@@ -10,6 +10,8 @@
 module Seihou.CLI.Judgement.Validate
   ( JudgementValidation (..),
     resolveJudgementTarget,
+    discoverJudgementNames,
+    activeJudgementNames,
     validateJudgementDir,
     loadExamples,
     renderValidation,
@@ -17,7 +19,9 @@ module Seihou.CLI.Judgement.Validate
   )
 where
 
+import Control.Monad (filterM, forM)
 import Data.ByteString.Lazy qualified as LBS
+import Data.Containers.ListUtils (nubOrd)
 import Data.Generics.Labels ()
 import Data.List (isPrefixOf)
 import Data.Map.Strict qualified as Map
@@ -31,8 +35,11 @@ import Seihou.Core.JudgementExamples
 import Seihou.Core.Module (defaultSearchPaths)
 import Seihou.Core.Types (ModuleLoadError (..))
 import Seihou.Dhall.Eval (evalJudgementFromFile)
+import Seihou.Effect.FilesystemInterp (runFilesystem)
+import Seihou.Effect.ManifestStore (readManifest)
+import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Prelude
-import System.Directory (doesDirectoryExist, doesFileExist)
+import System.Directory (doesDirectoryExist, doesFileExist, listDirectory)
 import System.FilePath (takeDirectory, takeFileName)
 
 data JudgementValidation = JudgementValidation
@@ -147,3 +154,26 @@ renderValidation v =
              then "  valid: " <> maybe "" (\d -> T.pack (show (length (d ^. #checks))) <> " check(s)") (v ^. #definition) <> maybe "" (\e -> ", " <> T.pack (show (length (e ^. #examples))) <> " example(s)") (v ^. #examples)
              else "  invalid: " <> T.pack (show (length (v ^. #errors))) <> " problem(s)"
          ]
+
+-- | The names of judgements in the standard search paths, for shell
+-- completion: each directory holding a @judgement.dhall@. Nothing is
+-- evaluated, so completion stays fast and never fails.
+discoverJudgementNames :: IO [String]
+discoverJudgementNames = do
+  paths <- defaultSearchPaths
+  found <- forM paths $ \dir -> do
+    present <- doesDirectoryExist dir
+    if not present
+      then pure []
+      else do
+        entries <- listDirectory dir
+        filterM (\e -> doesFileExist (dir </> e </> "judgement.dhall")) entries
+  pure (nubOrd (concat found))
+
+-- | The names of the judgements active in the project at this directory,
+-- read from its manifest without changing anything.
+activeJudgementNames :: FilePath -> IO [String]
+activeJudgementNames root =
+  runEff (runFilesystem (runManifestStore (root </> ".seihou" </> "manifest.json") readManifest)) <&> \case
+    Right (Just m) -> [T.unpack (j ^. #definition . #name) | j <- m ^. #judgements]
+    _ -> []

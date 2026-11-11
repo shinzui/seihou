@@ -60,6 +60,7 @@ import Options.Applicative
 import Options.Applicative.Help.Pretty (Doc, indent, line, pretty, vsep)
 import Seihou.CLI.Extension (ExtensionRunOpts (..))
 import Seihou.CLI.Help (HelpCommand, helpCommandParser)
+import Seihou.CLI.Judgement.Validate (activeJudgementNames, discoverJudgementNames)
 import Seihou.CLI.Kit (KitCommand, kitCommandParser)
 import Seihou.CLI.Manifest (ManifestCommand (..))
 import Seihou.CLI.ManifestRepairOrigins (RepairOriginsOpts (..))
@@ -70,6 +71,7 @@ import Seihou.CLI.Registry.Sync (SyncVersionsOpts (..))
 import Seihou.CLI.Registry.Validate (ValidateRegistryOpts (..))
 import Seihou.CLI.Version (seihouVersionWithGit)
 import Seihou.Core.Judgement (DataPolicy (..), Enforcement (..))
+import Seihou.Core.Registry (EntryKind (..))
 import Seihou.Core.Types (ApplicationId (..), ManifestSchemaVersion (..), ModuleName (..))
 import Seihou.Prelude
 
@@ -335,7 +337,9 @@ data ListOpts = ListOpts
 
 data BrowseOpts = BrowseOpts
   { source :: !Text,
-    tag :: !(Maybe Text)
+    tag :: !(Maybe Text),
+    -- | The kinds to show; empty shows every kind.
+    kinds :: ![EntryKind]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -1190,7 +1194,7 @@ validateJudgementInfo =
         <> footer "TARGET is a judgement directory, its judgement.dhall, or a judgement name found in .seihou/modules, the user modules directory or the install cache (default: the current directory). Checks the definition, the thresholds and every example, and scans the examples for credentials when gitleaks is available."
     )
   where
-    parser = ValidateJudgement . ValidateJudgementOpts <$> optional (argument (T.pack <$> str) (metavar "TARGET"))
+    parser = ValidateJudgement . ValidateJudgementOpts <$> optional (argument (T.pack <$> str) (metavar "TARGET" <> completer (listIOCompleter discoverJudgementNames)))
 
 newPromptInfo :: ParserInfo Command
 newPromptInfo =
@@ -1405,6 +1409,13 @@ browseParser =
     BrowseOpts
       <$> argument (T.pack <$> str) (metavar "GIT-URL")
       <*> optional (option (T.pack <$> str) (long "tag" <> metavar "TAG" <> help "Filter modules by tag"))
+      <*> ( (\m r b p j -> [k | (True, k) <- [(m, ModuleEntry), (r, RecipeEntry), (b, BlueprintEntry), (p, PromptEntry), (j, JudgementEntry)]])
+              <$> switch (long "modules" <> help "Show only modules")
+              <*> switch (long "recipes" <> help "Show only recipes")
+              <*> switch (long "blueprints" <> help "Show only blueprints")
+              <*> switch (long "prompts" <> help "Show only prompts")
+              <*> switch (long "judgements" <> help "Show only judgements")
+          )
 
 outdatedInfo :: ParserInfo Command
 outdatedInfo =
@@ -2535,7 +2546,7 @@ judgementInfo =
       info
         ( JudgementEval
             <$> ( JudgementEvalOpts
-                    <$> argument (T.pack <$> str) (metavar "NAME")
+                    <$> argument (T.pack <$> str) (metavar "NAME" <> completer (listIOCompleter discoverJudgementNames))
                     <*> switch (long "offline" <> help "Validate the corpus, scanner and policy only; no model request")
                 )
               <**> helper
@@ -2548,7 +2559,7 @@ judgementInfo =
       info
         ( JudgementConfigure
             <$> ( JudgementConfigureOpts
-                    <$> argument (T.pack <$> str) (metavar "NAME")
+                    <$> argument (T.pack <$> str) (metavar "NAME" <> completer (listIOCompleter discoverJudgementNames))
                     <*> optional (option (T.pack <$> str) (long "provider" <> metavar "PROVIDER" <> help "Review provider: claude-cli, codex-cli, anthropic or openai"))
                     <*> optional (option (T.pack <$> str) (long "model" <> metavar "MODEL" <> help "Review model"))
                     <*> optional (option (eitherReader dataPolicyReader) (long "data-policy" <> metavar "POLICY" <> help "local-only or approved-remote"))
@@ -2591,7 +2602,7 @@ checkInfo =
     checkParser =
       Check
         <$> ( CheckOpts
-                <$> optional (argument (T.pack <$> str) (metavar "NAME" <> help "Run only this active judgement, for diagnosis"))
+                <$> optional (argument (T.pack <$> str) (metavar "NAME" <> help "Run only this active judgement, for diagnosis" <> completer (listIOCompleter (activeJudgementNames "."))))
                 <*> switch (long "staged" <> help "Check the staged changes (the default)")
                 <*> optional (option (T.pack <$> str) (long "range" <> metavar "BASE..HEAD" <> help "Check every commit in this range instead of the staged changes"))
                 <*> optional (option (T.pack <$> str) (long "policy-ref" <> metavar "REF" <> help "Use the judgements recorded at this trusted ref, read from Git objects"))
