@@ -230,6 +230,10 @@ in  { name = "seihou-registry-docs"
           "SeihouPrompt"
           "A reusable agent-session template."
           "prompts"
+      , artifactType
+          "SeihouJudgement"
+          "Yes/no checks Seihou asks a model about staged changes or a commit range before a commit, with per-check thresholds and enforcement."
+          "judgements"
       ,     artifactType
               "SeihouRegistry"
               "The registry itself: the repository publishing these artifacts, linking each of them."

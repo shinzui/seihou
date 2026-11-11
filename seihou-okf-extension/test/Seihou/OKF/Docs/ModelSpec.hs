@@ -28,6 +28,7 @@ spec = do
         length (entriesByKind DocRecipeKind model) `shouldBe` 1
         length (entriesByKind DocBlueprintKind model) `shouldBe` 2
         length (entriesByKind DocPromptKind model) `shouldBe` 1
+        length (entriesByKind DocJudgementKind model) `shouldBe` 1
 
     it "keeps catalog metadata from the registry entry" $ do
       withFixtureRegistry $ \registryDir -> do
@@ -147,6 +148,8 @@ writeFixtureRegistry registryDir = do
   writeBlueprint registryDir
   writeEntailingBlueprint registryDir
   writePrompt registryDir
+  createDirectoryIfMissing True (registryDir </> "judgements/docs-review")
+  writeFile (registryDir </> "judgements/docs-review/judgement.dhall") judgementDhall
 
 writeModule :: FilePath -> FilePath -> String -> [String] -> String -> IO ()
 writeModule registryDir relDir name dependencies description = do
@@ -194,6 +197,7 @@ registryDhall =
   \  , { name = \"entailing-blueprint\", version = Some \"0.1.0\", path = \"blueprints/entailing-blueprint\", description = Some \"Entailing blueprint\", tags = [] : List Text }\n\
   \  ]\n\
   \, prompts = [ { name = \"review\", version = Some \"0.1.0\", path = \"prompts/review\", description = Some \"Review prompt\", tags = [ \"prompt\" ] } ]\n\
+  \, judgements = [ { name = \"docs-review\", version = Some \"1.0.0\", path = \"judgements/docs-review\", description = Some \"Docs review\", tags = [] : List Text } ]\n\
   \}"
 
 moduleDhall :: String -> [String] -> String -> String
@@ -348,3 +352,17 @@ blueprintFileListType =
 commandVarListType :: String
 commandVarListType =
   "List { name : Text, run : Text, workDir : Optional Text, when : Optional Text, trim : Bool, maxBytes : Optional Natural }"
+
+-- | A judgement written out in full, without the schema package.
+judgementDhall :: String
+judgementDhall =
+  "let Answer = < Yes | No > let Enforcement = < Enforced | Advisory > let Severity = < Info | Low | Medium | High | Critical >\n\
+  \let Scope = < StagedChanges | CommitRange > let Det = < SecretScan >\n\
+  \in\n\
+  \{ name = \"docs-review\", version = Some \"1.0.0\", description = Some \"Docs review\", instructions = \"Review documentation.\"\n\
+  \   , evidence = { scopes = [ Scope.StagedChanges ], include = [ \"docs/**\" ], exclude = [] : List Text }\n\
+  \   , limits = { maxFileBytes = 262144, maxChunkBytes = 49152, maxChunks = 16, maxAttempts = 3, timeoutSeconds = 120, maxFindings = 20 }\n\
+  \   , deterministicChecks = [] : List Det\n\
+  \   , checks = [ { name = \"stale-docs\", question = \"Does this change leave documented behaviour out of date?\", concernWhen = Answer.Yes, yesMeans = None Text, noMeans = None Text\n\
+  \              , categories = [ { name = \"stale\", severity = Severity.Medium, description = None Text } ], enforcement = Enforcement.Enforced, blockingSeverity = Severity.High\n\
+  \              , blockAt = 0.7, passAt = 0.3, gateBlockAt = 0.9, gatePassAt = 0.05, useGate = True } ] }\n"

@@ -15,6 +15,7 @@ import Control.Lens ((%~), (&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Text qualified as T
 import GHC.Generics (Generic)
+import Seihou.Core.Judgement (JudgementDefinition)
 import Seihou.Core.Migration (BlueprintMigration (..))
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..))
 import Seihou.Core.Types
@@ -30,6 +31,7 @@ import Seihou.Core.Types
 import Seihou.Dhall.Eval
   ( evalAgentPromptFromFile,
     evalBlueprintFromFile,
+    evalJudgementFromFile,
     evalModuleFromFile,
     evalRecipeFromFile,
     evalRegistryFromFile,
@@ -45,6 +47,7 @@ data DocKind
   | DocRecipeKind
   | DocBlueprintKind
   | DocPromptKind
+  | DocJudgementKind
   | DocRegistryKind
   deriving stock (Eq, Show)
 
@@ -53,6 +56,7 @@ data DocArtifact
   | DocRecipeArtifact Recipe
   | DocBlueprintArtifact Blueprint
   | DocPromptArtifact AgentPrompt
+  | DocJudgementArtifact JudgementDefinition
   deriving stock (Eq, Show)
 
 data DocEntry = DocEntry
@@ -129,13 +133,14 @@ loadDocModel registryDir = do
           buildDocModel registryDir registry
 
 buildDocModel :: FilePath -> Registry -> IO (Either DocLoadError DocModel)
-buildDocModel registryDir Registry {repoName, repoDescription, modules, recipes, blueprints, prompts} = do
+buildDocModel registryDir Registry {repoName, repoDescription, modules, recipes, blueprints, prompts, judgements} = do
   entriesResult <-
     concatResults
       [ loadEntries (loadModuleEntry registryDir) modules,
         loadEntries (loadRecipeEntry registryDir) recipes,
         loadEntries (loadBlueprintEntry registryDir) blueprints,
-        loadEntries (loadPromptEntry registryDir) prompts
+        loadEntries (loadPromptEntry registryDir) prompts,
+        loadEntries (loadJudgementEntry registryDir) judgements
       ]
   pure $ do
     entries <- entriesResult
@@ -229,6 +234,14 @@ loadPromptEntry registryDir entry = do
           (DocPromptArtifact artifact)
           []
           []
+
+loadJudgementEntry :: FilePath -> RegistryEntry -> IO (Either DocLoadError DocEntry)
+loadJudgementEntry registryDir entry = do
+  let artifactFile = registryDir </> entry ^. #path </> "judgement.dhall"
+  result <- evalJudgementFromFile artifactFile
+  pure $ case result of
+    Left err -> Left (ArtifactLoadFailed (entry ^. #name . #unModuleName) (renderModuleLoadError err))
+    Right artifact -> Right (docEntryFromRegistry entry DocJudgementKind (DocJudgementArtifact artifact) [] [])
 
 docEntryFromRegistry :: RegistryEntry -> DocKind -> DocArtifact -> [ModuleRef] -> [EntailedRef] -> DocEntry
 docEntryFromRegistry entry kind artifact refs entailed =

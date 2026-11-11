@@ -19,6 +19,7 @@ import Data.Aeson (Value (..))
 import Data.Bifunctor (first)
 import Data.Either (partitionEithers)
 import Data.FileEmbed (embedStringFile)
+import Data.Foldable (toList)
 import Data.Generics.Labels ()
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
@@ -41,6 +42,7 @@ import Okf.Profile
   )
 import Okf.Validation (BundleValidationError, ValidationProfile (..), validateBundle)
 import Seihou.Core.Expr (renderExpr)
+import Seihou.Core.Judgement qualified as J
 import Seihou.Core.Migration
   ( BlueprintMigration (..),
     EntailedEdge (..),
@@ -325,7 +327,8 @@ registryBody repoName description entries =
       [ (DocModuleKind, "Modules"),
         (DocRecipeKind, "Recipes"),
         (DocBlueprintKind, "Blueprints"),
-        (DocPromptKind, "Prompts")
+        (DocPromptKind, "Prompts"),
+        (DocJudgementKind, "Judgements")
       ]
 
 registryKindSection :: [DocEntry] -> DocKind -> T.Text -> [T.Text]
@@ -369,12 +372,14 @@ artifactDescription (DocModuleArtifact Module {description}) = description
 artifactDescription (DocRecipeArtifact Recipe {description}) = description
 artifactDescription (DocBlueprintArtifact Blueprint {description}) = description
 artifactDescription (DocPromptArtifact AgentPrompt {description}) = description
+artifactDescription (DocJudgementArtifact def) = def ^. #description
 
 kindNoun :: DocKind -> T.Text
 kindNoun DocModuleKind = "module"
 kindNoun DocRecipeKind = "recipe"
 kindNoun DocBlueprintKind = "blueprint"
 kindNoun DocPromptKind = "agent prompt"
+kindNoun DocJudgementKind = "judgement"
 kindNoun DocRegistryKind = "registry"
 
 resourceFor :: T.Text -> DocEntry -> T.Text
@@ -453,6 +458,22 @@ kindSections entry =
              section "Tools" (maybe "No tool restrictions declared." renderTextList allowedTools)
            ]
         <> foldMap (optionalSection "Agent launch" . renderAgentLaunch) launch
+    DocJudgementArtifact def ->
+      [ section "Instructions" (if T.null (T.strip (def ^. #instructions)) then "No shared instructions." else def ^. #instructions),
+        section "Checks" (T.unlines (concatMap renderJudgementCheck (toList (def ^. #checks)))),
+        section
+          "Evidence"
+          ( "Scopes: "
+              <> T.intercalate ", " (map J.renderScopeKind (def ^. #evidence . #scopes))
+              <> ".\n"
+              <> "Include: "
+              <> listOrAll (def ^. #evidence . #include)
+              <> ". Exclude: "
+              <> listOrNone (def ^. #evidence . #exclude)
+              <> "."
+          ),
+        section "Deterministic checks" (if null (def ^. #deterministicChecks) then "None." else T.intercalate ", " (map J.renderDeterministicCheck (def ^. #deterministicChecks)) <> ".")
+      ]
 
 -- | Sections are joined with a blank line between them, so a body\'s own
 -- trailing newline is stripped rather than left to open a second blank line.
@@ -794,6 +815,7 @@ kindDir DocModuleKind = "modules"
 kindDir DocRecipeKind = "recipes"
 kindDir DocBlueprintKind = "blueprints"
 kindDir DocPromptKind = "prompts"
+kindDir DocJudgementKind = "judgements"
 kindDir DocRegistryKind = "registry"
 
 typeFor :: DocKind -> T.Text
@@ -801,4 +823,28 @@ typeFor DocModuleKind = "SeihouModule"
 typeFor DocRecipeKind = "SeihouRecipe"
 typeFor DocBlueprintKind = "SeihouBlueprint"
 typeFor DocPromptKind = "SeihouPrompt"
+typeFor DocJudgementKind = "SeihouJudgement"
 typeFor DocRegistryKind = "SeihouRegistry"
+
+renderJudgementCheck :: J.JudgementCheck -> [T.Text]
+renderJudgementCheck c =
+  [ "- **" <> c ^. #name <> "** (" <> J.renderEnforcement (c ^. #enforcement) <> "): " <> c ^. #question,
+    "  Concern when the answer is "
+      <> J.renderAnswer (c ^. #concernWhen)
+      <> ". Review passes at "
+      <> J.renderProbability (c ^. #review . #passAt)
+      <> " and blocks at "
+      <> J.renderProbability (c ^. #review . #blockAt)
+      <> " (model-reported probability of the concern); findings block from "
+      <> J.renderSeverity (c ^. #blockingSeverity)
+      <> " severity."
+  ]
+    <> ["  Categories: " <> T.intercalate ", " [cat ^. #name <> " (" <> J.renderSeverity (cat ^. #severity) <> ")" | cat <- c ^. #categories] <> "." | not (null (c ^. #categories))]
+
+listOrAll :: [T.Text] -> T.Text
+listOrAll [] = "every path"
+listOrAll xs = T.intercalate ", " xs
+
+listOrNone :: [T.Text] -> T.Text
+listOrNone [] = "none"
+listOrNone xs = T.intercalate ", " xs
