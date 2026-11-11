@@ -57,6 +57,7 @@ module Seihou.Core.Judgement
     -- * Probabilities
     concernProbability,
     validProbability,
+    renderProbability,
 
     -- * Observations
     Location (..),
@@ -481,7 +482,7 @@ data RawReview = RawReview
 validateReview :: CoverageLimits -> JudgementCheck -> EvidenceIndex -> RawReview -> Either Text ReviewObservation
 validateReview limits check index raw = do
   unless (validProbability (raw ^. #concern)) $
-    Left ("the reply's probability " <> T.pack (show (raw ^. #concern)) <> " is outside 0 to 1")
+    Left ("the reply's probability " <> renderProbability (raw ^. #concern) <> " is outside 0 to 1")
   when (length (raw ^. #findings) > limits ^. #maxFindings) $
     Left ("the reply has " <> T.pack (show (length (raw ^. #findings))) <> " findings, more than the limit of " <> T.pack (show (limits ^. #maxFindings)))
   let declared = Map.fromList [(c ^. #name, c ^. #severity) | c <- check ^. #categories]
@@ -572,7 +573,18 @@ renderDecisionReason = \case
     renderLoc l = T.pack (l ^. #path) <> maybe "" (\n -> ":" <> T.pack (show n)) (l ^. #line)
 
 fmt :: Double -> Text
-fmt p = T.pack (show (fromIntegral (round (p * 100) :: Int) / (100 :: Double)))
+fmt = renderProbability
+
+-- | A probability as a reader expects it, with two decimals: @0.02@, not
+-- @2.0e-2@. Values outside 0 to 1 are rendered the same way so a diagnostic
+-- can name them.
+renderProbability :: Double -> Text
+renderProbability p
+  | isNaN p || isInfinite p = T.pack (show p)
+  | otherwise =
+      let hundredths = round (abs p * 100) :: Integer
+          (whole, frac) = hundredths `divMod` 100
+       in (if p < 0 && hundredths /= 0 then "-" else "") <> T.pack (show whole) <> "." <> (if frac < 10 then "0" else "") <> T.pack (show frac)
 
 data ChunkDecision = ChunkDecision
   { chunk :: !Int,
@@ -623,7 +635,7 @@ decideChunk gateActive policy obs =
                 then d & #status .~ CheckNeedsReview & #reasons %~ (<> [GateDisagreed g gateBlock])
                 else d
       | otherwise ->
-          fromReview Nothing [GateUnavailable ("probability " <> T.pack (show g) <> " is outside 0 to 1")]
+          fromReview Nothing [GateUnavailable ("probability " <> renderProbability g <> " is outside 0 to 1")]
     Just (GateFailed why) -> fromReview Nothing [GateUnavailable why]
     Nothing -> fromReview Nothing []
   where
@@ -637,7 +649,7 @@ decideChunk gateActive policy obs =
         let p = r ^. #concern
             blocking = filter (findingBlocks policy) (r ^. #findings)
             (status, reasons)
-              | not (validProbability p) = (CheckFailed, [ReviewError ("probability " <> T.pack (show p) <> " is outside 0 to 1")])
+              | not (validProbability p) = (CheckFailed, [ReviewError ("probability " <> renderProbability p <> " is outside 0 to 1")])
               | not (null blocking) = (CheckBlocked, map BlockingFinding blocking)
               | p >= reviewT ^. #blockAt = (CheckBlocked, [ConcernAtOrAboveBlock p (reviewT ^. #blockAt)])
               | p > reviewT ^. #passAt = (CheckNeedsReview, [ConcernInBand p reviewT] <> [ModelRequestedReview | r ^. #requestedHumanReview])

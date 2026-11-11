@@ -78,7 +78,7 @@ runJudgement exec def snap = do
                   <> [ "the project data policy is local-only and the configured route sends material to a hosted service"
                      | exec ^. #remote && policy ^. #dataPolicy == LocalOnly
                      ]
-                  <> ["no permitted review route is configured; run seihou judgement configure " <> def ^. #name | not (isJust (exec ^. #backend))]
+                  <> ["no review route is configured; set one with seihou config set judgement.provider PROVIDER and seihou config set judgement.model MODEL" | not (isJust (exec ^. #backend))]
           observations <- forM checks $ \c -> do
             let errs = baseErrors c
                 cpol = checkPolicyFor policy c

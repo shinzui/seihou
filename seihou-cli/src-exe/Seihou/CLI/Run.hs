@@ -49,6 +49,7 @@ import Seihou.CLI.PendingMigrations
   ( detectPendingMigrations,
     formatRefusalMessage,
   )
+import Seihou.CLI.RunJudgement (bundledJudgementSource, runJudgementAdoption)
 import Seihou.CLI.SavePrompted (collectRecipePromptedValues, offerSavePrompted)
 import Seihou.CLI.Shared (deriveNamespace, formatBlueprintRefusal, formatVarError, logIO, resolveAppliedArtifactDir, toVarNameMap, unwrapConfig)
 import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, useColor, yellow)
@@ -71,6 +72,7 @@ import Seihou.Core.Seed (renderSeedOwnershipError, replaceSelectedSeedClaims)
 import Seihou.Core.Types
 import Seihou.Core.Variable (diagnoseResolution)
 import Seihou.Core.Version (renderVersion)
+import Seihou.Dhall.Eval (evalJudgementFromText)
 import Seihou.Effect.BaselineStore (pruneBaselines)
 import Seihou.Effect.BaselineStoreInterp (runBaselineStore)
 import Seihou.Effect.ConfigReader (readContextConfig, readGlobalConfig, readLocalConfig, readNamespaceConfig)
@@ -180,6 +182,14 @@ handleRun runOpts = do
         -- can re-type to find the same artifact.
         logIO level $ logError (formatBlueprintRefusal modName)
         exitFailure
+      Right (RunnableJudgement judgementDef judgementDir) -> do
+        origin <- detectArtifactOrigin projectRoot judgementDir
+        runJudgementAdoption runOpts (ArtifactJudgement origin) judgementDef
+      Left (ModuleNotFound _ _)
+        | Just (bundledPath, bundledText) <- bundledJudgementSource modName ->
+            evalJudgementFromText bundledPath bundledText >>= \case
+              Left err -> exitError level ("The bundled judgement '" <> modName ^. #unModuleName <> "' does not decode: " <> recipeLoadErrorText err)
+              Right judgementDef -> runJudgementAdoption runOpts BundledJudgement judgementDef
       Left err
         | case err of ModuleNotFound _ _ -> False; _ -> True ->
             exitError level $

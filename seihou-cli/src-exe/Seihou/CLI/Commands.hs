@@ -19,6 +19,7 @@ module Seihou.CLI.Commands
     ListOpts (..),
     StatusOpts (..),
     SyncOpts (..),
+    CheckOpts (..),
     BrowseOpts (..),
     OutdatedOpts (..),
     UpgradeOpts (..),
@@ -75,6 +76,7 @@ data Command
   | Install InstallOpts
   | Status StatusOpts
   | Sync SyncOpts
+  | Check CheckOpts
   | Diff
   | List ListOpts
   | NewModule NewModuleOpts
@@ -319,6 +321,16 @@ data BrowseOpts = BrowseOpts
 data SyncOpts = SyncOpts {dryRun :: !Bool, json :: !Bool}
   deriving stock (Eq, Show, Generic)
 
+-- | @seihou check [NAME] [--staged] [--dry-run] [--json]@.
+data CheckOpts = CheckOpts
+  { judgement :: !(Maybe Text),
+    -- | Explicitly select the staged changes, which is also the default.
+    staged :: !Bool,
+    dryRun :: !Bool,
+    json :: !Bool
+  }
+  deriving stock (Eq, Show, Generic)
+
 data StatusOpts = StatusOpts
   { statusCheckUpdates :: !Bool,
     -- | Print the blueprint's stored prompt in full instead of the bounded
@@ -503,6 +515,7 @@ commandParser =
         <> command "remove" removeInfo
         <> command "status" statusInfo
         <> command "sync" syncInfo
+        <> command "check" checkInfo
         <> command "diff" diffInfo
         <> command "manifest" manifestInfo
     )
@@ -2426,6 +2439,24 @@ traceOption =
           <> metavar "SETTING"
           <> help "Record model calls: off, file, stdout, or stderr (file path: agent.tracePath)"
       )
+
+checkInfo :: ParserInfo Command
+checkInfo =
+  info
+    (checkParser <**> helper)
+    ( fullDesc
+        <> progDesc "Run the project's active judgements over the staged changes"
+        <> footer "Exit status: 0 pass or nothing to check, 10 blocked, 11 needs human review, 1 error. A check may send the staged changes to the configured review route (judgement.provider and judgement.model); --dry-run sends nothing and approves nothing."
+    )
+  where
+    checkParser =
+      Check
+        <$> ( CheckOpts
+                <$> optional (argument (T.pack <$> str) (metavar "NAME" <> help "Run only this active judgement, for diagnosis"))
+                <*> switch (long "staged" <> help "Check the staged changes (the default)")
+                <*> switch (long "dry-run" <> help "Show the checks, route and coverage plan without any model request")
+                <*> switch (long "json" <> help "Print one versioned JSON report")
+            )
 
 syncInfo :: ParserInfo Command
 syncInfo =

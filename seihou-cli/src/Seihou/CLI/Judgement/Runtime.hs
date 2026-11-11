@@ -47,6 +47,7 @@ import Data.Generics.Labels ()
 import Data.IORef (atomicModifyIORef', newIORef, readIORef)
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
+import Data.Time.Clock.POSIX (getPOSIXTime)
 import Effectful (Eff, runEff, type (:>))
 import Effectful.Concurrent (runConcurrent)
 import Effectful.Error.Static (Error, runErrorNoCallStack)
@@ -57,6 +58,7 @@ import Shikumi.Adapter (ToPrompt)
 import Shikumi.Decision (DecisionOutputs, Noul, NoulWith (Noul))
 import Shikumi.Error (ShikumiError (..))
 import Shikumi.LLM (LLM, LLMConfig (..), RetryPolicy (..), defaultLLMConfig, runLLMResilientWithEvidence)
+import Shikumi.LLM.Defaults (withEvidenceRuns)
 import Shikumi.LLM.Evidence (AttemptReceipt (..))
 import Shikumi.Module (predict)
 import Shikumi.Program (Program, runProgram)
@@ -257,6 +259,10 @@ productionRunner limits route = do
   observations <- newIORef []
   let baikaiModel = buildBaikaiModel (AgentModelConfig (route ^. #provider) (Just (route ^. #model)) Nothing TraceOff Nothing)
       runner = Runner $ \action -> withSystemTempDirectory "seihou-judgement" $ \dir -> do
+        -- Attempt receipts are produced only for requests that carry an
+        -- evidence request; one run identifier per call is enough to
+        -- correlate its retries.
+        runId <- T.pack . ("seihou-judgement-" <>) . show <$> getPOSIXTime
         registry <- Baikai.newProviderRegistry
         registerRoute registry dir (route ^. #provider)
         let cfg =
@@ -272,6 +278,7 @@ productionRunner limits route = do
                   . runRouting baikaiModel
                   . runLLMResilientWithEvidence (record observations) cfg
                   . routeLLM
+                  . withEvidenceRuns BaikaiEvidence.EvidenceBestEffort (pure runId)
                 $ action
             )
         pure $ case attempted of

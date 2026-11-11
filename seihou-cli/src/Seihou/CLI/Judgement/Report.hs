@@ -50,7 +50,7 @@ combinedStatus ss = case sortOn (Down . rank) ss of
       NoChanges -> 0
 
 prob :: Double -> Text
-prob p = T.pack (show (fromIntegral (round (p * 100) :: Int) / (100 :: Double)))
+prob = renderProbability
 
 bound :: Int -> Text -> Text
 bound n t = if T.length t <= n then t else T.take n t <> "…"
@@ -75,6 +75,7 @@ renderHuman def d =
     reviewed = length (d ^. #coverage . #reviewedFiles)
     uncovered = length (d ^. #coverage . #uncoveredFiles)
     coverageLine
+      | not (null (d ^. #deterministic)) = "stopped by deterministic findings; nothing was sent for review"
       | d ^. #status == NoChanges = "nothing in scope"
       | uncovered == 0 = "complete for " <> T.pack (show reviewed) <> " changed text files"
       | otherwise = "incomplete: " <> T.pack (show uncovered) <> " files not reviewed"

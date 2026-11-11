@@ -19,6 +19,7 @@ import Seihou.CLI.AgentUpgrade (handleAgentUpgrade, upgradeModelConfig)
 import Seihou.CLI.Assist (handleAssist)
 import Seihou.CLI.Bootstrap (handleBootstrap)
 import Seihou.CLI.Browse (handleBrowse)
+import Seihou.CLI.Check (handleCheck)
 import Seihou.CLI.Commands
 import Seihou.CLI.Completions (handleCompletionsCommand)
 import Seihou.CLI.Config (handleConfig)
@@ -97,6 +98,8 @@ dispatch cmd =
       handleInstall installOpts
     Sync syncOpts ->
       handleSync syncOpts
+    Check checkOpts ->
+      handleCheck checkOpts
     Status statusOpts ->
       handleStatus statusOpts
     Diff ->

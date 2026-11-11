@@ -29,6 +29,7 @@ import Seihou.CLI.InstallCollisionSpec qualified as InstallCollisionSpec
 import Seihou.CLI.InstallHistorySpec qualified as InstallHistorySpec
 import Seihou.CLI.InstallSourceSpec qualified as InstallSourceSpec
 import Seihou.CLI.InstalledRunnablesSpec qualified as InstalledRunnablesSpec
+import Seihou.CLI.JudgementCheckSpec qualified as JudgementCheckSpec
 import Seihou.CLI.JudgementExecuteSpec qualified as JudgementExecuteSpec
 import Seihou.CLI.JudgementRuntimeSpec qualified as JudgementRuntimeSpec
 import Seihou.CLI.ListSpec qualified as ListSpec
@@ -96,6 +97,7 @@ main = do
         InstallCollisionSpec.tests,
         InstallHistorySpec.tests,
         InstallSourceSpec.tests,
+        JudgementCheckSpec.tests,
         JudgementExecuteSpec.tests,
         JudgementRuntimeSpec.tests,
         InstalledRunnablesSpec.tests,
