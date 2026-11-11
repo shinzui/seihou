@@ -58,6 +58,21 @@ commit in a range, not the net diff, against the policy read from a trusted base
 ref's Git objects (`--policy-ref`), so a change cannot weaken the policy it is
 checked against.
 
+**A judgment-only gate may clear a check, never overrule the review.** A project may
+configure a fast gate: a model that answers closed questions only, identified by
+Baikai's `isJudgmentOnly` catalogue fact rather than by provider name. Such a model
+is refused as the review route, because it cannot return located findings, and a
+generative model is refused as the gate. The gate route is local configuration
+(`judgement.gateProvider`, `judgement.gateModel`). Whether a gate may be used is
+recorded policy (`gatePermitted`), set at adoption when a gate route is configured
+and named in the preview, and changed later only through a previewed
+`judgement configure` change. Each check has its own gate thresholds, because gate
+and review probabilities are not comparable. At or below the gate's pass threshold
+the check is cleared with no review call. Above it, the review decides, except that
+a gate probability at or above the gate's block threshold forbids a pass. A failing
+gate is reported and escalates. A definition whose gate has not been qualified on its
+corpus ships with `useGate = False`, as the bundled `security-review` does.
+
 **Hooks never overwrite what Seihou does not own.** Seihou writes a marked hook
 when none exists, preserves an existing hook byte for byte and runs it first, and
 installs `pre-commit.legacy` beside a pre-commit framework hook. A
@@ -72,3 +87,7 @@ accepted over trusting a cross-process approval. `git commit --no-verify` skips
 local enforcement; CI with a trusted base policy is the independent path. Adding
 a new deterministic check, evidence scope or judgement field is a schema and
 manifest change under [ADR 0014](0014-every-semantic-manifest-change-advances-the-schema-version.md).
+A judgement reference with a `source` is a producer edge that `seihou install`
+acquires under [ADR 0020](0020-dependency-sources-belong-to-producer-edges.md). A
+reference without one is optional at install, since it usually names the built-in
+catalogue.
