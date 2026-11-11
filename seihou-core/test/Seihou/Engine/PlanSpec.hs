@@ -240,6 +240,26 @@ spec = do
             T.isInfixOf "must be relative" (errs !! 0) `shouldBe` True
           Right _ -> expectationFailure "Expected Left"
 
+    it "compiles a write into the module's own .seihou directory with its parents" $ do
+      withFixture [("helper.txt.tpl", "content")] $ \baseDir -> do
+        let modul = stateModule [Step Template "helper.txt.tpl" ".seihou/demo/x" Nothing Nothing Managed]
+        result <- compilePlan baseDir modul Map.empty
+        result
+          `shouldBe` Right [CreateDirOp ".seihou", CreateDirOp ".seihou/demo", WriteFileOp ".seihou/demo/x" "content" Template]
+
+    it "rejects a rendered destination in another .seihou directory" $ do
+      withFixture [("helper.txt.tpl", "content")] $ \baseDir -> do
+        let modul = stateModule [Step Template "helper.txt.tpl" ".seihou/{{name}}/x" Nothing Nothing Managed]
+        result <- compilePlan baseDir modul (Map.fromList [("name", VText "other")])
+        result
+          `shouldBe` Left ["step destination .seihou/other/x is outside this module's state directory; a module may write under .seihou/ only inside .seihou/demo/"]
+
+    it "rejects a rendered destination in Seihou's own state" $ do
+      withFixture [("helper.txt.tpl", "content")] $ \baseDir -> do
+        let modul = stateModule [Step Copy "helper.txt.tpl" ".seihou/{{name}}" Nothing Nothing Managed]
+        result <- compilePlan baseDir modul (Map.fromList [("name", VText "manifest.json")])
+        result `shouldBe` Left ["step destination path targets Seihou's own state at .seihou/manifest.json"]
+
     it "allows dots inside a rendered destination filename" $ do
       withFixture [("README.md.tpl", "content")] $ \baseDir -> do
         let modul =
@@ -1001,3 +1021,20 @@ spec = do
             length errs `shouldSatisfy` (>= 1)
             T.isInfixOf "missing" (errs !! 0) `shouldBe` True
           Right _ -> expectationFailure "Expected Left"
+
+-- | A module named @demo@ with the given steps and no variables.
+stateModule :: [Step] -> Module
+stateModule steps =
+  Module
+    { name = "demo",
+      version = Nothing,
+      description = Nothing,
+      vars = [],
+      exports = [],
+      prompts = [],
+      steps = steps,
+      commands = [],
+      dependencies = [],
+      removal = Nothing,
+      migrations = []
+    }

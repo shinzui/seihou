@@ -23,7 +23,7 @@ import Dhall.Src (Src)
 import Seihou.Core.Checkout (CheckoutError (..), pathsOverlap, validateCheckoutPaths)
 import Seihou.Core.Expr (evalExpr)
 import Seihou.Core.Module (checkCheckoutSteps, checkSeedSteps)
-import Seihou.Core.Path (validateCanonicalProjectPath, validateProjectRelativePath)
+import Seihou.Core.Path (PathOperand (..), ownStateDirectoryViolation, validateCanonicalProjectPath, validateProjectRelativePath)
 import Seihou.Core.Types
 import Seihou.Engine.DhallJSON (dhallExprToJSON)
 import Seihou.Engine.Template (renderCommand, renderDestPath, renderTemplate, renderTemplateText)
@@ -134,10 +134,10 @@ compileStep baseDir modName vars step = do
     compileActiveStep = case step ^. #patch of
       Just _ -> compilePatchStep baseDir vars modName step
       Nothing -> case step ^. #strategy of
-        Copy -> compileCopyStep baseDir vars step
-        Template -> compileTemplateStep baseDir vars step
-        DhallText -> compileDhallTextStep baseDir vars step
-        Structured -> compileStructuredStep baseDir vars step
+        Copy -> compileCopyStep baseDir modName vars step
+        Template -> compileTemplateStep baseDir modName vars step
+        DhallText -> compileDhallTextStep baseDir modName vars step
+        Structured -> compileStructuredStep baseDir modName vars step
         Symlink -> pure $ case (renderCommand (T.pack (step ^. #src)) vars, renderCommand (step ^. #dest) vars) of
           (Right source, Right dest) -> case validateCheckoutPaths (T.unpack source) (T.unpack dest) of
             Left err -> Left [err ^. #message]
@@ -148,10 +148,11 @@ compileStep baseDir modName vars step = do
 -- | Compile a Copy step: read the source file and write it to the destination.
 compileCopyStep ::
   FilePath ->
+  ModuleName ->
   Map VarName VarValue ->
   Step ->
   IO (Either [Text] [Operation])
-compileCopyStep baseDir vars step = do
+compileCopyStep baseDir modName vars step = do
   let srcPath = baseDir </> "files" </> (step ^. #src)
   result <- tryReadFile srcPath
   case result of
@@ -161,15 +162,16 @@ compileCopyStep baseDir vars step = do
         Left placeholderErrors ->
           pure (Left (map formatPlaceholderError placeholderErrors))
         Right dest ->
-          pure (writeFileOps dest content Copy)
+          pure (writeFileOps modName dest content Copy)
 
 -- | Compile a Template step: read, render placeholders, write.
 compileTemplateStep ::
   FilePath ->
+  ModuleName ->
   Map VarName VarValue ->
   Step ->
   IO (Either [Text] [Operation])
-compileTemplateStep baseDir vars step = do
+compileTemplateStep baseDir modName vars step = do
   let srcPath = baseDir </> "files" </> (step ^. #src)
   result <- tryReadFile srcPath
   case result of
@@ -183,15 +185,16 @@ compileTemplateStep baseDir vars step = do
             Left placeholderErrors ->
               pure (Left (map formatPlaceholderError placeholderErrors))
             Right dest ->
-              pure (writeFileOps dest rendered Template)
+              pure (writeFileOps modName dest rendered Template)
 
 -- | Compile a DhallText step: read source, substitute placeholders, evaluate as Dhall.
 compileDhallTextStep ::
   FilePath ->
+  ModuleName ->
   Map VarName VarValue ->
   Step ->
   IO (Either [Text] [Operation])
-compileDhallTextStep baseDir vars step = do
+compileDhallTextStep baseDir modName vars step = do
   let srcPath = baseDir </> "files" </> (step ^. #src)
   result <- tryReadFile srcPath
   case result of
@@ -209,16 +212,17 @@ compileDhallTextStep baseDir vars step = do
                 Left placeholderErrors ->
                   pure (Left (map formatPlaceholderError placeholderErrors))
                 Right dest ->
-                  pure (writeFileOps dest evaluated DhallText)
+                  pure (writeFileOps modName dest evaluated DhallText)
 
 -- | Compile a Structured step: read source, substitute placeholders, evaluate as Dhall,
 -- then serialize to JSON or YAML based on the destination file extension.
 compileStructuredStep ::
   FilePath ->
+  ModuleName ->
   Map VarName VarValue ->
   Step ->
   IO (Either [Text] [Operation])
-compileStructuredStep baseDir vars step = do
+compileStructuredStep baseDir modName vars step = do
   let srcPath = baseDir </> "files" </> (step ^. #src)
   result <- tryReadFile srcPath
   case result of
@@ -239,12 +243,12 @@ compileStructuredStep baseDir vars step = do
                     Left placeholderErrors ->
                       pure (Left (map formatPlaceholderError placeholderErrors))
                     Right dest ->
-                      case validateRenderedDestination dest of
+                      case validateRenderedDestination modName dest of
                         Left err -> pure (Left [err])
                         Right safeDest ->
                           case serializeByExtension (T.unpack safeDest) jsonValue of
                             Left err -> pure (Left [err])
-                            Right serialized -> pure (Right (writeFileOpsUnchecked safeDest serialized Structured))
+                            Right serialized -> pure (first pure (writeFileOpsUnchecked modName safeDest serialized Structured))
 
 -- | Compile a patch step: read source, render template, produce PatchFileOp.
 -- The content rendering follows the step's strategy (Template renders placeholders,
@@ -318,11 +322,26 @@ renderDhallText dhallSource = do
       pure (Left ("Dhall evaluation failed: " <> T.pack (show e)))
     Right t -> pure (Right t)
 
-validateRenderedDestination :: Text -> Either Text Text
-validateRenderedDestination dest =
+-- | Validate a rendered step destination as a file the module writes. Beyond
+-- staying inside the project, a module may write under @.seihou/@ only inside
+-- @.seihou/<its own name>/@ and never into Seihou's or Git's control data.
+-- See docs/adr/0025-a-module-owns-only-its-own-directory-under-seihou.md.
+validateRenderedDestination :: ModuleName -> Text -> Either Text Text
+validateRenderedDestination modName dest =
   case validateProjectRelativePath dest of
     Left err -> Left ("rendered destination " <> err)
-    Right safePath -> Right (T.pack safePath)
+    Right safePath -> case ownStateDirectoryViolation (modName ^. #unModuleName) FileTarget safePath of
+      Just violation -> Left ("step destination " <> violation)
+      Nothing -> Right (T.pack safePath)
+
+-- | The 'CreateDirOp's for a validated destination's parent directories, each
+-- checked as a directory operand of the module.
+parentDirOps :: ModuleName -> Text -> Either Text [Operation]
+parentDirOps modName dest = traverse checked (parentDirs dest)
+  where
+    checked dir = case ownStateDirectoryViolation (modName ^. #unModuleName) DirectoryOperand (T.unpack dir) of
+      Just violation -> Left ("step directory " <> violation)
+      Nothing -> Right (CreateDirOp (T.unpack dir))
 
 validateRenderedCommandWorkDir :: Text -> Either Text Text
 validateRenderedCommandWorkDir workDir =
@@ -330,26 +349,25 @@ validateRenderedCommandWorkDir workDir =
     Left err -> Left ("rendered command workDir " <> err)
     Right safePath -> Right (T.pack safePath)
 
-writeFileOps :: Text -> Text -> Strategy -> Either [Text] [Operation]
-writeFileOps dest content strategy =
-  case validateRenderedDestination dest of
+writeFileOps :: ModuleName -> Text -> Text -> Strategy -> Either [Text] [Operation]
+writeFileOps modName dest content strategy =
+  case validateRenderedDestination modName dest of
     Left err -> Left [err]
-    Right safeDest -> Right (writeFileOpsUnchecked safeDest content strategy)
+    Right safeDest -> first pure (writeFileOpsUnchecked modName safeDest content strategy)
 
-writeFileOpsUnchecked :: Text -> Text -> Strategy -> [Operation]
-writeFileOpsUnchecked dest content strategy =
-  let destStr = T.unpack dest
-      dirOps = map (CreateDirOp . T.unpack) (parentDirs dest)
-   in dirOps ++ [WriteFileOp destStr content strategy]
+-- | Operations for a destination 'validateRenderedDestination' already accepted.
+writeFileOpsUnchecked :: ModuleName -> Text -> Text -> Strategy -> Either Text [Operation]
+writeFileOpsUnchecked modName dest content strategy = do
+  dirOps <- parentDirOps modName dest
+  pure (dirOps ++ [WriteFileOp (T.unpack dest) content strategy])
 
 patchFileOps :: Text -> Text -> PatchOp -> Strategy -> ModuleName -> Either [Text] [Operation]
 patchFileOps dest content patchOp' strategy modName =
-  case validateRenderedDestination dest of
+  case validateRenderedDestination modName dest of
     Left err -> Left [err]
-    Right safeDest ->
-      let destStr = T.unpack safeDest
-          dirOps = map (CreateDirOp . T.unpack) (parentDirs safeDest)
-       in Right (dirOps ++ [PatchFileOp destStr content patchOp' strategy modName])
+    Right safeDest -> do
+      dirOps <- first pure (parentDirOps modName safeDest)
+      Right (dirOps ++ [PatchFileOp (T.unpack safeDest) content patchOp' strategy modName])
 
 -- | Extract parent directories from a path.
 -- @"src/Lib.hs"@ produces @["src"]@.

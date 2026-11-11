@@ -29,7 +29,7 @@ import Data.Time (UTCTime)
 import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Core.Checkout
 import Seihou.Core.Expr (settleRemovalConditions)
-import Seihou.Core.Path (pathsHaveConflictingSpelling, validateProjectRelativePath)
+import Seihou.Core.Path (PathOperand (..), controlPathReason, pathsHaveConflictingSpelling, validateProjectRelativePath)
 import Seihou.Core.Seed
 import Seihou.Core.Types
 import Seihou.Effect.Filesystem (Filesystem, doesFileExist, readFileText, removeDirectoryIfEmpty, removeFile, writeFileText)
@@ -220,12 +220,23 @@ buildUnprotectedStepOp manifest _modName step = case step ^. #action of
 buildCommandOp :: Command -> Either RemovalError RemovalOp
 buildCommandOp command
   | command ^. #lifecycle == CheckoutCommandLifecycle = Left (RemovalUnsafePath "remove-command" "" "checkout setup is not a removal command")
-  | otherwise = case traverse (validateRemovalPath "remove-command workDir") (command ^. #workDir) of
+  | otherwise = case traverse (validateRemovalWorkDir "remove-command workDir") (command ^. #workDir) of
       Left err -> Left err
       Right safeWorkDir -> Right (RemovalCommandOp (command ^. #run) (fmap T.pack safeWorkDir))
 
+-- | Validate a path a removal step deletes, strips or rewrites. It must stay in
+-- the project and must not name Seihou's or Git's control data or the
+-- @.seihou@ directory itself.
 validateRemovalPath :: Text -> Text -> Either RemovalError FilePath
-validateRemovalPath label path =
+validateRemovalPath label path = do
+  safePath <- validateRemovalWorkDir label path
+  case controlPathReason FileTarget safePath of
+    Just reason -> Left (RemovalUnsafePath label path reason)
+    Nothing -> Right safePath
+
+-- | A command's working directory need only stay in the project.
+validateRemovalWorkDir :: Text -> Text -> Either RemovalError FilePath
+validateRemovalWorkDir label path =
   case validateProjectRelativePath path of
     Left reason -> Left (RemovalUnsafePath label path reason)
     Right safePath -> Right safePath

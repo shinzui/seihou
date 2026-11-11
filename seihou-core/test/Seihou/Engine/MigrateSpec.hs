@@ -141,6 +141,24 @@ spec = do
           result = runClassifyResult fs manifest c
       result `shouldBe` Left (MigrationUnsafePath "move-file destination" "../outside" "path must not contain '..' segment: ../outside")
 
+    it "rejects a migration path in Seihou's own state" $ do
+      let manifest = mkManifest []
+          fs = mkFS []
+          c = chain1 "1.0.0" "2.0.0" [DeleteDir ".seihou/baselines"]
+          result = runClassifyResult fs manifest c
+      result `shouldBe` Left (MigrationUnsafePath "delete-dir path" ".seihou/baselines" "path targets Seihou's own state at .seihou/baselines")
+
+    it "rejects a migration that deletes the .seihou directory itself" $ do
+      let c = chain1 "1.0.0" "2.0.0" [DeleteDir ".seihou"]
+      runClassifyResult (mkFS []) (mkManifest []) c `shouldSatisfy` either (const True) (const False)
+
+    it "allows moving a legacy .seihou file into the module's own directory" $ do
+      let manifest = mkManifest [(".seihou/gcp-kube-env.conf", "x")]
+          fs = mkFS [(".seihou/gcp-kube-env.conf", "x")]
+          c = chain1 "1.0.0" "2.0.0" [MoveFile ".seihou/gcp-kube-env.conf" ".seihou/gcp-kube-env/env.conf"]
+          plan = runClassify fs manifest c
+      (plan ^. #ops) `shouldBe` [MoveFileInst ".seihou/gcp-kube-env.conf" ".seihou/gcp-kube-env/env.conf" MFSafe]
+
     it "rejects a run-command workDir with a parent directory segment" $ do
       let manifest = mkManifest []
           fs = mkFS []

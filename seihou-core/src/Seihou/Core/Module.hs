@@ -23,6 +23,7 @@ module Seihou.Core.Module
     checkDependencyNames,
     checkDependencyVarBindings,
     checkSafeDestinations,
+    checkModuleStateDestinations,
     checkDestVarRefs,
     checkCommandSafety,
     checkSeedSteps,
@@ -39,7 +40,7 @@ import Data.Maybe (isJust, maybeToList)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.Core.Checkout (CheckoutError (..), validateCheckoutPaths)
-import Seihou.Core.Path (validateProjectRelativePath)
+import Seihou.Core.Path (PathOperand (..), controlPathReason, ownStateDirectoryViolation, validateProjectRelativePath)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalAgentPromptFromFile, evalBlueprintFromFile, evalModuleFromFile, evalRecipeFromFile)
 import Seihou.Prelude
@@ -293,14 +294,44 @@ checkDependencyVarBindings m =
     )
     (m ^. #dependencies)
 
--- Rule 7: Every step destination must be a safe relative path
+-- Rule 7: Every step destination must be a safe relative path and must not
+-- target Seihou's or Git's control data. Only the control rule applies when a
+-- module loads; the rule that a module writes under @.seihou/@ only inside its
+-- own directory is 'checkModuleStateDestinations', enforced when output is
+-- generated, so that existing applications of an older module still load for
+-- @seihou remove@ and @seihou status@.
 checkSafeDestinations :: Module -> [Text]
 checkSafeDestinations m = concatMap checkDest (m ^. #steps)
   where
     checkDest s =
       case validateProjectRelativePath (s ^. #dest) of
         Left err -> ["step destination " <> err]
-        Right _ -> []
+        Right safePath
+          | literalControlPrefix (s ^. #dest),
+            Just reason <- controlPathReason FileTarget safePath ->
+              ["step destination " <> reason]
+          | otherwise -> []
+
+-- | A module may write under @.seihou/@ only inside @.seihou/<its name>/@.
+-- Checks each literal step destination; one whose first two segments contain a
+-- placeholder is left to plan time. Control paths are reported by
+-- 'checkSafeDestinations' and are not repeated here.
+checkModuleStateDestinations :: Module -> [Text]
+checkModuleStateDestinations m = concatMap checkDest (m ^. #steps)
+  where
+    checkDest s = case validateProjectRelativePath (s ^. #dest) of
+      Right safePath
+        | literalControlPrefix (s ^. #dest),
+          Nothing <- controlPathReason FileTarget safePath,
+          Just violation <- ownStateDirectoryViolation (m ^. #name . #unModuleName) FileTarget safePath ->
+            ["step destination " <> violation]
+      _ -> []
+
+-- | Whether the segments that decide a path's control class (the first two)
+-- are free of placeholders, so the literal destination can be judged now.
+literalControlPrefix :: Text -> Bool
+literalControlPrefix dest =
+  not (any ("{{" `T.isInfixOf`) (take 2 (filter (not . T.null) (T.split (\c -> c == '/' || c == '\\') dest))))
 
 -- Rule 8: Variables referenced in step dest placeholders must be declared
 checkDestVarRefs :: Module -> [Text]

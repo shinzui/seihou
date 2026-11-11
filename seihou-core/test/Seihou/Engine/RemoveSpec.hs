@@ -337,6 +337,20 @@ spec = do
           )
       Map.member "../outside" (fs ^. #files) `shouldBe` True
 
+    it "rejects a removal step destination in Seihou's own state" $ do
+      let removal = Removal [RemovalStep RemoveFileAction ".seihou/baselines/x" Nothing Nothing] []
+          manifest = mkManifestWithRemoval removal []
+          fs = mkFS [(".seihou/baselines/x", "keep")]
+          result = runBuildOps fs manifest modName removal
+      result
+        `shouldBe` Left
+          ( RemovalUnsafePath
+              "remove-file destination"
+              ".seihou/baselines/x"
+              "path targets Seihou's own state at .seihou/baselines"
+          )
+      Map.member ".seihou/baselines/x" (fs ^. #files) `shouldBe` True
+
     it "rejects a removal command workDir with a parent directory segment" $ do
       let removal = Removal [] [Command "echo unsafe" (Just "../outside") Nothing ApplicationCommand]
           manifest = mkManifestWithRemoval removal []

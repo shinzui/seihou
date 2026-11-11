@@ -140,6 +140,28 @@ spec = do
         report <- buildReport False tmpDir badModule
         hasFailedCheck "Safe step destinations" (report ^. #checks) `shouldBe` True
 
+    it "reports a destination outside the module's own .seihou directory" $ do
+      withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
+        let legacy =
+              goodModule
+                & #name .~ "gcp-kube-env"
+                & #steps .~ [Step Template "README.md.tpl" ".seihou/gcp-kube-env.conf" Nothing Nothing Managed]
+        report <- buildReport False tmpDir legacy
+        reportHasErrors report `shouldBe` True
+        [c ^. #details | c <- report ^. #checks, c ^. #label == "Module state destinations"]
+          `shouldBe` [["step destination .seihou/gcp-kube-env.conf is outside this module's state directory; a module may write under .seihou/ only inside .seihou/gcp-kube-env/"]]
+
+    it "passes the module state check for the module's own .seihou directory" $ do
+      withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
+        let good = goodModule & #steps .~ [Step Template "README.md.tpl" ".seihou/test-module/helper.txt" Nothing Nothing Managed]
+        report <- buildReport False tmpDir good
+        hasPassedCheck "Module state destinations" (report ^. #checks) `shouldBe` True
+        reportHasErrors report `shouldBe` False
+
     it "detects missing module version" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         report <- buildReport False tmpDir badModule

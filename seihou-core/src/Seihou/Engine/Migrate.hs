@@ -25,7 +25,7 @@ import Seihou.Core.Migration
     MigrationOp (..),
     MigrationPlan (..),
   )
-import Seihou.Core.Path (pathsHaveConflictingSpelling, validateProjectRelativePath)
+import Seihou.Core.Path (PathOperand (..), controlPathReason, pathsHaveConflictingSpelling, validateProjectRelativePath)
 import Seihou.Core.Types
   ( AppliedModule (..),
     FileRecord (..),
@@ -159,12 +159,26 @@ classifyOp manifest op = case op of
         Right safePath -> Right (DeleteDirInst safePath)
   RunCommand {run, workDir} ->
     pure $
-      case traverse (validateMigrationPath "run-command workDir") workDir of
+      case traverse (validateMigrationWorkDir "run-command workDir") workDir of
         Left err -> Left err
         Right safeWorkDir -> Right (RunCommandInst run safeWorkDir)
 
+-- | Validate a path a migration moves, deletes or creates. It must stay in the
+-- project and must not name Seihou's or Git's control data or the @.seihou@
+-- directory itself. Unlike generation, a migration may touch any other entry
+-- under @.seihou/@, so it can move a legacy @.seihou/<name>.conf@ into the
+-- module's own @.seihou/<name>/@ directory.
 validateMigrationPath :: Text -> FilePath -> Either MigrationExecError FilePath
-validateMigrationPath label path =
+validateMigrationPath label path = do
+  safePath <- validateMigrationWorkDir label path
+  case controlPathReason FileTarget safePath of
+    Just reason -> Left (MigrationUnsafePath label path reason)
+    Nothing -> Right safePath
+
+-- | A command's working directory need only stay in the project: the command
+-- itself can already reach any file.
+validateMigrationWorkDir :: Text -> FilePath -> Either MigrationExecError FilePath
+validateMigrationWorkDir label path =
   case validateProjectRelativePath (T.pack path) of
     Left reason -> Left (MigrationUnsafePath label path reason)
     Right safePath -> Right safePath

@@ -189,6 +189,45 @@ spec = do
           Left other -> expectationFailure ("Expected ValidationError, got: " <> show other)
           Right _ -> expectationFailure "Expected validation failure"
 
+    it "rejects a destination in Seihou's own state" $ do
+      withSystemTempDirectory "seihou-test" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
+        let bad =
+              goodModule
+                & #steps
+                  .~ [Step Template "README.md.tpl" ".seihou/manifest.json" Nothing Nothing Managed]
+        result <- validateModule tmpDir bad
+        case result of
+          Left (ValidationError _ errs) ->
+            hasError "step destination path targets Seihou's own state at .seihou/manifest.json" errs `shouldBe` True
+          Left other -> expectationFailure ("Expected ValidationError, got: " <> show other)
+          Right _ -> expectationFailure "Expected validation failure"
+
+    it "accepts a destination in the module's own .seihou directory" $ do
+      withSystemTempDirectory "seihou-test" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
+        let good =
+              goodModule
+                & #steps
+                  .~ [Step Template "README.md.tpl" ".seihou/test-module/helper.txt" Nothing Nothing Managed]
+        result <- validateModule tmpDir good
+        either (\err -> expectationFailure ("Expected success, got: " <> show err)) (const (pure ())) result
+
+    it "still loads a module with a legacy file directly under .seihou" $ do
+      -- The own-directory rule is enforced at generation, not load, so an
+      -- existing application of such a module can still be removed.
+      withSystemTempDirectory "seihou-test" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
+        let legacy =
+              goodModule
+                & #steps
+                  .~ [Step Template "README.md.tpl" ".seihou/test-module.conf" Nothing Nothing Managed]
+        result <- validateModule tmpDir legacy
+        either (\err -> expectationFailure ("Expected success, got: " <> show err)) (const (pure ())) result
+
     it "rejects absolute destination path" $ do
       withSystemTempDirectory "seihou-test" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
