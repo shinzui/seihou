@@ -207,6 +207,45 @@ Steps define the file generation operations. Each step produces one output file:
 
 **patch** (Optional Text): Patching mode for when multiple modules write to the same file. Values: `"append-file"`, `"prepend-file"`, `"append-section"`, `"append-line-if-absent"`, `"replace-section"`. See [Composition patching](#composition-patching).
 
+### Keeping module files under .seihou
+
+A module may keep its own helper scripts and configuration inside the project's
+`.seihou/` directory, in one directory named exactly after the module:
+`.seihou/<module-name>/`. A module named `docs-bootstrap` may write
+`.seihou/docs-bootstrap/bootstrap.py` or `.seihou/docs-bootstrap/config/site.json`.
+
+Files there are ordinary managed files. `seihou run` writes and records them,
+and `seihou update` merges a newer release into them with the same three-way
+merge it uses everywhere else, so a user's edit to one of them survives an
+update.
+
+Nothing else under `.seihou/` may be written:
+
+- Seihou's own state is reserved. These entries directly under `.seihou/`
+  belong to Seihou, in any letter case: `manifest.json`, `manifest.json.tmp`,
+  `baselines`, `transactions`, `transactions-quarantine`, `modules`, `context`,
+  `config.dhall`, `trace.jsonl`, and every name that begins with `.`. A module
+  that writes there fails to load. A module whose name is one of these has no
+  state directory.
+- Another module's directory, a file directly under `.seihou/` (such as
+  `.seihou/<module-name>.conf`), and a differently cased spelling (`.Seihou/`,
+  `.seihou/My-Module/`) are refused when the module generates output, with a
+  message naming the directory it may use:
+
+  ```text
+  step destination .seihou/other/x is outside this module's state directory; a module may write under .seihou/ only inside .seihou/demo/
+  ```
+
+- Nothing under `.git/` may be written.
+
+`seihou validate-module` reports a destination outside the module's own
+directory under the "Module state destinations" check, so the problem shows up
+before the module is published. A migration may still move a legacy file such
+as `.seihou/<module-name>.conf` into `.seihou/<module-name>/`.
+
+Seed steps and checkout outputs belong to the project, not the module, and
+cannot live under `.seihou/` at all.
+
 ### Strategy: copy
 
 ```dhall
@@ -833,6 +872,10 @@ Validation checks:
 5. Prompts reference declared variables
 6. Step source files exist in `files/`
 7. Exports reference declared variables
+8. Step destinations stay in the project, stay out of Seihou's own state and
+   `.git/`, and under `.seihou/` stay inside `.seihou/<module-name>/`
+   ("Module state destinations"; see
+   [Keeping module files under .seihou](#keeping-module-files-under-seihou))
 
 Add `--lint` for advisory warnings about best practices.
 

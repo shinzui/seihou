@@ -132,6 +132,20 @@ home for this convention; this section mirrors it for contributors landing on
 the contributing guide. If the two diverge, treat the architecture doc as
 authoritative.
 
+## Formatting
+
+Format with `nix fmt`, which runs treefmt with the repository's fourmolu,
+cabal-gild and nixpkgs-fmt settings, the same formatters the pre-commit
+hook and `nix flake check` verify. Pass paths to format only those files:
+
+```bash
+nix fmt -- seihou-core/src/Seihou/Core/Path.hs seihou-core/seihou-core.cabal
+```
+
+Running `fourmolu` directly on a source file fails with "Found `qualified'
+in postpositive position", because it does not read the packages' default
+extensions.
+
 ## Commit Messages
 
 Use [Conventional Commits](https://www.conventionalcommits.org/):
@@ -159,6 +173,13 @@ masterplan specification is in `.claude/skills/master-plan/MASTERPLAN.md`.
 The CLI test suite lives at `seihou-cli/test/`. Run it with:
 
     cabal test seihou-cli-test
+
+To run part of a suite, pass a tasty pattern that matches a test group's
+title (the string given to `testSpec`), not the Haskell module name:
+
+    cabal test seihou-core-test --test-options='-p "/project path classification/"'
+
+A pattern that matches nothing reports "All 0 tests passed" and still exits 0.
 
 A new pure helper added to the library should usually carry a `Spec.hs`
 file alongside the existing ones (for example,

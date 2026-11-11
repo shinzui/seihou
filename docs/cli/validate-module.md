@@ -32,6 +32,10 @@ Checks module well-formedness:
 - Step source files exist
 - Dependency names are valid
 - Step destinations are safe and reference declared variables
+- Step destinations under `.seihou/` stay inside the module's own state
+  directory, `.seihou/<module-name>/` (the "Module state destinations" check).
+  A destination whose first two segments contain a placeholder is checked
+  when the module runs instead
 - Commands are well-formed and safe
 - Exports reference declared variables
 

@@ -6,6 +6,15 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Update projects that use modules keeping files in `.seihou/<module>/`.** `seihou update` no longer stops with `reconciliation_failed ... path targets Seihou or Git control data` for a module that keeps helper scripts or configuration in its own `.seihou/<module-name>/` directory, such as `docs-mori-bootstrap`. Those files now merge on update like any other managed file, keeping your edits. Run the ordinary update; no `--force` re-run is needed.
+
+### Changed
+
+- **`seihou run` refuses module output that would reach Seihou's own state.** A step destination in the manifest, baselines, transactions, project-local modules or another reserved entry under `.seihou/`, or under `.git/`, is now refused before anything is written, in any letter case. Previously `run` wrote such files.
+- **A module writes under `.seihou/` only inside its own directory.** A destination elsewhere under `.seihou/` is refused when the module runs, with a message naming the allowed `.seihou/<module-name>/`, and `seihou validate-module` reports it as the new "Module state destinations" check. Known affected module: `gcp-kube-env`, which writes `.seihou/gcp-kube-env.conf`; `seihou run gcp-kube-env` fails until a release moves that file into `.seihou/gcp-kube-env/`. Existing applications of it still load for `seihou status` and `seihou remove`. See [Keeping module files under .seihou](module-authoring.md#keeping-module-files-under-seihou).
+
 ## [0.15.0.0] - 2026-11-01
 
 ### Changed

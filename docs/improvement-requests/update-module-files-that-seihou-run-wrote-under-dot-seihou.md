@@ -8,9 +8,17 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-11-10T22:29:39Z"
-timestamp: 2026-11-11T13:54:44Z
+timestamp: 2026-11-11T14:17:23Z
 requestId: IR-19
-status: accepted
+status: completed
+completedAt: "2026-11-11T14:17:23Z"
+resolution: >-
+  Option 1. A module owns .seihou/<module-name>/, which seihou run writes and seihou
+  update merges like any managed file; an explicit, case-insensitive reserved list in
+  Seihou.Core.Path keeps the manifest, baselines, transactions, project-local modules,
+  configuration, context, trace and .git unreachable from module output through run,
+  update, recovery, migrations and removal. Generation refuses other .seihou/ output with
+  a message naming the module's own directory. Recorded in ADR 0025; unreleased.
 targetPlan: docs/plans/120-let-seihou-update-reconcile-module-owned-files-under-seihou.md
 origin: mori://shinzui/kotei-docs
 reviews:
@@ -32,14 +40,20 @@ reviews:
 
 ## Status
 
-Accepted and planned in [ExecPlan 120](../plans/120-let-seihou-update-reconcile-module-owned-files-under-seihou.md).
-Raised from `FRIC-4`
+Completed in source through
+[ExecPlan 120](../plans/120-let-seihou-update-reconcile-module-owned-files-under-seihou.md)
+and recorded in [ADR 0025](../adr/0025-a-module-owns-only-its-own-directory-under-seihou.md);
+it ships with the next release after Seihou 0.15.0.0. Raised from `FRIC-4`
 (`mori://shinzui/kotei-docs/okf/friction-log/concepts/FRIC-4`) against Seihou 0.15.0.0.
-The plan chooses option 1: a module owns `.seihou/<module-name>/`, which `seihou run` and
+Option 1 was chosen: a module owns `.seihou/<module-name>/`, which `seihou run` and
 `seihou update` both accept, while an explicit reserved list keeps Seihou's own entries
 (the manifest, `baselines/`, `transactions/`, `modules/`, configuration, context and trace)
 and `.git` unreachable from module output through both commands. Existing applications of
-`docs-mori-bootstrap` need no module change. Implementation remains pending.
+`docs-mori-bootstrap` need no module change: on a copy of `mori://shinzui/kotei-docs`, the
+development binary's `seihou update fumadocs --dry-run` plans the update where installed
+0.15.0.0 still fails with `reconciliation_failed`. The third acceptance criterion applies only
+to option 2. `gcp-kube-env`, which writes `.seihou/gcp-kube-env.conf`, now fails at
+`seihou run` until it moves that file into `.seihou/gcp-kube-env/`.
 
 ## Context
 

@@ -255,6 +255,15 @@ Generated ancestors are stored by hash under `.seihou/baselines/`. Do not edit
 or delete this directory by hand; successful updates prune blobs no longer
 referenced by the manifest.
 
+Files a module keeps in its own state directory, `.seihou/<module-name>/`
+(helper scripts or configuration, for example), are reconciled like any other
+managed file. Seihou's own state under `.seihou/` (the manifest, baselines,
+transactions, project-local modules and the other reserved entries listed in
+[Keeping module files under .seihou](../user/module-authoring.md#keeping-module-files-under-seihou))
+and anything under `.git/` are never written by an update; a release that
+targets them is refused with `reconciliation_failed`, and the message names
+what the path targets.
+
 ## Commands
 
 The default policy runs new or changed application commands, using successful

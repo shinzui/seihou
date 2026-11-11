@@ -87,8 +87,10 @@ succeeds and the file contains both the user's edit and the new release's change
   and `.seihou/other/x`. (2026-11-11: 4 cases pass under
   `-p "/module state directory end-to-end/"`, including `validate-module` exiting non-zero with
   "Module state destinations".)
-- [ ] Milestone 5: user documentation, changelogs, ADR 0025, and IR-19 updated; full test suite
-  and `nix flake check` pass.
+- [x] Milestone 5: user documentation, changelogs, ADR 0025, and IR-19 updated; full test suite
+  and `nix flake check` pass. (2026-11-11: `cabal test all` passes 54 + 1435 + 881 tests;
+  `nix flake check` passes record-conventions, pre-commit, cli-module-placement and treefmt;
+  `okf validate docs/improvement-requests` reports 19 concepts OK.)
 
 
 ## Surprises & Discoveries
@@ -214,7 +216,43 @@ Findings made while writing this plan, recorded here because they shaped its des
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Completed 2026-11-11 in five commits on `master`. A module now owns `.seihou/<module-name>/`:
+`seihou run` writes there and `seihou update` merges there, while one classifier in
+`seihou-core/src/Seihou/Core/Path.hs` keeps Seihou's reserved entries and `.git` out of reach
+of module output through loading, planning, reconciliation, the update transaction, recovery,
+migrations and removal, in any letter case. The end-to-end spec
+`seihou-cli/test/Seihou/CLI/ModuleStateE2ESpec.hs` demonstrates the IR's scenario.
+
+Real-world check: on a scratch copy of `mori://shinzui/kotei-docs`, the development binary's
+`seihou update fumadocs --dry-run` planned the update (67 files unchanged, exit 0), while the
+installed 0.15.0.0 still printed `Update failed [reconciliation_failed]: Path
+.seihou/docs-mori-bootstrap/bootstrap-docs.py cannot be reconciled: path targets Seihou or Git
+control data`. The development binary's `seihou validate-module` passes `docs-mori-bootstrap`,
+`openapi-typescript-client-dir` and `repo-dir` and fails `gcp-kube-env` with the new "Module
+state destinations" check, as the Decision Log predicted.
+
+Departures from the plan as written: recovery, migrations and removal refuse the `.seihou`
+directory itself, not only control paths (Decision Log); the classifier also ignores `.`
+segments; the end-to-end fixture separates the two edits with an unchanged line, because diff3
+treats adjacent-line edits as overlapping; and the focused test commands use tasty group titles
+(Surprises & Discoveries). `checkModuleStateDestinations` lives in `Seihou.Core.Module` beside
+`checkSafeDestinations` and reports only own-directory violations, so a control path is not
+reported twice by `validate-module`.
+
+The changes are unreleased. IR-19 is marked completed in source; the user changelog names
+`gcp-kube-env` as affected.
+
+Friction recorded under this plan:
+
+- `FRIC-12` (`docs/friction-log/12-running-fourmolu-directly-fails-to-parse-only-nix-fmt-formats-haskell-sources.md`):
+  running `fourmolu` directly fails to parse; only `nix fmt` works. Triaged **resolved**: the
+  contributing guide now has a Formatting section, and its Tests section explains tasty
+  `-p` patterns.
+- The `gcp-kube-env` follow-up, filed as the user directed as a friction entry in that
+  repository: `mori://shinzui/seihou-modules/okf/friction-log/concepts/FRIC-17` (status
+  `logged`, left uncommitted in that repository for its owners to triage). It records that the
+  module must move `.seihou/gcp-kube-env.conf` into `.seihou/gcp-kube-env/`, with a migration
+  for existing applications.
 
 
 ## Context and Orientation

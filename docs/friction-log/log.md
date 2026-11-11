@@ -1,5 +1,11 @@
 # Bundle Update Log
 
+## 2026-11-11
+
+* **Update**: FRIC-12 resolved: Resolved by documenting the formatter entry point in the contributing guide under ExecPlan 120.
+
+* **Addition**: FRIC-12 records slowdown documentation friction with mori://shinzui/seihou: Running fourmolu directly fails to parse; only nix fmt formats Haskell sources
+
 ## 2026-11-03
 * **Update**: FRIC-6 resolved: Supersede the priority 4 install: its standalone entry left seihou stuck at 0.13.0.0 after 0.15.0.0 reached Home Manager.
 
