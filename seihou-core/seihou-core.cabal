@@ -52,6 +52,7 @@ library
     Seihou.Core.Context
     Seihou.Core.Expr
     Seihou.Core.Install
+    Seihou.Core.Judgement
     Seihou.Core.Migration
     Seihou.Core.Module
     Seihou.Core.Path
@@ -174,6 +175,7 @@ test-suite seihou-core-test
     Seihou.Core.EntailmentSpec
     Seihou.Core.ExprSpec
     Seihou.Core.InstallSpec
+    Seihou.Core.JudgementSpec
     Seihou.Core.ListSpec
     Seihou.Core.MigrationSpec
     Seihou.Core.ModuleSpec
