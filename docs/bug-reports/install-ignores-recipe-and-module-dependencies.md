@@ -10,7 +10,19 @@ affects: mori://shinzui/seihou
 affectedVersion: 0.9.0.0
 origin: mori://shinzui/seihou-modules
 severity: degraded
-status: reported
+status: fixed
+fixedVersion: 0.12.0.0
+resolution: >-
+  Fixed in 0.12.0.0 by docs/plans/113-declare-and-install-cross-registry-recipe-dependencies.md
+  (commit `8ea17ac`), which routes `seihou install --module` through a dependency-closure
+  planner. Installing a selected recipe, module or blueprint also installs every required
+  module, including same-registry legacy bare names. A missing or unavailable dependency fails
+  the whole install, names the requesting chain, and leaves the cache unchanged.
+  `scripts/test-install-closure.sh` covers the legacy same-registry case. On 2026-11-11, the
+  original reproduction was rerun with isolated XDG directories against installed 0.15.0.0:
+  `seihou install <seihou-modules checkout> --module github-repo` reported `Installed repo-dir
+  ... (required)` and `Installed github-repo ... (selected)`, and `seihou run github-repo
+  --dry-run` resolved `repo-dir` and exited 0.
 generated:
   by: process:claude-code
   at: "2026-10-05T19:45:54Z"
@@ -32,7 +44,7 @@ reproduction:
   - Run `seihou install https://github.com/shinzui/seihou-modules.git --module github-repo` and observe it report `Installed recipe as: github-repo` with no mention of `repo-dir`.
   - Run `seihou run github-repo --dry-run --var repo.parentDir=/tmp/x --var repo.name=demo --var git.githubOwner=shinzui --var git.githubVisibility=private`.
   - Observe it fail with `ERROR Module 'repo-dir' not found.` and the three searched paths, even though `repo-dir` exists in the same registry the recipe was installed from.
-timestamp: "2026-10-29T13:01:54Z"
+timestamp: "2026-11-11T13:37:55Z"
 reviews:
   - kind: model
     reviewer: codex-cli/gpt-6.1-sol
@@ -117,6 +129,26 @@ install them too. Where a declared dependency is not present in the registry, fa
 the unsatisfied dependency rather than reporting success. A focused regression would install a recipe
 with one dependency via `--module` and assert the dependency lands in
 `~/.config/seihou/installed/` and that `seihou run <recipe> --dry-run` resolves.
+
+## Resolution
+
+Fixed in 0.12.0.0. [ExecPlan 113](../plans/113-declare-and-install-cross-registry-recipe-dependencies.md)
+implemented the suggested direction as part of IR-12, and it explicitly took this report's
+same-registry case into its scope. `seihou install` now plans the full dependency closure of the
+selected roots (`seihou-cli/src/Seihou/CLI/InstallClosure.hs`) before it writes anything. It
+installs required dependencies alongside the selection and reports each one as `(required)`. When a
+dependency is missing or its source is unavailable, the install exits non-zero, names the dependency
+chain, and does not report readiness. The closure work landed in commit `8ea17ac`, the first tag
+containing it is `v0.12.0.0`, and the 0.12.0.0 changelog lists it. Plan 113's acceptance script,
+`scripts/test-install-closure.sh`, includes the legacy same-registry case: it installs a recipe
+whose members are bare names, then runs `seihou run --dry-run`.
+
+Rerun 2026-11-11 against installed seihou v0.15.0.0 (`a4fcee6`), with `XDG_CONFIG_HOME` and
+`XDG_CACHE_HOME` in a disposable directory. `seihou install` of the `github-repo` recipe from the
+local `mori://shinzui/seihou-modules` checkout installed `repo-dir` (required) and `github-repo`
+(selected). `seihou run github-repo --dry-run` with the reproduction's variables then planned
+`repo-dir`'s operations and exited 0. The original `Module 'repo-dir' not found` failure did not
+recur.
 
 ## Related
 

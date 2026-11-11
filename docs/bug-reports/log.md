@@ -1,5 +1,9 @@
 # Bundle Update Log
 
+## 2026-11-11
+* **Update**: Audit: BUG-1 fixedVersion unreleased -> 0.10.0.0. Fix commits 8671930, d291e41 and ae31c38 (mori://shinzui/seihou/masterplans/11-make-manifest-evolution-explicit-and-targeted-updates-upgrade-safe) are first contained in tag v0.10.0.0, whose changelog lists the BUG-1 fix. Status fixed unchanged.
+* **Update**: Audit: BUG-2 status reported -> fixed, fixedVersion 0.12.0.0. Implementation plan docs/plans/113-declare-and-install-cross-registry-recipe-dependencies.md (commit 8ea17ac, first tag v0.12.0.0, 0.12.0.0 changelog) installs the required dependency closure; the original github-repo/repo-dir reproduction was rerun in isolated XDG directories against installed 0.15.0.0 and installed repo-dir as required, and seihou run --dry-run exited 0.
+
 ## 2026-10-29
 * **Update**: Record current model review metadata: BUG-3 completion evidence, and structural metadata only for BUG-1/BUG-2 without changing their dispositions or claiming historical verification.
 * **Update**: BUG-3 fixed in released and installed Seihou 0.13.0.0 with published TAN recipe 0.1.1; verified ordinary owner-policy delivery.

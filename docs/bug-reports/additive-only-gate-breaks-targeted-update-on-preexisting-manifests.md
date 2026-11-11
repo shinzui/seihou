@@ -12,10 +12,10 @@ affectedVersion: 0.9.0.0
 origin: mori://tan/mls-service-v2
 severity: degraded
 status: fixed
-fixedVersion: unreleased
+fixedVersion: 0.10.0.0
 resolution: >-
   Fixed by mori://shinzui/seihou/masterplans/11-make-manifest-evolution-explicit-and-targeted-updates-upgrade-safe
-  (unreleased after 0.9.0.0). Manifest schema 7 records `sharedWriteMode` (`unknown`, `additive-only`,
+  (first released in 0.10.0.0). Manifest schema 7 records `sharedWriteMode` (`unknown`, `additive-only`,
   `requires-ownership-closure`) on every file; a targeted `seihou update` certifies `unknown` shared
   paths by compiling co-owners at their recorded versions, without updating them, and publishes the
   6 -> 7 step with its own manifest. Missing evidence is `shared_write_evidence_unavailable` and never
@@ -52,7 +52,7 @@ reproduction:
   - Observe it fail with `Update failed [shared_path_requires_applications]`, naming the co-owners by their `applicationId` SHA and listing `--include-shared-owners` before "run seihou update with no targets".
   - Follow the error's second suggestion, `seihou update nix-haskell-flake --include-shared-owners --dry-run`, and observe it expand to both skill-link applications and plan to rewrite seven unrelated `agents/skills/exec-plan/*` files, emitting eight `CrossApplicationLastWriter` warnings printed as raw Haskell (`CrossApplicationLastWriter "…" (ModuleName {unModuleName = "exec-plan"}) (ModuleName {unModuleName = "exec-plan#bfa0a336"})`).
   - Re-run the bare `seihou update nix-haskell-flake` and observe it fail identically — the flag recorded nothing.
-timestamp: "2026-10-29T13:01:54Z"
+timestamp: "2026-11-11T13:37:55Z"
 reviews:
   - kind: model
     reviewer: codex-cli/gpt-6.1-sol
@@ -171,7 +171,8 @@ behavior and its reproduction.
 
 ## Resolution
 
-Fixed after 0.9.0.0 by
+Fixed after 0.9.0.0 and first released in 0.10.0.0 (fix commits `8671930`, `d291e41`
+and `ae31c38`; the v0.10.0.0 changelog lists the fix under BUG-1) by
 `mori://shinzui/seihou/masterplans/11-make-manifest-evolution-explicit-and-targeted-updates-upgrade-safe`
 (plans 92 to 95). Each of the four defects above was addressed:
 

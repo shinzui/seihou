@@ -8,9 +8,9 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-08-17T16:30:00Z"
-timestamp: 2026-10-15T15:18:34Z
+timestamp: 2026-11-11T13:37:55Z
 requestId: IR-6
-status: accepted
+status: in-progress
 targetPlan: docs/plans/106-supply-default-initial-instructions-to-cli-agent-providers.md
 origin: mori://shinzui/okf-profiles
 ---
@@ -19,25 +19,44 @@ origin: mori://shinzui/okf-profiles
 
 ## Status
 
-Accepted 2026-10-15 and planned in
+In progress. The request was accepted 2026-10-15 and planned in
 [ExecPlan 106](../plans/106-supply-default-initial-instructions-to-cli-agent-providers.md).
-Four milestones cover a shared fallback for CLI providers, interactive launch and
-migration preview, end-to-end regression evidence, and documentation. Implementation
-has not started.
+That plan's four milestones cover a shared fallback for CLI providers, interactive launch and
+migration preview, end-to-end regression evidence, and documentation. All four are still
+unchecked in its Progress section.
 
-The plan supplies `Follow the instructions in the system prompt.` for omitted or blank
-CLI prompts, preserves nonblank user text exactly, and keeps API-provider behavior
-unchanged. The fallback is resolved at dispatch and is not recorded as user-authored
-manifest provenance.
+Part of the requested behavior has shipped anyway. It arrived in 0.12.0.0 through
+[ExecPlan 111](../plans/111-run-blueprint-migrations-without-an-interactive-terminal.md)
+(commit `d3671b4`), whose 2026-10-27 decision adopted plan 106's policy for migrations. The
+change added `resolveAgentInitialPrompt` in `seihou-cli/src/Seihou/CLI/AgentCompletion.hs`. For
+`claude-cli` and `codex-cli` it supplies `Follow the instructions in the system prompt.` when the
+prompt is omitted or blank. Nonblank user text is preserved exactly, and API providers are
+unchanged. Every Baikai completion request goes through the resolver, which covers
+`agent run --batch` and batch migrations. So does every path in
+`seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs`: the interactive launch, the batch launch, and
+the `--debug` preview.
 
-The failure below is historical evidence from seihou 0.7.0.0, not a reproduction
-against the current tree. `AgentMigrate.launchMigration` now dispatches CLI providers
-through the interactive launcher rather than `claude -p`. However,
-`AgentLaunchExec.promptOrEmpty` still maps an omitted prompt to empty text, and
-`AgentCompletion.runAgentCompletionWith` still sends no user messages when
-`initialPrompt` is absent. `agent run --batch` uses that completion path. These
-branches do not establish that the requested default instruction has been supplied;
-the exact current provider behavior has not been retested with a live session.
+Two tests cover this. `AgentCompletionSpec` tests the resolver itself, and
+`AgentMigrateE2ESpec` asserts that a migration's provider argv carries the neutral instruction.
+The documented invocation `seihou agent migrate BLUEPRINT` without `PROMPT` therefore no longer
+reaches the `claude -p` "Input must be provided" failure described below. Receipt provenance
+still keeps the raw user argument.
+
+Remaining before completion, as plan 106 scopes it:
+
+- `AgentLaunchExec.promptOrEmpty` (`seihou-cli/src-exe/Seihou/CLI/AgentLaunchExec.hs`) still maps
+  an omitted prompt to empty text. The shared policy is therefore not applied at the general
+  interactive launch boundary used by `agent run`, `setup`, `assist`, `bootstrap` and
+  `agent upgrade`.
+- Plan 106's real-binary fake-provider proofs for interactive launch are outstanding.
+- Its migration-chain, debug and provenance end-to-end checks are outstanding.
+- Its documentation and its launch-policy ADR are outstanding.
+
+Plan 106's Progress does not yet record the delivery through plan 111.
+
+The failure below is historical evidence from seihou 0.7.0.0. Plan 111 recorded the same
+missing-initial-turn failure through pipes on installed 0.11.0.1 (`4ade3fb`) on 2026-10-27,
+before its fix.
 
 ## Context
 

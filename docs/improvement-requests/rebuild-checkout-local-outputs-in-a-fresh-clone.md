@@ -9,11 +9,25 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-09-28T17:49:14Z"
-timestamp: 2026-10-15T16:11:30Z
+timestamp: 2026-11-11T13:37:55Z
 requestId: IR-10
 status: completed
 completedAt: 2026-10-15T16:11:30Z
 targetPlan: docs/plans/105-rebuild-checkout-local-symlinks-from-the-manifest-without-upgrading-artifacts.md
+resolution: >-
+  Delivered by docs/plans/105-rebuild-checkout-local-symlinks-from-the-manifest-without-upgrading-artifacts.md,
+  building on the declaration and schema prerequisites in plans 99 and 100. Modules declare typed
+  checkout-local link steps under manifest schema 9 (AC-1). `seihou sync [--dry-run] [--json]`
+  recreates missing or mistargeted links using only the manifest and project sources (AC-2,
+  AC-3). It needs no installed producer, ignores newer cached versions, does not replay
+  recorded commands, and does not write tracked files or the manifest. `seihou status` reports
+  missing or mistargeted links and names `seihou sync` (AC-4). As completed, sync ran no
+  recorded command (AC-5). Later on 2026-10-15, docs/plans/108-restore-module-declared-checkout-effects-without-reapplying-modules.md
+  deliberately amended that boundary and ADR 0018. An explicit `seihou sync` now also runs
+  module-declared repeatable checkout commands (`S.Command.Action.Checkout`) without a flag. It
+  still never replays ordinary application commands or receipts. Real-binary fresh-clone E2E tests cover empty and newer caches, idempotence,
+  repair, shared ownership, retirement and rollback. They passed on macOS on 2026-10-15
+  (1,195 core, 731 CLI and 51 extension tests). Linux execution remains unverified downstream.
 origin: mori://shinzui/keiro
 acceptanceCriteria:
   - id: AC-1
@@ -75,6 +89,14 @@ reviews:
 
 Completed in [ExecPlan 105](../plans/105-rebuild-checkout-local-symlinks-from-the-manifest-without-upgrading-artifacts.md).
 The implementation includes prerequisite declaration/schema foundations in plans 99 and 100, typed schema-9 checkout declarations, and `seihou sync [--dry-run] [--json]`. The same observer and planner support run, update, remove and bounded status diagnostics. Real-binary tests prove clean clones without installed producers, independence from newer caches, no command replay, unchanged tracked blobs/index/manifest bytes, idempotence, repair, shared ownership, safe retirement and rollback. Core tests trace permitted effects and recovery snapshots. Validation passed on macOS; Linux platform execution remains a downstream check. Producer adoption is a separate release operation.
+
+Later amendment (recorded 2026-11-11 audit): [ExecPlan 108](../plans/108-restore-module-declared-checkout-effects-without-reapplying-modules.md)
+decided on 2026-10-15 that an explicit `seihou sync` runs the repeatable checkout commands that
+trusted module specs declare. It amended ADR 0018 to match. Ordinary application commands and
+their receipts are still never replayed, but AC-5's wording ("never run by the rebuild command
+unless the user passes an explicit flag") no longer describes current `seihou sync`, which has no
+flag to skip checkout commands. That change was an owner design decision, not a regression of the
+plan 105 delivery, so this request stays completed.
 
 ## Context
 
