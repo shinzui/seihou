@@ -52,7 +52,7 @@
     # public repository rather than `git+file:./schema`, which resolves against
     # the caller's working directory and so breaks `nix run github:shinzui/seihou`.
     seihou-schema-src = {
-      url = "github:shinzui/seihou-schema/e9f91438f081fba90f40f987de93df9f74c7117d";
+      url = "github:shinzui/seihou-schema/50fa7bb1c42cd2d8867435bc138a45c9c71aa126";
       flake = false;
     };
   };

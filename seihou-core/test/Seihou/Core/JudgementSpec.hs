@@ -3,9 +3,13 @@ module Seihou.Core.JudgementSpec (tests) where
 import Data.Either (isLeft, isRight)
 import Data.Generics.Labels ()
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Seihou.Core.Judgement
+import Seihou.Dhall.Eval (evalJudgementFromFile)
 import Seihou.Prelude
+import System.Directory (getCurrentDirectory)
+import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec
 import Test.Tasty
 import Test.Tasty.Hspec (testSpec)
@@ -66,6 +70,50 @@ finding cat sev = Finding cat sev (Location "a.txt" (Just 3)) "explained"
 
 tests :: IO TestTree
 tests = testSpec "judgement policy" $ do
+  describe "decoding judgement.dhall" $ do
+    let decode body = withSystemTempDirectory "seihou-judgement" $ \dir -> do
+          cwd <- getCurrentDirectory
+          let file = dir </> "judgement.dhall"
+          writeFile file ("let S = " <> cwd <> "/../schema/package.dhall in " <> body)
+          evalJudgementFromFile file
+    it "fills every default from the schema for a one-check judgement" $ do
+      r <- decode "S.Judgement::{ name = \"docs\", checks = [ S.Check::{ name = \"stale\", question = \"Is it stale?\" } ] }"
+      case r of
+        Left e -> expectationFailure (show e)
+        Right d -> do
+          d ^. #evidence `shouldBe` defaultEvidenceDeclaration
+          d ^. #limits `shouldBe` defaultCoverageLimits
+          d ^. #deterministicChecks `shouldBe` []
+          let c = NE.head (d ^. #checks)
+          (c ^. #concernWhen, c ^. #enforcement, c ^. #blockingSeverity, c ^. #useGate) `shouldBe` (Yes, Enforced, High, True)
+          (c ^. #review, c ^. #gate) `shouldBe` (Thresholds 0.7 0.3, Thresholds 0.9 0.05)
+          validateDefinition d `shouldBe` Right ()
+    it "decodes concern direction, enforcement, categories, thresholds and deterministic checks" $ do
+      r <-
+        decode
+          ( "S.Judgement::{ name = \"customer-data-review\", deterministicChecks = [ S.DeterministicCheck.SecretScan ], "
+              <> "evidence = S.JudgementEvidence::{ scopes = [ S.EvidenceScope.StagedChanges ], include = [ \"docs/**\" ] }, "
+              <> "checks = [ S.Check::{ name = \"undocumented-export\", question = \"Do the notes mention every export?\", "
+              <> "concernWhen = S.Answer.No, enforcement = S.Enforcement.Advisory, blockAt = 0.8, passAt = 0.4, useGate = False, "
+              <> "categories = [ S.FindingCategory::{ name = \"export\", severity = S.Severity.Critical } ] } ] }"
+          )
+      case r of
+        Left e -> expectationFailure (show e)
+        Right d -> do
+          d ^. #deterministicChecks `shouldBe` [SecretScan]
+          d ^. #evidence `shouldBe` EvidenceDeclaration [StagedChangesScope] ["docs/**"] []
+          let c = NE.head (d ^. #checks)
+          (c ^. #concernWhen, c ^. #enforcement, c ^. #review, c ^. #useGate) `shouldBe` (No, Advisory, Thresholds 0.8 0.4, False)
+          c ^. #categories `shouldBe` [FindingCategory "export" Critical Nothing]
+    it "rejects a judgement with no checks at decode time" $ do
+      r <- decode "S.Judgement::{ name = \"empty\", checks = [] : List S.Check.Type }"
+      r `shouldSatisfy` isLeft
+    it "leaves an inverted threshold pair to validation, which names the check" $ do
+      r <- decode "S.Judgement::{ name = \"x\", checks = [ S.Check::{ name = \"c\", question = \"q?\", blockAt = 0.2, passAt = 0.5 } ] }"
+      fmap validateDefinition r `shouldSatisfy` \case
+        Right (Left e) -> e ^. #code == "judgement_threshold_inverted"
+        _ -> False
+
   let c = mkCheck "c" Yes strictBand
   describe "definition validation" $ do
     it "accepts a one-check definition" $

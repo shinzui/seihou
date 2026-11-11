@@ -7,6 +7,8 @@ module Seihou.Dhall.Eval
     evalBlueprintFromFile,
     evalAgentPromptFromFile,
     evalRegistryFromFile,
+    evalJudgementFromFile,
+    judgementDecoder,
     moduleDecoder,
     recipeDecoder,
     blueprintDecoder,
@@ -39,6 +41,7 @@ import Control.Exception (SomeException, evaluate, throwIO, try)
 import Data.Either.Validation (Validation (..))
 import Data.Generics.Labels ()
 import Data.List (foldl')
+import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -47,10 +50,11 @@ import Dhall (defaultInputSettings, input, inputExprWithSettings, inputFile, lis
 import Dhall.Core (Chunks (..), makeRecordField, recordFieldValue)
 import Dhall.Core qualified as Dhall (Expr (..))
 import Dhall.Map qualified as DhallMap
-import Dhall.Marshal.Decode (Decoder (..), Extractor, bool, constructor, extractError, field, maybe, natural, string, union)
+import Dhall.Marshal.Decode (Decoder (..), Extractor, bool, constructor, double, extractError, field, maybe, natural, string, union, unit)
 import Dhall.Pretty (prettyExpr)
 import Dhall.Src (Src)
 import Seihou.Core.Expr (parseExpr)
+import Seihou.Core.Judgement qualified as J
 import Seihou.Core.Migration (BlueprintMigration (..), EntailedEdge (..), Migration (..), MigrationOp (..))
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..))
 import Seihou.Core.Types
@@ -917,3 +921,112 @@ normalizeInstalledDefinition origin path = do
         | not (null values) ->
             DhallMap.insert key (makeRecordField (Dhall.ListLit annotation (fmap edge values))) fields
       _ -> fields
+
+-- ---------------------------------------------------------------------------
+-- Judgements
+
+-- | Evaluate a @judgement.dhall@ file and decode it into a
+-- 'J.JudgementDefinition'. Structural validation ('J.validateDefinition') is
+-- a separate step so a caller can name the failing part precisely.
+evalJudgementFromFile :: FilePath -> IO (Either ModuleLoadError J.JudgementDefinition)
+evalJudgementFromFile path = do
+  result <- try $ do
+    text <- TIO.readFile path
+    let settings =
+          set rootDirectory (takeDirectory path) $
+            set sourceName path defaultInputSettings
+    expr <- inputExprWithSettings settings text
+    case extract judgementDecoder expr of
+      Success d -> evaluate d
+      Failure e -> throwIO e
+  case result of
+    Left (e :: SomeException) -> pure (Left (DhallEvalError (guessModuleName path) (T.pack (show e))))
+    Right d -> pure (Right d)
+
+-- | Decoder for the top-level Judgement type. An empty @checks@ list is a
+-- decode error: a judgement without a question cannot decide anything.
+judgementDecoder :: Decoder J.JudgementDefinition
+judgementDecoder =
+  record
+    ( J.JudgementDefinition
+        <$> field "name" strictText
+        <*> field "version" (maybe strictText)
+        <*> field "description" (maybe strictText)
+        <*> field "instructions" strictText
+        <*> field "evidence" evidenceDecoder
+        <*> field "limits" limitsDecoder
+        <*> field "deterministicChecks" (list deterministicDecoder)
+        <*> field "checks" (nonEmptyList "a judgement needs at least one check" checkDecoder)
+    )
+  where
+    nonEmptyList msg (Decoder ext ty) =
+      let Decoder lext lty = list (Decoder ext ty)
+       in Decoder
+            ( \e -> case lext e of
+                Success xs -> case NE.nonEmpty xs of
+                  Just ne -> Success ne
+                  Nothing -> extractError msg
+                Failure err -> Failure err
+            )
+            lty
+    evidenceDecoder =
+      record
+        ( J.EvidenceDeclaration
+            <$> field "scopes" (list scopeDecoder)
+            <*> field "include" (list strictText)
+            <*> field "exclude" (list strictText)
+        )
+    scopeDecoder =
+      union
+        ( (J.StagedChangesScope <$ constructor "StagedChanges" unit)
+            <> (J.CommitRangeScope <$ constructor "CommitRange" unit)
+        )
+    deterministicDecoder = union (J.SecretScan <$ constructor "SecretScan" unit)
+    limitsDecoder =
+      record
+        ( J.CoverageLimits
+            <$> field "maxFileBytes" int
+            <*> field "maxChunkBytes" int
+            <*> field "maxChunks" int
+            <*> field "maxAttempts" int
+            <*> field "timeoutSeconds" int
+            <*> field "maxFindings" int
+        )
+    int = fromIntegral . min (fromIntegral (maxBound :: Int)) <$> natural
+    answerDecoder = union ((J.Yes <$ constructor "Yes" unit) <> (J.No <$ constructor "No" unit))
+    enforcementDecoder =
+      union ((J.Enforced <$ constructor "Enforced" unit) <> (J.Advisory <$ constructor "Advisory" unit))
+    severityDecoder =
+      union
+        ( (J.Info <$ constructor "Info" unit)
+            <> (J.Low <$ constructor "Low" unit)
+            <> (J.Medium <$ constructor "Medium" unit)
+            <> (J.High <$ constructor "High" unit)
+            <> (J.Critical <$ constructor "Critical" unit)
+        )
+    categoryDecoder =
+      record
+        ( J.FindingCategory
+            <$> field "name" strictText
+            <*> field "severity" severityDecoder
+            <*> field "description" (maybe strictText)
+        )
+    checkDecoder =
+      record
+        ( mkCheck
+            <$> field "name" strictText
+            <*> field "question" strictText
+            <*> field "concernWhen" answerDecoder
+            <*> field "yesMeans" (maybe strictText)
+            <*> field "noMeans" (maybe strictText)
+            <*> field "categories" (list categoryDecoder)
+            <*> field "enforcement" enforcementDecoder
+            <*> field "blockingSeverity" severityDecoder
+            <*> field "blockAt" double
+            <*> field "passAt" double
+            <*> field "gateBlockAt" double
+            <*> field "gatePassAt" double
+            <*> field "useGate" bool
+        )
+    mkCheck n q c y no cats enf sev bAt pAt gbAt gpAt useGate =
+      J.JudgementCheck n q c y no cats enf sev (J.Thresholds bAt pAt) (J.Thresholds gbAt gpAt) useGate
