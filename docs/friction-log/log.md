@@ -2,6 +2,9 @@
 
 ## 2026-11-11
 
+* **Addition**: FRIC-15 records slowdown interface friction with mori://shinzui/seihou: Non-interactive seihou update cancels without naming --json
+
+
 * **Addition**: FRIC-14 records slowdown documentation friction with mori://shinzui/seihou: update-seihou-schema skill describes a superseded flake input
 
 
