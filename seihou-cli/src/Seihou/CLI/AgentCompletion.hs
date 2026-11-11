@@ -139,7 +139,8 @@ defaultAgentModelConfig =
     }
 
 -- | Parse a reasoning-effort level name (case-insensitive) into a Baikai
--- 'ThinkingLevel'. Accepts the six canonical Baikai level names.
+-- 'ThinkingLevel'. Accepts six of Baikai's canonical level names; Baikai's
+-- @none@ (reasoning off) is not exposed as an agent effort.
 effortFromText :: Text -> Either Text ThinkingLevel
 effortFromText raw =
   case Text.toLower (Text.strip raw) of

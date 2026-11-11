@@ -161,7 +161,8 @@ finishEvent =
       totalTokens = Nothing,
       costBasis = Nothing,
       usageAvailability = Nothing,
-      usd = Just 0.0264
+      usd = Just 0.0264,
+      structuredData = Nothing
     }
 
 failEvent :: TraceEvent
@@ -181,5 +182,6 @@ failEvent =
       costBasis = Nothing,
       usageAvailability = Nothing,
       usd = Nothing,
+      structuredData = Nothing,
       errorMessage = "invalid x-api-key"
     }
