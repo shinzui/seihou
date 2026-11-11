@@ -14,6 +14,7 @@
 module Seihou.CLI.Judgement.CommitGate
   ( CommitBlocked (..),
     gatedCommit,
+    gatedCommitWith,
     renderBlocked,
   )
 where
@@ -42,12 +43,17 @@ renderBlocked = \case
 
 -- | Gate, then produce the message, then commit.
 gatedCommit :: FilePath -> IO Text -> (Text -> IO (Either Text ())) -> IO (Either CommitBlocked ())
-gatedCommit root mkMessage commit =
+gatedCommit root = gatedCommitWith (productionServices root) root
+
+-- | 'gatedCommit' with the check services supplied, which are built only
+-- when a judgement is active. Tests pass a stub backend here.
+gatedCommitWith :: IO CheckServices -> FilePath -> IO Text -> (Text -> IO (Either Text ())) -> IO (Either CommitBlocked ())
+gatedCommitWith mkServices root mkMessage commit =
   loadActiveJudgements root >>= \case
     Left err -> pure (Left (CommitBlocked 1 (err <> "\n")))
     Right [] -> mkMessage >>= fmap (first CommitFailed) . commit
     Right active -> do
-      services <- productionServices root
+      services <- mkServices
       let gate = do
             before <- identity
             out <- runCheck services active (CheckRequest Nothing Nothing False False)

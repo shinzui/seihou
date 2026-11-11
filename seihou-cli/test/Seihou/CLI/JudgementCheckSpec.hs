@@ -10,9 +10,11 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
+import Data.Time (UTCTime (..), fromGregorian)
 import Seihou.CLI.AgentCompletion (AgentProvider (..))
 import Seihou.CLI.Judgement.Adopt
 import Seihou.CLI.Judgement.Check
+import Seihou.CLI.Judgement.CommitGate (CommitBlocked (..), gatedCommitWith, renderBlocked)
 import Seihou.CLI.Judgement.Evidence (gitBytes)
 import Seihou.CLI.Judgement.Hooks
 import Seihou.CLI.Judgement.Runtime (GateRoute (..), JudgementBackend (..), JudgementRoute (..))
@@ -22,8 +24,11 @@ import Seihou.Core.Judgement
 import Seihou.Core.JudgementExamples (ExpectedStatus (..))
 import Seihou.Core.Types (ActiveJudgement (..), ApplicationId (..), JudgementOwner (..), JudgementSource (..), ManifestSchemaVersion (..))
 import Seihou.Dhall.Eval (evalJudgementFromFile)
+import Seihou.Effect.FilesystemInterp (runFilesystem)
+import Seihou.Effect.ManifestStore (writeManifest)
+import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Manifest.Judgement (definitionDigest)
-import Seihou.Manifest.Types (manifestFromJSON)
+import Seihou.Manifest.Types (emptyManifest, manifestFromJSON)
 import Seihou.Prelude
 import System.Directory (createDirectoryIfMissing, doesFileExist, executable, getPermissions)
 import System.FilePath (takeDirectory)
@@ -216,3 +221,62 @@ tests = testSpec "judgement check, adoption and hooks" $ do
           applyAdoption again `shouldReturn` Right ()
           Right m' <- manifestFromJSON . LBS.fromStrict <$> BS.readFile (dir </> ".seihou" </> "manifest.json")
           length (m' ^. #judgements) `shouldBe` 1
+
+  describe "the commit gate for seihou's own commits" $ do
+    let withActive defs dir act = do
+          createDirectoryIfMissing True (dir </> ".seihou")
+          runEff (runFilesystem (runManifestStore (dir </> ".seihou" </> "manifest.json") (writeManifest (emptyManifest (UTCTime (fromGregorian 2026 11 11) 0) & #judgements .~ map active defs))))
+          act
+        recorder = do
+          messages <- newIORef (0 :: Int)
+          commits <- newIORef ([] :: [Text])
+          pure (messages, commits, \m -> modifyIORef' commits (m :) >> pure (Right ()))
+    it "reviews again when the index changes while the message is produced" $ withRepo $ \dir -> withActive [docsJudgement] dir $ do
+      writeAt dir "docs/guide.md" "Run `demo sync`.\n"
+      git dir ["add", "docs/guide.md"]
+      calls <- newIORef (0 :: Int)
+      (messages, commits, commit) <- recorder
+      let services = servicesWith dir (Just (stub calls (\case "has-example" -> 0.98; _ -> 0.02)))
+          mkMessage = do
+            modifyIORef' messages (+ 1)
+            writeAt dir "docs/extra.md" "More.\n"
+            git dir ["add", "docs/extra.md"]
+            pure "docs: add guide"
+      gatedCommitWith services dir mkMessage commit `shouldReturn` Right ()
+      readIORef messages `shouldReturn` 1
+      readIORef commits `shouldReturn` ["docs: add guide"]
+      -- Two checks, reviewed once before and once after the index changed.
+      readIORef calls `shouldReturn` 4
+    it "produces no message and makes no commit when a check blocks" $ withRepo $ \dir -> withActive [docsJudgement] dir $ do
+      writeAt dir "docs/guide.md" "Run `demo sync`.\n"
+      git dir ["add", "docs/guide.md"]
+      calls <- newIORef (0 :: Int)
+      (messages, commits, commit) <- recorder
+      result <- gatedCommitWith (servicesWith dir (Just (stub calls (const 0.95)))) dir (modifyIORef' messages (+ 1) >> pure "fixed message") commit
+      case result of
+        Left (CommitBlocked code report) -> do
+          code `shouldBe` 10
+          renderBlocked (CommitBlocked code report) `shouldSatisfy` T.isInfixOf "Changes applied; commit blocked"
+        other -> expectationFailure ("expected a block, got " <> show other)
+      readIORef messages `shouldReturn` 0
+      readIORef commits `shouldReturn` []
+    it "sends nothing to the reviewer or the message generator when the scanner blocks" $ withRepo $ \dir -> do
+      sc <- findScanner
+      case sc of
+        Nothing -> pendingWith "gitleaks is not on PATH"
+        Just _ -> withActive [docsJudgement & #deterministicChecks .~ [SecretScan] & #evidence . #include .~ []] dir $ do
+          -- Assembled at run time so this source holds no credential-shaped literal.
+          let token = "ghp_" <> T.replicate 4 "Z" <> "1aB2cD3eF4gH5iJ6kL7mN8oP9qR0sT1u"
+          writeAt dir "config/env.sh" ("export GH_TOKEN=" <> token <> "\n")
+          git dir ["add", "config/env.sh"]
+          calls <- newIORef (0 :: Int)
+          (messages, commits, commit) <- recorder
+          result <- gatedCommitWith (servicesWith dir (Just (stub calls (const 0.0)))) dir (modifyIORef' messages (+ 1) >> pure "m") commit
+          case result of
+            Left (CommitBlocked code report) -> do
+              code `shouldBe` 10
+              report `shouldNotSatisfy` T.isInfixOf token
+            other -> expectationFailure ("expected a block, got " <> show other)
+          readIORef calls `shouldReturn` 0
+          readIORef messages `shouldReturn` 0
+          readIORef commits `shouldReturn` []
