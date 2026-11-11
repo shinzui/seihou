@@ -9,9 +9,10 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-11-04T18:07:02Z"
-timestamp: 2026-11-04T18:07:02Z
+timestamp: 2026-11-11T13:57:13Z
 requestId: IR-15
-status: proposed
+status: accepted
+targetPlan: docs/plans/123-keep-saved-inputs-when-a-release-changes-a-dependency-s-bindings.md
 origin: mori://shinzui/seihou-modules
 reviews:
   - kind: model
@@ -32,9 +33,15 @@ reviews:
 
 ## Status
 
-Proposed. Raised from `FRIC-10`
+Accepted. Raised from `FRIC-10`
 (`mori://shinzui/seihou-modules/okf/friction-log/concepts/FRIC-10`) against Seihou
-0.15.0.0. No implementation plan exists.
+0.15.0.0, and planned in
+[ExecPlan 123](../plans/123-keep-saved-inputs-when-a-release-changes-a-dependency-s-bindings.md).
+The plan pairs a recorded instance with its rebound candidate only one to one within an
+application, carries saved inputs with the new edge's bindings taking precedence, refuses an
+ambiguous pairing with `--reconfigure` as the escape hatch, and reports the rebinding in the
+preview and in `--json`. It leaves the manifest schema unchanged and the release-time
+`validate-module` check out of scope. Implementation has not started.
 
 ## Context
 
