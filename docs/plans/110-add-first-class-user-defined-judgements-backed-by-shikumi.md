@@ -60,7 +60,7 @@ A project may also configure a fast gate. A gate is a judgment-only model, one t
 ## Progress
 
 - [x] M1: Seihou builds on the Baikai 0.10 line that Shikumi 0.5.1.0 requires; a thin real-consumer path then applies a judgement, runs a typed Shikumi review whose checks are probability-backed decisions, and blocks an ordinary commit; the required adoption and hook steps are demonstrated before expanding variants. (2026-11-11; the live gate run was not exercised, see the M1 record below.)
-- [ ] M2: Authors can scaffold, validate, discover, install, compose, and evaluate custom judgement artifacts without rebuilding Seihou; the schema is available at a published immutable import.
+- [x] M2: Authors can scaffold, validate, discover, install, compose, and evaluate custom judgement artifacts without rebuilding Seihou; the schema is available at a published immutable import. (2026-11-11; schema `9080a47`. Exception, carried as open work: `seihou install` does not yet acquire a judgement named only by a reference `source`.)
 - [ ] M3: The manifest records portable active declarations and project policies, and run/update/remove/sync preserve ownership, migration, and fresh-checkout behavior.
 - [ ] M4: Staged and commit-range evidence, deterministic secret detection, the direct Shikumi adapter with per-check decisions, threshold bands and the optional judgment-only gate with escalation, coverage accounting, and redacted results satisfy the security contract.
 - [ ] M5: Ordinary Git commits, Seihou commit-producing paths, and CI share the same gate semantics, with tested hook coexistence and no pre-gate AI transmission.
@@ -89,13 +89,13 @@ Post-M1 record (2026-11-11, claude-opus-5-5). Committed after M1: authoring comm
 
 Live evidence on `claude-cli`/`claude-sonnet-5`: `judgement eval customer-data-review` scored `real-customer-data` 3/3 (0.02, 0.90, 0.02) and `undocumented-export` 1/1 in 41 seconds. `seihou check --range main..HEAD` blocked a credential that was added and then removed inside the range (the net diff was empty) with no request sent. `seihou run demo --commit`, applying a module whose output contained a synthetic token, exited 10 with "Changes applied; commit blocked". It made no commit and zero AI calls, and the token was absent from the output. A module reference with a false `when` adopted nothing.
 
-Open items by milestone:
-- M2: `seihou install` does not acquire a judgement named only by a reference `source` (ADR 0020 closure). `browse` has no kind filters for any artifact kind. Shell completion has no name completers for any kind.
-- M3: judgement records carry no application owners, so `remove` does not retire judgements and conflicting owners are not detected. `sync` does not repair a missing hook, and `status` does not show judgement setup.
-- M4: the judgment-only gate cannot run without `baikai-typesafe` and a key. Checks run sequentially.
-- M5: a staged weakening of policy is not yet reported as such.
-- M6: the 20 + 20 release corpus, the OKF rendering and the architecture docs remain.
-- M7: release, which needs publication authorization.
+Open items by milestone (updated after `7b63cd8`):
+- M2: `seihou install` does not acquire a judgement named only by a reference `source` (the ADR 0020 closure). `browse` has no kind filters for any artifact kind. Shell completion has no name completers for any kind.
+- M3, done in `3bebe24`: application and direct owners, conflict refusal, last-owner retirement with removal of a byte-identical hook, `sync` hook repair, and judgement status. Not exercised: a linked worktree and a fresh clone with an empty artifact cache. `remove` of an application whose module lacks a removal specification is refused by existing rules, so the pruning path is covered by specs only.
+- M4: the judgment-only gate cannot run, because `baikai-typesafe` is not a dependency and no `TYPESAFE_API_KEY` was available; the gate logic is covered by stubs. Checks run sequentially.
+- M5: `run --commit` is verified live, and `update` and `migrate` share the same `gatedCommit` helper but were not run live. A staged policy weakening is reported in `70df8ad`, and `--policy-ref` covers CI.
+- M6: corpus and qualification are done in `7b63cd8`, and docs, help and the OKF rendering (`5b90232`) are in place. Not shipped: a second, non-security example judgement with two or more checks at different thresholds in the release corpus (one was exercised live only in scratch repositories).
+- M7: not started; release needs publication authorization.
 
 The original plan authorized planning only; implementation began on 2026-11-11 at the user's request. The intention was created with `mina ci --json 'Add first-class user-defined judgements backed by Shikumi'`. Mina returned the frontmatter ID successfully and warned that its configured default parent is outside this project's Rei scope; changing that project association is separate from creating this plan.
 
