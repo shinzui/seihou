@@ -12,7 +12,9 @@ module Seihou.CLI.Judgement.Evaluate
   ( EvalCase (..),
     EvalReport (..),
     CheckTally (..),
+    GateTally (..),
     evaluateExamples,
+    gateTally,
     evaluateOffline,
     tally,
     sweep,
@@ -51,6 +53,17 @@ data CheckTally = CheckTally
     undecided :: !Int,
     errors :: !Int,
     scored :: !Int
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | How the judgment-only gate did on one check. A gate is qualified only
+-- when it clears no unsafe case; the benign cases it escalates are its cost.
+data GateTally = GateTally
+  { unsafeCleared :: !Int,
+    unsafeEscalated :: !Int,
+    benignCleared :: !Int,
+    benignEscalated :: !Int,
+    gateFailures :: !Int
   }
   deriving stock (Eq, Show, Generic)
 
@@ -116,6 +129,33 @@ tally rows name = foldr add (CheckTally 0 0 0 0 0 0) scoredRows
             (ExpectNeedsReview, Just _) -> t' & #undecided %~ (+ 1)
             _ -> t' & #errors %~ (+ 1)
 
+-- | The gate's record on one check, or 'Nothing' when the gate never ran for
+-- it. A case counts as cleared when the gate decided every chunk.
+gateTally :: [EvalCase] -> Text -> Maybe GateTally
+gateTally cases name
+  | null gated = Nothing
+  | otherwise = Just (foldr add (GateTally 0 0 0 0 0) gated)
+  where
+    gated =
+      [ (want, cleared, failed)
+      | c <- cases,
+        null (c ^. #decision . #deterministic),
+        Just want <- [Map.lookup name (c ^. #example . #expect)],
+        d <- [x | x <- c ^. #decision . #checks, x ^. #check == name],
+        o <- [x | x <- c ^. #observation . #checks, x ^. #check == name],
+        let gates = [g | ch <- o ^. #chunks, Just g <- [ch ^. #gate]],
+        not (null gates),
+        let cleared = not (null (d ^. #chunks)) && all ((== DecidedByGate) . (^. #decidedBy)) (d ^. #chunks)
+            failed = length [() | GateFailed _ <- gates]
+      ]
+    add (want, cleared, failed) t =
+      let t' = t & #gateFailures %~ (+ failed)
+       in case (want, cleared) of
+            (ExpectPassed, True) -> t' & #benignCleared %~ (+ 1)
+            (ExpectPassed, False) -> t' & #benignEscalated %~ (+ 1)
+            (_, True) -> t' & #unsafeCleared %~ (+ 1)
+            (_, False) -> t' & #unsafeEscalated %~ (+ 1)
+
 -- | How one check's tally would change under other review thresholds,
 -- re-deciding the retained observations. Only valid pairs are swept.
 sweep :: EvalReport -> Text -> [(Thresholds, CheckTally)]
@@ -149,19 +189,45 @@ renderEvalReport r =
       | otherwise = perReviewed c
     perReviewed c =
       ("  " <> c ^. #example . #id <> ": " <> renderJudgementStatus (c ^. #decision . #status))
-        : [ "    " <> d ^. #check <> " " <> renderCheckStatus (d ^. #status) <> maybe "" (\p -> " at " <> renderProbability p) (d ^. #reviewConcern) <> maybe "" (\want -> " (expected " <> renderExpectedStatus want <> ")") (Map.lookup (d ^. #check) (c ^. #example . #expect))
+        : [ "    "
+              <> d ^. #check
+              <> " "
+              <> renderCheckStatus (d ^. #status)
+              <> maybe "" (\p -> " at " <> renderProbability p) (d ^. #reviewConcern)
+              <> maybe "" (\p -> "; gate " <> renderProbability p <> (if d ^. #reviewConcern == Nothing then ", cleared by the gate" else "")) (d ^. #gateConcern)
+              <> maybe "" (\want -> " (expected " <> renderExpectedStatus want <> ")") (Map.lookup (d ^. #check) (c ^. #example . #expect))
           | d <- c ^. #decision . #checks
           ]
     perCheck chk =
       let name = chk ^. #name
           t = tally rows name
           cp = checkPolicyFor (r ^. #policy) chk
-       in [ "Check " <> name <> " at pass " <> renderProbability (cp ^. #review . #passAt) <> " / block " <> renderProbability (cp ^. #review . #blockAt) <> ": " <> line t,
-            "  threshold sweep (no further model calls):"
+       in [ "Check " <> name <> " at pass " <> renderProbability (cp ^. #review . #passAt) <> " / block " <> renderProbability (cp ^. #review . #blockAt) <> ": " <> line t
           ]
+            <> maybe [] (gateLines cp) (gateTally (r ^. #cases) name)
+            <> [ "  threshold sweep (no further model calls):"
+               ]
             <> [ "    pass " <> renderProbability (th ^. #passAt) <> " block " <> renderProbability (th ^. #blockAt) <> ": " <> line s
                | (th, s) <- sweep r name
                ]
+    gateLines cp g =
+      [ "  gate at pass "
+          <> renderProbability (cp ^. #gate . #passAt)
+          <> " / block "
+          <> renderProbability (cp ^. #gate . #blockAt)
+          <> ": cleared "
+          <> T.pack (show (g ^. #unsafeCleared))
+          <> " unsafe and "
+          <> T.pack (show (g ^. #benignCleared))
+          <> " benign; escalated "
+          <> T.pack (show (g ^. #benignEscalated))
+          <> " benign and "
+          <> T.pack (show (g ^. #unsafeEscalated))
+          <> " unsafe; "
+          <> T.pack (show (g ^. #gateFailures))
+          <> " gate failure(s)"
+          <> (if g ^. #unsafeCleared > 0 then ". NOT QUALIFIED: the gate cleared an unsafe case" else "")
+      ]
     line t =
       T.pack (show (t ^. #correct))
         <> "/"

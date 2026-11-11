@@ -50,6 +50,13 @@ in
     "1rfdma5r71f2rn7j9r5k4sd54v4w85d9a2r2wqjjfp1gmy7g6bsx");
   baikai-kit = dontCheck (hackagePackage "baikai-kit" "0.4.0.3"
     "0pnjn93pg4pw3pwvxz8cc517id329nlr43cdmi8gmnln27mmady4");
+  # mori://shinzui/baikai/packages/baikai-typesafe is the judgment-only
+  # provider a judgement gate uses; it needs the released
+  # mori://shinzui/typesafe-hs wire client.
+  baikai-typesafe = dontCheck (hackagePackage "baikai-typesafe" "0.1.0.1"
+    "0n7i7pqcgwzqs4kcsyqfpy7iv4gz6kqn9v384diywhd55hniz507");
+  typesafe-hs = dontCheck (hackagePackage "typesafe-hs" "0.1.0.0"
+    "1rlajsqxfjl7nqiq4nlqd4j4wf3r85q9h8grhmd5l0467jd2xqwv");
   # mori://shinzui/shikumi/packages/shikumi 0.5.1.0 bounds baikai-effectful
   # below 0.5, so 0.5.0.0 is excluded.
   baikai-effectful = dontCheck (hackagePackage "baikai-effectful" "0.4.0.5"

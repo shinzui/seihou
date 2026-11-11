@@ -153,6 +153,7 @@ library seihou-cli-internal
     baikai-claude ^>=0.7.3.0,
     baikai-kit ^>=0.4.0.3,
     baikai-openai ^>=0.7.3.0,
+    baikai-typesafe ^>=0.1.0.1,
     base >=4.18 && <5,
     bytestring >=0.11 && <1,
     containers >=0.6 && <1,

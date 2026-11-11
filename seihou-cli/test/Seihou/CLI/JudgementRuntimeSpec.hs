@@ -101,6 +101,15 @@ tests = testSpec "judgement runtime adapter" $ do
       Just g -> do
         r <- g (definition (check No)) (check No) request
         fmap (\p -> abs (p - 0.03) < 1e-9) r `shouldBe` Right True
+  it "accepts only catalogue judgment-only models as the gate" $ do
+    isJudgmentOnlyModelId "jev-latest" `shouldBe` True
+    isJudgmentOnlyModelId "jev-preview" `shouldBe` True
+    isJudgmentOnlyModelId "claude-sonnet-5" `shouldBe` False
+    refused <- productionGateRunner defaultCoverageLimits (GateRoute "claude-sonnet-5")
+    either (T.isInfixOf "not a judgment-only model") (const False) refused `shouldBe` True
+    accepted <- productionGateRunner defaultCoverageLimits (GateRoute "jev-latest")
+    either (const False) (const True) accepted `shouldBe` True
+
   it "reports a malformed reply as a sanitized error that does not echo it" $ do
     (runner, _) <- stubRunner "SENTINEL-not-json"
     r <- (shikumiBackend runner Nothing (pure []) ^. #review) (definition (check Yes)) (check Yes) request

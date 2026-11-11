@@ -59,6 +59,9 @@ in  Schema.Project::{ project =
       , "effectful/effectful"
       , "pcapriotti/optparse-applicative"
       , "shinzui/seihou-schema"
+      , "shinzui/baikai"
+      , "shinzui/shikumi"
+      , "shinzui/typesafe-hs"
       ]
     , skills =
       [ Schema.Skill::{ name = "update-seihou-schema"

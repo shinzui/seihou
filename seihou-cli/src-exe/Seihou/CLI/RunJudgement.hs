@@ -62,7 +62,7 @@ runJudgementAdoption opts source def = do
           | interactive -> do
               preview <- planAdoption root inputs (Just ApprovedRemote) DirectAdoption source def >>= either abort pure
               TIO.putStr (renderAdoptionPlan preview)
-              TIO.putStr ("Activate it and permit sending staged changes to " <> preview ^. #routeLabel <> "? [y/N] ")
+              TIO.putStr ("Activate it and permit sending staged changes to " <> preview ^. #routeLabel <> maybe "" (" and to the gate " <>) (preview ^. #gateLabel) <> "? [y/N] ")
               hFlush stdout
               answer <- T.toLower . T.strip <$> TIO.getLine
               if answer `elem` ["y", "yes"] then pure (Just ApprovedRemote) else abort "Nothing was activated."

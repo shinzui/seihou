@@ -61,7 +61,7 @@ countingServices dir = do
   calls <- newIORef (0 :: Int)
   sc <- findScanner
   let be = JudgementBackend (\_ _ _ -> modifyIORef' calls (+ 1) >> pure (Right (RawReview 0.0 [] False))) Nothing (pure [])
-  pure (CheckServices (gitBytes dir) sc (\_ -> pure (Right (BackendChoice (Just be) True (Just "stub")))), readIORef calls)
+  pure (CheckServices (gitBytes dir) sc (\_ -> pure (Right (BackendChoice (Just be) True (Just "stub") Nothing))), readIORef calls)
 
 tests :: IO TestTree
 tests = testSpec "judgement commit ranges, trusted policy and the commit gate" $ do

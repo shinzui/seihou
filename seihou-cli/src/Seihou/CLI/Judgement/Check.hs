@@ -15,6 +15,7 @@ module Seihou.CLI.Judgement.Check
     BackendChoice (..),
     runCheck,
     productionServices,
+    productionBackend,
     loadActiveJudgements,
     loadPolicyAt,
     parseRange,
@@ -29,11 +30,11 @@ import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Seihou.CLI.AgentCompletion (providerToText)
-import Seihou.CLI.Judgement.Config (resolveJudgementRoute)
+import Seihou.CLI.Judgement.Config (resolveGateRoute, resolveJudgementRoute)
 import Seihou.CLI.Judgement.Evidence
 import Seihou.CLI.Judgement.Execute
 import Seihou.CLI.Judgement.Report
-import Seihou.CLI.Judgement.Runtime (JudgementBackend, RouteObservation, isRemoteRoute, productionRunner, shikumiBackend)
+import Seihou.CLI.Judgement.Runtime (JudgementBackend, RouteObservation, gateProviderName, isRemoteRoute, productionGateRunner, productionRunner, shikumiBackend)
 import Seihou.CLI.Judgement.Scanner (findScanner)
 import Seihou.Core.Judgement
 import Seihou.Core.Types (ActiveJudgement)
@@ -42,6 +43,7 @@ import Seihou.Effect.ManifestStore (readManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Manifest.Types (manifestFromJSON)
 import Seihou.Prelude
+import System.Environment (lookupEnv)
 
 data CheckRequest = CheckRequest
   { -- | One active judgement to run for diagnosis; 'Nothing' runs them all.
@@ -59,7 +61,10 @@ data BackendChoice = BackendChoice
     -- | Whether the route sends material to a hosted service.
     remote :: !Bool,
     -- | How the route is named in reports, e.g. @claude-cli claude-sonnet-5-5@.
-    label :: !(Maybe Text)
+    label :: !(Maybe Text),
+    -- | How the gate route is named, when one is configured locally. It runs
+    -- only for judgements whose recorded policy permits a gate.
+    gateLabel :: !(Maybe Text)
   }
   deriving stock (Generic)
 
@@ -85,21 +90,38 @@ productionServices root = do
     CheckServices
       { git = gitBytes root,
         scanner = sc,
-        backendFor = \def ->
-          resolveJudgementRoute >>= \case
+        backendFor = \def -> productionBackend (def ^. #limits)
+      }
+
+-- | The locally configured review route and, when configured, the gate.
+-- 'Right' with no backend means no review route is configured.
+productionBackend :: CoverageLimits -> IO (Either Text BackendChoice)
+productionBackend limits =
+  resolveJudgementRoute >>= \case
+    Left err -> pure (Left err)
+    Right Nothing -> pure (Right (BackendChoice Nothing False Nothing Nothing))
+    Right (Just route) ->
+      resolveGateRoute >>= \case
+        Left err -> pure (Left err)
+        Right gateRoute -> do
+          (runner, observed) <- productionRunner limits route
+          gateRunner <- traverse (productionGateRunner limits) gateRoute
+          -- The provider reads its key itself; naming a missing one here
+          -- explains the gate failures a check will then report.
+          keyMissing <- maybe True (null . filter (/= ' ')) <$> lookupEnv "TYPESAFE_API_KEY"
+          let keyNote = if keyMissing then " (TYPESAFE_API_KEY is not set, so the gate will fail and every check escalates to the review)" else ""
+          case sequence gateRunner of
             Left err -> pure (Left err)
-            Right Nothing -> pure (Right (BackendChoice Nothing False Nothing))
-            Right (Just route) -> do
-              (runner, observed) <- productionRunner (def ^. #limits) route
+            Right g ->
               pure
                 ( Right
                     ( BackendChoice
-                        (Just (shikumiBackend runner Nothing observed))
+                        (Just (shikumiBackend runner (fst <$> g) ((<>) <$> maybe (pure []) snd g <*> observed)))
                         (isRemoteRoute route)
                         (Just (providerToText (route ^. #provider) <> " " <> route ^. #model))
+                        ((\gr -> gateProviderName <> " " <> gr ^. #model <> keyNote) <$> gateRoute)
                     )
                 )
-      }
 
 -- | Read the active judgements from @.seihou/manifest.json@ under a project
 -- root without changing anything. A missing manifest, or one older than
@@ -185,7 +207,8 @@ runCheck services active req = case selected of
             let exec = JudgementExecution (j ^. #policy) (choice ^. #backend) (choice ^. #remote) (services ^. #scanner)
             obs <- runJudgement exec def snap
             routeSeen <- maybe (pure []) (^. #observed) (choice ^. #backend)
-            pure (Right (def, decideJudgement def (j ^. #policy) obs, choice ^. #label, routeSeen))
+            let lbl = (\l -> l <> maybe "" ("; gate " <>) (if j ^. #policy . #gatePermitted then choice ^. #gateLabel else Nothing)) <$> choice ^. #label
+            pure (Right (def, decideJudgement def (j ^. #policy) obs, lbl, routeSeen))
       case sequence results of
         Left err -> pure (failure (req ^. #json) err)
         Right decided -> do
@@ -213,7 +236,11 @@ runCheck services active req = case selected of
         choice <- (services ^. #backendFor) def
         let route = case choice of
               Left err -> "not usable: " <> err
-              Right c -> maybe "none configured" id (c ^. #label)
+              Right c -> maybe "none configured" id (c ^. #label) <> gateText c
+            gateText c = case (c ^. #gateLabel, j ^. #policy . #gatePermitted) of
+              (Nothing, _) -> ""
+              (Just g, True) -> "; gate: " <> g
+              (Just g, False) -> "; gate " <> g <> " is configured, but this judgement's policy does not permit a gate"
         pure $
           T.unlines $
             [ def ^. #name <> " " <> maybe "" id (def ^. #version) <> "  (" <> T.take 12 (j ^. #digest . #unSHA256) <> ")",
@@ -222,10 +249,18 @@ runCheck services active req = case selected of
               "  scope: " <> scopeLabel <> "; " <> T.pack (show (length sel)) <> " file(s) selected in " <> T.pack (show (length chunks)) <> " chunk(s), " <> T.pack (show (length excluded)) <> " excluded"
             ]
               <> ["  would not review: " <> T.pack p <> " (" <> why <> ")" | (p, why) <- uncovered <> overflow]
-              <> [ "  check " <> c ^. #name <> ": " <> renderEnforcement (cp ^. #enforcement) <> ", pass at " <> num (cp ^. #review . #passAt) <> ", block at " <> num (cp ^. #review . #blockAt)
+              <> [ "  check "
+                     <> c ^. #name
+                     <> ": "
+                     <> renderEnforcement (cp ^. #enforcement)
+                     <> ", pass at "
+                     <> num (cp ^. #review . #passAt)
+                     <> ", block at "
+                     <> num (cp ^. #review . #blockAt)
+                     <> (if j ^. #policy . #gatePermitted && cp ^. #useGate then "; gate pass at " <> num (cp ^. #gate . #passAt) <> ", block at " <> num (cp ^. #gate . #blockAt) else "")
                  | c <- toList (def ^. #checks),
                    let cp = checkPolicyFor (j ^. #policy) c
                  ]
       pure (CheckOutcome 0 (T.concat sections <> "Dry run: no model request was made and nothing was approved.\n"))
 
-    num = T.pack . show
+    num = renderProbability

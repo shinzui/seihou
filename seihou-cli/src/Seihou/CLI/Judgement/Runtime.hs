@@ -25,9 +25,14 @@ module Seihou.CLI.Judgement.Runtime
 
     -- * Routes
     JudgementRoute (..),
+    GateRoute (..),
     RouteObservation (..),
     productionRunner,
+    productionGateRunner,
     isRemoteRoute,
+    gateProviderName,
+    judgmentOnlyModel,
+    isJudgmentOnlyModelId,
 
     -- * Instructions (exposed for tests and dry-run rendering)
     reviewInstruction,
@@ -38,13 +43,16 @@ where
 
 import Baikai qualified
 import Baikai.Evidence qualified as BaikaiEvidence
+import Baikai.Models.Generated qualified as BaikaiModels
 import Baikai.Provider.Claude.Api qualified as ClaudeApi
 import Baikai.Provider.Claude.Cli qualified as ClaudeCli
 import Baikai.Provider.OpenAI.Api qualified as OpenAIApi
 import Baikai.Provider.OpenAI.Cli qualified as CodexCli
+import Baikai.Provider.TypeSafe.Api qualified as TypeSafeApi
 import Control.Exception (SomeException, try)
 import Data.Generics.Labels ()
 import Data.IORef (atomicModifyIORef', newIORef, readIORef)
+import Data.List (find)
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Time.Clock.POSIX (getPOSIXTime)
@@ -248,6 +256,26 @@ data RouteObservation = RouteObservation
 isRemoteRoute :: JudgementRoute -> Bool
 isRemoteRoute _ = True
 
+-- | A judgment-only gate route: a model from Baikai's catalogue that answers
+-- closed questions only. Its provider is always 'gateProviderName'.
+newtype GateRoute = GateRoute
+  { model :: Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | The only judgment-only provider this build registers.
+gateProviderName :: Text
+gateProviderName = "typesafe"
+
+-- | The catalogue model with this identifier when Baikai marks it
+-- judgment-only. Provider names and identifier prefixes are not routing
+-- rules; the catalogue fact is.
+judgmentOnlyModel :: Text -> Maybe Baikai.Model
+judgmentOnlyModel mid = find (\m -> m ^. #modelId == mid && Baikai.isJudgmentOnly m) BaikaiModels.allModels
+
+isJudgmentOnlyModelId :: Text -> Bool
+isJudgmentOnlyModelId = maybe False (const True) . judgmentOnlyModel
+
 -- | The production runner for a route: an explicit registry, Shikumi's
 -- resilient interpreter with typed transient retries bounded by the
 -- judgement's attempt limit, an overall timeout, no response cache, no
@@ -255,16 +283,33 @@ isRemoteRoute _ = True
 -- empty private directory with every tool, slash command, MCP server and
 -- user setting disabled: the reviewer has no tools and no agent loop.
 productionRunner :: CoverageLimits -> JudgementRoute -> IO (Runner, IO [RouteObservation])
-productionRunner limits route = do
+productionRunner limits route =
+  runnerFor
+    limits
+    (providerToText (route ^. #provider))
+    (route ^. #model)
+    (buildBaikaiModel (AgentModelConfig (route ^. #provider) (Just (route ^. #model)) Nothing TraceOff Nothing))
+    (\registry dir -> registerRoute registry dir (route ^. #provider))
+
+-- | The production runner for a judgment-only gate. 'Left' when the model is
+-- not a judgment-only catalogue model. The TypeSafe provider reads
+-- @TYPESAFE_API_KEY@ itself; a missing key fails the gate call, which the
+-- orchestration reports and escalates.
+productionGateRunner :: CoverageLimits -> GateRoute -> IO (Either Text (Runner, IO [RouteObservation]))
+productionGateRunner limits gr = case judgmentOnlyModel (gr ^. #model) of
+  Nothing -> pure (Left ("'" <> gr ^. #model <> "' is not a judgment-only model in Baikai's catalogue, so it cannot be the gate"))
+  Just m -> Right <$> runnerFor limits gateProviderName (gr ^. #model) m (\registry _ -> Baikai.registerApiProviderWith registry TypeSafeApi.typesafeProvider)
+
+runnerFor :: CoverageLimits -> Text -> Text -> Baikai.Model -> (Baikai.ProviderRegistry -> FilePath -> IO ()) -> IO (Runner, IO [RouteObservation])
+runnerFor limits providerLabel modelLabel baikaiModel register = do
   observations <- newIORef []
-  let baikaiModel = buildBaikaiModel (AgentModelConfig (route ^. #provider) (Just (route ^. #model)) Nothing TraceOff Nothing)
-      runner = Runner $ \action -> withSystemTempDirectory "seihou-judgement" $ \dir -> do
+  let runner = Runner $ \action -> withSystemTempDirectory "seihou-judgement" $ \dir -> do
         -- Attempt receipts are produced only for requests that carry an
         -- evidence request; one run identifier per call is enough to
         -- correlate its retries.
         runId <- T.pack . ("seihou-judgement-" <>) . show <$> getPOSIXTime
         registry <- Baikai.newProviderRegistry
-        registerRoute registry dir (route ^. #provider)
+        register registry dir
         let cfg =
               (defaultLLMConfig registry)
                 { retryPolicy = RetryPolicy {maxAttempts = limits ^. #maxAttempts, baseDelayMs = 500, maxDelayMs = 8000}
@@ -290,8 +335,8 @@ productionRunner limits route = do
     record ref receipt = liftIO $ atomicModifyIORef' ref (\xs -> (toObservation receipt : xs, ()))
     toObservation receipt =
       RouteObservation
-        { requestedProvider = providerToText (route ^. #provider),
-          requestedModel = route ^. #model,
+        { requestedProvider = providerLabel,
+          requestedModel = modelLabel,
           observedModel = case receipt ^. #evidence . #observedModel of
             BaikaiEvidence.Observed m -> m
             BaikaiEvidence.Unobserved -> "(not reported by the provider)",

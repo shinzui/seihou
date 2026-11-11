@@ -10,6 +10,13 @@
 -- @SEIHOU_JUDGEMENT_DATA_POLICY@), or from an interactive confirmation the
 -- caller collects. Noninteractive adoption without one fails with the exact
 -- commands to run and activates nothing.
+--
+-- A locally configured judgment-only gate route (@judgement.gateProvider@
+-- and @judgement.gateModel@) is a second hosted destination. The preview
+-- names it beside the review route, the same consent covers both, and the
+-- recorded policy then permits a gate. Without a gate route the policy does
+-- not permit one, and @seihou judgement configure NAME --gate-model MODEL@
+-- adds it later as a previewed policy change.
 module Seihou.CLI.Judgement.Adopt
   ( AdoptionPlan (..),
     AdoptionInputs (..),
@@ -28,14 +35,14 @@ import Control.Exception (SomeException, displayException, try)
 import Data.Foldable (toList)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Text qualified as T
 import Data.Time (getCurrentTime)
 import Seihou.CLI.AgentCompletion (providerToText)
-import Seihou.CLI.Judgement.Config (judgementModelConfigKey, judgementProviderConfigKey, resolveJudgementRoute)
+import Seihou.CLI.Judgement.Config (judgementModelConfigKey, judgementProviderConfigKey, resolveGateRoute, resolveJudgementRoute)
 import Seihou.CLI.Judgement.Evidence (gitBytes)
 import Seihou.CLI.Judgement.Hooks
-import Seihou.CLI.Judgement.Runtime (JudgementRoute)
+import Seihou.CLI.Judgement.Runtime (GateRoute, JudgementRoute, gateProviderName)
 import Seihou.CLI.Judgement.Scanner (findScanner)
 import Seihou.CLI.ManifestCapabilityUpgrade (prepareJudgementState)
 import Seihou.CLI.Shared (formatConfigError)
@@ -63,25 +70,29 @@ data AdoptionInputs = AdoptionInputs
   { route :: !(Maybe JudgementRoute),
     -- | The data policy stated in configuration, if any.
     configuredPolicy :: !(Maybe DataPolicy),
-    scanner :: !(Maybe FilePath)
+    scanner :: !(Maybe FilePath),
+    -- | The optional judgment-only gate route.
+    gateRoute :: !(Maybe GateRoute)
   }
   deriving stock (Eq, Show, Generic)
 
 gatherAdoptionInputs :: IO (Either Text AdoptionInputs)
 gatherAdoptionInputs = do
   routeResult <- resolveJudgementRoute
+  gateResult <- resolveGateRoute
   envPolicy <- fmap T.pack <$> lookupEnv "SEIHOU_JUDGEMENT_DATA_POLICY"
   (localResult, globalResult) <- runEff $ runConfigReader $ (,) <$> readLocalConfig <*> readGlobalConfig
   sc <- findScanner
   pure $ do
     r <- routeResult
+    g <- gateResult
     local <- first formatConfigError localResult
     global <- first formatConfigError globalResult
     let raw = case envPolicy of
           Just v | not (T.null (T.strip v)) -> Just v
           _ -> Map.lookup "judgement.dataPolicy" local `orElse` Map.lookup "judgement.dataPolicy" global
     policy <- traverse dataPolicyFromText raw
-    pure (AdoptionInputs r policy sc)
+    pure (AdoptionInputs r policy sc g)
   where
     orElse (Just a) _ = Just a
     orElse Nothing b = b
@@ -95,6 +106,8 @@ data AdoptionPlan = AdoptionPlan
     change :: !AdoptionChange,
     hook :: !HookPlan,
     routeLabel :: !Text,
+    -- | The gate route, when the recorded policy permits one.
+    gateLabel :: !(Maybe Text),
     scanner :: !FilePath
   }
   deriving stock (Eq, Show, Generic)
@@ -133,11 +146,13 @@ planAdoption root inputs consent owner source def = case validateDefinition def 
           pure $ do
             manifest <- existing
             hp <- hookPlan
-            let record = ActiveJudgement source def (definitionDigest def) (defaultPolicy ApprovedRemote False def) [owner]
+            let gatePermitted = isJust (inputs ^. #gateRoute)
+                record = ActiveJudgement source def (definitionDigest def) (defaultPolicy ApprovedRemote gatePermitted def) [owner]
             (_, change) <- adoptWithOwner owner record (manifest ^. #judgements)
-            pure (AdoptionPlan root record owner change hp (label r) sc)
+            pure (AdoptionPlan root record owner change hp (label r) gateText sc)
   where
     label r = providerToText (r ^. #provider) <> " " <> r ^. #model
+    gateText = (\g -> gateProviderName <> " " <> g ^. #model) <$> inputs ^. #gateRoute
 
 readExisting :: FilePath -> IO (Either Text Manifest)
 readExisting root = do
@@ -156,16 +171,27 @@ renderAdoptionPlan p =
       "  definition digest: " <> T.take 16 (p ^. #active . #digest . #unSHA256),
       "  " <> status,
       "  data policy: approved-remote; review route: " <> p ^. #routeLabel <> " (staged file contents are sent there)",
+      "  gate: " <> maybe "none; the review decides every check" (<> " (judgment-only; staged file contents are also sent there, and a check it clears needs no review call)") (p ^. #gateLabel),
       "  deterministic checks: " <> if null (def ^. #deterministicChecks) then "none" else T.intercalate ", " (map renderDeterministicCheck (def ^. #deterministicChecks)),
       "  transmission safeguard: " <> T.pack (p ^. #scanner),
       "  " <> renderHookPlan (p ^. #hook)
     ]
-      <> [ "  check " <> c ^. #name <> " (" <> renderEnforcement (c ^. #enforcement) <> "): concern when " <> renderAnswer (c ^. #concernWhen) <> "; pass at " <> num (c ^. #review . #passAt) <> ", block at " <> num (c ^. #review . #blockAt)
+      <> [ "  check "
+             <> c ^. #name
+             <> " ("
+             <> renderEnforcement (c ^. #enforcement)
+             <> "): concern when "
+             <> renderAnswer (c ^. #concernWhen)
+             <> "; pass at "
+             <> num (c ^. #review . #passAt)
+             <> ", block at "
+             <> num (c ^. #review . #blockAt)
+             <> (if isJust (p ^. #gateLabel) && c ^. #useGate then "; gate pass at " <> num (c ^. #gate . #passAt) <> ", block at " <> num (c ^. #gate . #blockAt) else "")
          | c <- toList (def ^. #checks)
          ]
   where
     def = p ^. #active . #definition
-    num = T.pack . show
+    num = renderProbability
     status = case p ^. #change of
       AdoptedNew -> "new: becomes active for every commit in this checkout"
       AdoptedUnchanged -> "already active with this definition; nothing changes and its recorded policy is kept"

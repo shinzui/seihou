@@ -1,6 +1,10 @@
--- | @seihou judgement configure NAME@: choose the review route and data
--- policy, and change an active judgement's per-check enforcement and
--- thresholds.
+-- | @seihou judgement configure NAME@: choose the review route, the optional
+-- judgment-only gate and the data policy, and change an active judgement's
+-- per-check enforcement and thresholds.
+--
+-- The gate is a second hosted destination. Naming a gate route here is the
+-- explicit permission for it: for an active judgement the previewed policy
+-- change records that a gate is permitted, and @--no-gate@ withdraws it.
 --
 -- The route (provider and model) is local configuration. The data policy is
 -- read from configuration at adoption and, once the judgement is active, is
@@ -24,8 +28,8 @@ import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust)
 import Data.Text qualified as T
-import Seihou.CLI.AgentCompletion (providerFromText)
-import Seihou.CLI.Judgement.Config (judgementModelConfigKey, judgementProviderConfigKey)
+import Seihou.CLI.Judgement.Config (judgementGateModelConfigKey, judgementGateProviderConfigKey, judgementModelConfigKey, judgementProviderConfigKey, validateGateRoute, validateReviewProvider)
+import Seihou.CLI.Judgement.Runtime (gateProviderName)
 import Seihou.Core.Judgement
 import Seihou.Core.Types (ActiveJudgement, ConfigScope (..), Manifest)
 import Seihou.Effect.ConfigWriter (writeConfigValue)
@@ -79,9 +83,15 @@ planConfigure root req = do
   existing <- runEff (runFilesystem (runManifestStore (manifestPath root) readManifest))
   pure $ do
     m <- either (Left . ("Cannot read .seihou/manifest.json: " <>)) Right existing
-    when (isJust (req ^. #gateProvider) || isJust (req ^. #gateModel)) $
-      Left "No judgment-only provider is available in this build of seihou, so a gate cannot be configured; the generative review decides every check."
-    forM_ (req ^. #provider) $ \p -> () <$ providerFromText p
+    forM_ (req ^. #provider) $ \p -> validateReviewProvider p (req ^. #model)
+    forM_ (req ^. #model) $ \md -> validateReviewProvider "claude-cli" (Just md)
+    gateRoute <- case (req ^. #gateProvider, req ^. #gateModel) of
+      (Nothing, Nothing) -> Right Nothing
+      (Just p, Just md) -> Just <$> validateGateRoute p md
+      (Just _, Nothing) -> Left "--gate-provider needs --gate-model; the gate model is never guessed."
+      (Nothing, Just md) -> Just <$> validateGateRoute gateProviderName md
+    when (isJust gateRoute && req ^. #noGate) $
+      Left "--no-gate cannot be combined with --gate-provider or --gate-model."
     let o = req ^. #overrides
         thresholdFlags = any isJust [o ^. #blockAt, o ^. #passAt, o ^. #gateBlockAt, o ^. #gatePassAt]
     when (thresholdFlags && not (isJust (req ^. #check))) $
@@ -90,7 +100,8 @@ planConfigure root req = do
           [(judgementProviderConfigKey, p) | Just p <- [req ^. #provider]]
             <> [(judgementModelConfigKey, md) | Just md <- [req ^. #model]]
             <> [("judgement.dataPolicy", renderDataPolicy dp) | Just dp <- [req ^. #dataPolicy]]
-        wantsPolicy = thresholdFlags || isJust (o ^. #enforcement) || isJust (req ^. #dataPolicy) || req ^. #noGate
+            <> concat [[(judgementGateProviderConfigKey, gateProviderName), (judgementGateModelConfigKey, g ^. #model)] | Just g <- [gateRoute]]
+        wantsPolicy = thresholdFlags || isJust (o ^. #enforcement) || isJust (req ^. #dataPolicy) || req ^. #noGate || isJust gateRoute
         active = [j | j <- maybe [] (^. #judgements) m, j ^. #definition . #name == req ^. #name]
     change <- case (active, wantsPolicy) of
       (_, False) -> Right Nothing
@@ -129,7 +140,7 @@ planConfigure root req = do
                 & #dataPolicy
                 %~ (\dp -> fromMaybe dp (req ^. #dataPolicy))
                 & #gatePermitted
-                %~ (\g -> g && not (req ^. #noGate))
+                %~ (\g -> (g || isJust gateRoute) && not (req ^. #noGate))
         forM_ targets $ \c -> forM_ (Map.lookup c (newPolicy ^. #checks)) $ \cp -> do
           first (^. #message) (validateThresholds ("check '" <> c <> "' review") (cp ^. #review))
           first (^. #message) (validateThresholds ("check '" <> c <> "' gate") (cp ^. #gate))
@@ -137,7 +148,7 @@ planConfigure root req = do
           Left "Every review route in this release sends material to a hosted service, so a local-only data policy would make this judgement fail on every commit."
         Right (Just (j, j & #policy .~ newPolicy))
     when (null writes && not (isJust change)) $
-      Left "Nothing to change: give --provider, --model, --data-policy, --enforcement or --check with threshold flags."
+      Left "Nothing to change: give --provider, --model, --gate-provider, --gate-model, --no-gate, --data-policy, --enforcement or --check with threshold flags."
     pure (ConfigurePlan writes (if req ^. #global then ScopeGlobal else ScopeLocal) change m)
 
 renderConfigurePlan :: ConfigurePlan -> Text
@@ -153,6 +164,11 @@ renderConfigurePlan p =
       [ "  policy " <> renderDataPolicy (old ^. #policy . #dataPolicy) <> " -> " <> renderDataPolicy (new ^. #policy . #dataPolicy)
       | old ^. #policy . #dataPolicy /= new ^. #policy . #dataPolicy
       ]
+        <> [ if new ^. #policy . #gatePermitted
+               then "  policy: a judgment-only gate is now permitted; staged file contents are also sent to the gate route"
+               else "  policy: a gate is no longer permitted; the review decides every check"
+           | old ^. #policy . #gatePermitted /= new ^. #policy . #gatePermitted
+           ]
         <> [ "  check " <> c <> ": " <> describe a <> " -> " <> describe b
            | (c, b) <- Map.toList (new ^. #policy . #checks),
              Just a <- [Map.lookup c (old ^. #policy . #checks)],

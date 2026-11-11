@@ -31,6 +31,11 @@ provenance:
       at: 2026-11-11T18:25:26Z
       mode: "implement"
       note: "M1 completed: schema, manifest 15, check, hooks, adoption, live consumer run"
+    - model: "claude-opus-5-5"
+      harness: "claude-code"
+      at: 2026-11-11T21:01:40Z
+      mode: "implement"
+      note: "M4 gate route: baikai-typesafe dependency, gate configuration, production gate runner, eval gate tallies"
 ---
 
 # Add first-class user-defined judgements backed by Shikumi
@@ -92,10 +97,12 @@ Live evidence on `claude-cli`/`claude-sonnet-5`: `judgement eval customer-data-r
 Open items by milestone (updated after `7b63cd8`):
 - M2: `seihou install` does not acquire a judgement named only by a reference `source` (the ADR 0020 closure). `browse` has no kind filters for any artifact kind. Shell completion has no name completers for any kind.
 - M3, done in `3bebe24`: application and direct owners, conflict refusal, last-owner retirement with removal of a byte-identical hook, `sync` hook repair, and judgement status. Not exercised: a linked worktree and a fresh clone with an empty artifact cache. `remove` of an application whose module lacks a removal specification is refused by existing rules, so the pruning path is covered by specs only.
-- M4: the judgment-only gate cannot run, because `baikai-typesafe` is not a dependency and no `TYPESAFE_API_KEY` was available; the gate logic is covered by stubs. Checks run sequentially.
+- M4: the gate route is wired (see the gate record below), but no `TYPESAFE_API_KEY` was available, so no gate probability, latency, accepted input size or oversized-input refusal has been observed. Checks run sequentially.
 - M5: `run --commit` is verified live, and `update` and `migrate` share the same `gatedCommit` helper but were not run live. A staged policy weakening is reported in `70df8ad`, and `--policy-ref` covers CI.
 - M6: corpus and qualification are done in `7b63cd8`, and docs, help and the OKF rendering (`5b90232`) are in place. The non-security example `docs/examples/judgements/customer-data-review` ships with labelled cases: two checks at different thresholds, one advisory and asked in the no-concern direction, scored 3/3 and 1/1 live.
 - M7: not started; release needs publication authorization.
+
+Gate record (2026-11-11, claude-opus-5-5). `baikai-typesafe` 0.1.0.1 and `typesafe-hs` 0.1.0.0 are now dependencies of the internal CLI library, pinned in `nix/haskell-overlay.nix`. `judgement.gateProvider`/`judgement.gateModel` (or `SEIHOU_JUDGEMENT_GATE_PROVIDER`/`SEIHOU_JUDGEMENT_GATE_MODEL`) select the gate, and `judgement configure --gate-provider/--gate-model` writes them. A judgment-only catalogue model is refused as the review route, and anything else as the gate. `productionGateRunner` registers `typesafeProvider` on its own registry. `check`, `check --dry-run`, adoption and `judgement eval` name the gate, and eval reports per check how many unsafe and benign cases the gate cleared or escalated, marking a gate that clears an unsafe case as not qualified. Suites: core 1772, cli 983, okf-extension 54. Live, in a scratch repository on `claude-cli`/`claude-sonnet-5` with `typesafe jev-latest` and no key: the adoption preview named both destinations and recorded `gatePermitted`, and `seihou check` on a README change passed in 5.9 s. Each check reported "gate unavailable (the provider reported an error ...); escalated to review" and was decided by the review (0.00 and 0.02). Four requests were observed in total: two failed gate calls and two reviews.
 
 The original plan authorized planning only; implementation began on 2026-11-11 at the user's request. The intention was created with `mina ci --json 'Add first-class user-defined judgements backed by Shikumi'`. Mina returned the frontmatter ID successfully and warned that its configured default parent is outside this project's Rei scope; changing that project association is separate from creating this plan.
 
@@ -192,6 +199,8 @@ Decision (2026-11-11, implementation): the bundled `security-review` definition 
 Decision (2026-11-11, implementation): manifest schema 15 adds `judgements`: per active judgement, the source, the definition snapshot, its digest and the policy. The 14 to 15 step is lossless and accepts an empty list, following the existing checkout-commands step. A snapshot whose digest no longer matches its definition, or a policy that does not name exactly the definition's checks, fails to decode with a re-apply instruction. `seihou update` now stages to the newest capability, so it keeps bringing a manifest to the current schema. Application owners for judgements are not recorded yet; that is M3.
 
 Decision (2026-11-11, implementation): the review route is local configuration, not project intent: `judgement.provider` and `judgement.model` (or `SEIHOU_JUDGEMENT_PROVIDER`/`SEIHOU_JUDGEMENT_MODEL`), with no fallback to `agent.*` and no guessed model. Consent to transmit is `judgement.dataPolicy approved-remote` (or `SEIHOU_JUDGEMENT_DATA_POLICY`), or an interactive confirmation during `seihou run`. Without a route, a policy or Gitleaks, adoption names the exact commands and activates nothing. A local-only policy is refused at adoption because no route in this release is local, so such a judgement could never pass. These keys stand in for `seihou judgement configure` until M2.
+
+Decision (2026-11-11, implementation): the gate route is local configuration, like the review route: `judgement.gateProvider` and `judgement.gateModel`. Whether a gate may be used is project policy (`gatePermitted`). Adoption records it as permitted only when a gate route is configured, and its preview and consent prompt then name the gate as a second hosted destination. Afterwards, `judgement configure NAME --gate-provider/--gate-model` permits it, and `--no-gate` withdraws it, each as a previewed manifest change. A configured gate runs only for judgements whose policy permits it, so a local route can narrow but never broaden. The gate is identified by Baikai's `isJudgmentOnly` catalogue fact, not by provider name. When `TYPESAFE_API_KEY` is unset, the gate label says so, because the provider's own error is deliberately generic.
 
 Decision (2026-11-11, implementation): adoption publishes the hook first and the manifest second. A hook with no active judgement passes, so a failed manifest write never leaves a partial active policy. The hook resolves `seihou` from PATH and stops the commit when it is missing.
 

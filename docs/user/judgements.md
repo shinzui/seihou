@@ -129,7 +129,7 @@ This example, with its labelled cases, is in [`docs/examples/judgements/customer
 | `enforcement` | `Enforced` | `Advisory` reports without blocking |
 | `blockingSeverity` | `High` | Findings at or above this severity block |
 | `blockAt` / `passAt` | 0.7 / 0.3 | Review thresholds on the probability of the concern |
-| `gateBlockAt` / `gatePassAt` / `useGate` | 0.9 / 0.05 / true | Reserved for the judgment-only gate, which this release does not run |
+| `gateBlockAt` / `gatePassAt` / `useGate` | 0.9 / 0.05 / true | Thresholds for the optional judgment-only gate, and whether this check uses it |
 
 ### Examples
 
@@ -235,10 +235,38 @@ and a hand-edited snapshot is refused.
 - Credentials stay in each provider's own environment or credential store; Seihou
   stores none.
 
+## The optional gate
+
+A gate is a judgment-only model: it answers closed questions and nothing else, so it
+is fast but cannot say where a concern is. When a project configures one, each check
+goes to the gate first:
+
+- at or below the check's `gatePassAt`, the gate clears the check and no review call
+  is made;
+- above it, the check escalates to the generative review, which decides and gives the
+  located findings;
+- at or above `gateBlockAt`, the check cannot pass even when the review clears it: the
+  two models disagree, and the result is needs-review;
+- a gate that fails is reported and the check escalates.
+
+Configure it with the route keys and permit it in the project policy:
+
+```sh
+seihou judgement configure security-review --gate-provider typesafe --gate-model jev-latest
+export TYPESAFE_API_KEY=...
+```
+
+Adopting a judgement while a gate route is configured names the gate in the preview
+as a second destination and records that the policy permits it. Gate probabilities
+are not comparable with the review's, which is why each check has its own gate
+thresholds. Qualify a gate with `seihou judgement eval` before relying on it: it
+must clear no unsafe case. The bundled `security-review` gate thresholds have not
+been qualified on a live gate.
+
 ## Limits in this release
 
-- The judgment-only gate is not available, so the generative review decides every
-  check.
+- The bundled `security-review` gate thresholds are unqualified: no live gate run has
+  been evaluated against its corpus.
 - `git commit --no-verify` skips the hook. Local hooks cover cooperative development,
   not a process deliberately bypassing them; enforce in CI with
   `seihou check --range origin/main..HEAD --policy-ref origin/main`.

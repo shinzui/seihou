@@ -5,7 +5,8 @@ Evaluate a judgement against labelled examples, and configure its route and poli
 ```sh
 seihou judgement eval NAME [--offline]
 seihou judgement configure NAME [--provider PROVIDER] [--model MODEL]
-    [--data-policy local-only|approved-remote] [--no-gate]
+    [--data-policy local-only|approved-remote]
+    [--gate-provider typesafe] [--gate-model MODEL] [--no-gate]
     [--check CHECK] [--enforcement enforced|advisory]
     [--block-at P] [--pass-at P] [--gate-block-at P] [--gate-pass-at P]
     [--global] [--dry-run]
@@ -29,6 +30,12 @@ counts would change under other pass/block pairs without further model calls. Th
 counts apply to the named route only. Evaluation proposes nothing and writes
 nothing; change the definition yourself. Live evaluation may cost money.
 
+When a gate route is configured, `eval` sends each check to the gate first and to
+the review only when the gate does not clear it, exactly as a commit does. Below
+each check it then reports how many unsafe and benign cases the gate cleared or
+escalated, and how many gate calls failed. A gate that clears any unsafe case is
+marked `NOT QUALIFIED`; the benign cases it escalates are its cost.
+
 `--offline` validates the corpus and runs the deterministic secret scan over the
 examples, without any model request. It does not measure model accuracy and is not
 a gate approval.
@@ -49,8 +56,17 @@ named with `--check`; `--enforcement` without `--check` applies to every check. 
 command prints the change and writes the manifest atomically; `--dry-run` writes
 nothing. An inverted pair (pass above block) or a value outside 0 to 1 is refused.
 
-`--gate-provider` and `--gate-model` are refused in this release: no judgment-only
-provider is built in, and the generative review decides every check.
+`--gate-provider` and `--gate-model` choose the optional gate, written as
+`judgement.gateProvider` and `judgement.gateModel` (environment:
+`SEIHOU_JUDGEMENT_GATE_PROVIDER`, `SEIHOU_JUDGEMENT_GATE_MODEL`). The gate must be a
+model that Baikai's catalogue marks judgment-only: in this release the provider is
+`typesafe` and the model `jev-latest` or `jev-preview`. A generative model is refused
+as the gate, and a judgment-only model is refused as the review route, because it
+cannot return located findings. The gate is a second hosted destination: for an
+active judgement, naming a gate route also records, as a previewed policy change,
+that its policy permits a gate. `--no-gate` withdraws that permission; the review
+then decides every check. The TypeSafe provider reads `TYPESAFE_API_KEY`; without
+it every gate call fails, is reported, and the check escalates to the review.
 
 Provider credentials are never stored by Seihou; they stay in the provider's own
 environment variables or credential store.

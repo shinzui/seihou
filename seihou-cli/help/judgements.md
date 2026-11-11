@@ -106,9 +106,12 @@ SEIHOU'S OWN COMMITS
 
 LIMITS IN THIS RELEASE
 
-  The judgment-only gate is not available. git commit --no-verify skips the
-  hook; run seihou check --range with --policy-ref in CI to enforce
-  judgements independently of local hooks.
+  The optional judgment-only gate (judgement.gateProvider typesafe,
+  judgement.gateModel jev-latest, TYPESAFE_API_KEY) clears checks it is
+  confident about and escalates the rest to the review; the bundled
+  security-review gate thresholds are not yet qualified on a live gate.
+  git commit --no-verify skips the hook; run seihou check --range with
+  --policy-ref in CI to enforce judgements independently of local hooks.
 
 SEE ALSO
 

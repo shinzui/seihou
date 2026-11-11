@@ -12,7 +12,7 @@ import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime (..), fromGregorian)
 import Seihou.CLI.Judgement.Configure
 import Seihou.CLI.Judgement.Evaluate
-import Seihou.CLI.Judgement.Runtime (JudgementBackend (..))
+import Seihou.CLI.Judgement.Runtime (ChunkRequest (..), JudgementBackend (..))
 import Seihou.CLI.Judgement.Scanner (findScanner)
 import Seihou.CLI.Judgement.Validate
 import Seihou.Core.Judgement
@@ -121,6 +121,28 @@ tests = testSpec "judgement authoring, evaluation and configuration" $ do
       sc <- findScanner
       report <- evaluateExamples Nothing True sc "none" def2 (defaultPolicy ApprovedRemote False def2) ex
       tally [(c ^. #example, c ^. #decision) | c <- report ^. #cases] "a" ^. #errors `shouldBe` 2
+    it "reports which unsafe and benign cases the gate cleared or escalated" $ do
+      calls <- newIORef (0 :: Int)
+      sc <- findScanner
+      let gated :: (ChunkRequest -> Either Text Double) -> JudgementBackend
+          gated g = backend calls 0.95 & #gate ?~ (\_ c req -> pure (if c ^. #name == "a" then g req else Left "not asked"))
+          policy = defaultPolicy ApprovedRemote True def2
+          -- A sound gate escalates the unsafe case and clears the benign one.
+          sound :: ChunkRequest -> Either Text Double
+          sound req = Right (if "unsafe" `T.isInfixOf` (req ^. #evidence) then 0.7 else 0.01)
+      good <- evaluateExamples (Just (gated sound)) True sc "stub; gate stub" def2 policy ex
+      gateTally (good ^. #cases) "a" `shouldBe` Just (GateTally 0 1 1 0 0)
+      tally [(c ^. #example, c ^. #decision) | c <- good ^. #cases] "a" `shouldBe` CheckTally 2 0 0 0 0 2
+      renderEvalReport good `shouldSatisfy` T.isInfixOf "cleared by the gate"
+      -- A gate that clears everything is reported as unqualified.
+      bad <- evaluateExamples (Just (gated (const (Right 0.01)))) True sc "stub; gate stub" def2 policy ex
+      gateTally (bad ^. #cases) "a" `shouldBe` Just (GateTally 1 0 1 0 0)
+      renderEvalReport bad `shouldSatisfy` T.isInfixOf "NOT QUALIFIED"
+      -- A failing gate escalates and is counted.
+      failing <- evaluateExamples (Just (gated (const (Left "gate down")))) True sc "stub; gate stub" def2 policy ex
+      gateTally (failing ^. #cases) "a" `shouldBe` Just (GateTally 0 1 0 1 2)
+      -- The stub gate refuses check b, which then escalates and counts as a failure.
+      gateTally (good ^. #cases) "b" `shouldBe` Just (GateTally 0 0 0 1 1)
     it "offline mode reports only deterministic findings" $ do
       r <- evaluateOffline Nothing def2 ex
       r `shouldBe` Right [("safe", 0), ("unsafe", 0)]
@@ -144,5 +166,20 @@ tests = testSpec "judgement authoring, evaluation and configuration" $ do
       planConfigure root (request & #overrides . #blockAt ?~ 0.6) >>= (`shouldSatisfy` either (T.isInfixOf "--check") (const False))
       planConfigure root (request & #check ?~ "a" & #overrides . #passAt ?~ 0.9) >>= (`shouldSatisfy` either (T.isInfixOf "must not exceed") (const False))
       planConfigure root (request & #name .~ "other" & #check ?~ "a" & #overrides . #blockAt ?~ 0.6) >>= (`shouldSatisfy` either (T.isInfixOf "seihou run other") (const False))
-      planConfigure root (request & #gateProvider ?~ "typesafe") >>= (`shouldSatisfy` either (T.isInfixOf "judgment-only") (const False))
+      planConfigure root (request & #gateProvider ?~ "typesafe") >>= (`shouldSatisfy` either (T.isInfixOf "--gate-model") (const False))
+      planConfigure root (request & #gateProvider ?~ "claude-cli" & #gateModel ?~ "claude-sonnet-5") >>= (`shouldSatisfy` either (T.isInfixOf "not a judgment-only provider") (const False))
+      planConfigure root (request & #gateModel ?~ "claude-sonnet-5") >>= (`shouldSatisfy` either (T.isInfixOf "not a judgment-only model") (const False))
+      planConfigure root (request & #provider ?~ "typesafe" & #model ?~ "jev-latest") >>= (`shouldSatisfy` either (T.isInfixOf "cannot return located findings") (const False))
+      planConfigure root (request & #model ?~ "jev-latest") >>= (`shouldSatisfy` either (T.isInfixOf "cannot be the review route") (const False))
+      planConfigure root (request & #gateModel ?~ "jev-latest" & #noGate .~ True) >>= (`shouldSatisfy` either (T.isInfixOf "--no-gate") (const False))
+    it "records a gate route and permits the gate in the active policy, and --no-gate withdraws it" $ withActive $ \root -> do
+      Right plan <- planConfigure root (request & #gateProvider ?~ "typesafe" & #gateModel ?~ "jev-latest")
+      plan ^. #configWrites `shouldBe` [("judgement.gateProvider", "typesafe"), ("judgement.gateModel", "jev-latest")]
+      renderConfigurePlan plan `shouldSatisfy` T.isInfixOf "gate is now permitted"
+      fmap (^. _2 . #policy . #gatePermitted) (plan ^. #policyChange) `shouldBe` Just True
+      -- Write only the manifest: the configuration writer would touch the
+      -- real user configuration.
+      applyConfigure root (plan & #configWrites .~ []) `shouldReturn` Right ()
+      Right withdrawn <- planConfigure root (request & #noGate .~ True)
+      fmap (\(a, b) -> (a ^. #policy . #gatePermitted, b ^. #policy . #gatePermitted)) (withdrawn ^. #policyChange) `shouldBe` Just (True, False)
       planConfigure root (request & #check ?~ "zzz" & #overrides . #blockAt ?~ 0.6) >>= (`shouldSatisfy` either (T.isInfixOf "no check 'zzz'") (const False))
