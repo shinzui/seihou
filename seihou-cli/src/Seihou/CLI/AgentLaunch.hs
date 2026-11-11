@@ -283,7 +283,7 @@ resolveBlueprintTools declared =
 -- | The @validate-blueprint@ warning for a blueprint that declares no
 -- @allowedTools@ (absent, or an empty list). Such a blueprint gets exactly
 -- 'setupAllowedTools' in a batch run, where Claude refuses everything else and
--- the run fails (ADR 0025). Empty when at least one tool is declared. The tool
+-- the run fails (ADR 0026). Empty when at least one tool is declared. The tool
 -- list is rendered from 'setupAllowedTools' so the two cannot drift.
 undeclaredAllowedToolsWarning :: Maybe [Text] -> [Text]
 undeclaredAllowedToolsWarning declared = case fromMaybe [] declared of

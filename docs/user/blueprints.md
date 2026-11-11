@@ -424,6 +424,14 @@ its `--allowedTools` option. Codex keeps its workspace-write sandbox and
 on-request approval policy because Codex has no equivalent per-tool allow-list
 option.
 
+A blueprint without `allowedTools` (or with an empty list) gets only the base
+set: `Bash(seihou *)`, `Bash(git *)`, `Bash(ls *)`, `Bash(mkdir *)`,
+`Bash(cat *)`, `Bash(pwd)`, `Read`, `Write`, `Edit`, `Glob`, `Grep`,
+`EnterWorktree` and `ExitWorktree`. In an interactive session you can approve
+anything else as it is asked for. In a batch run Claude refuses it, and the run
+fails. `seihou validate-blueprint` warns about such a blueprint and still
+exits 0.
+
 ## Running a blueprint
 
 Run blueprints through the agent command:
@@ -442,6 +450,13 @@ seihou agent run api-service --batch
 Batch mode lets module `RunCommand` migrations invoke a blueprint: CLI
 providers use `claude -p` or `codex exec` with workspace access instead of
 opening a terminal UI.
+
+No one can approve tools in a batch run. With `claude-cli`, a run in which
+Claude refused any tool call exits 1, lists each refused tool and command, and
+does not record the blueprint as applied. A blueprint run unattended must
+therefore declare every command its prompt needs in
+[`allowedTools`](#allowed-tools). See
+[Agent assistance](agent-assistance.md) for the full rule.
 
 The runner:
 

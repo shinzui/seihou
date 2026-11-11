@@ -69,8 +69,9 @@ refusals prints the agent's answer and exits 0 as it does now. In addition,
   and exits 0, covered by a new end-to-end spec. (2026-11-11: three `ValidateBlueprint` e2e
   cases and three `undeclaredAllowedToolsWarning` unit cases pass. `nix flake check`
   passes.)
-- [ ] Milestone 4: Help, user documentation and ADR 0025 describe the behavior. IR-18 is
-  marked completed with a resolution, and its bundle log is updated.
+- [x] Milestone 4: Help, user documentation and ADR 0026 describe the behavior. IR-18 is
+  marked completed with a resolution, and its bundle log is updated. (2026-11-11: `okf
+  validate` passes for the improvement-request bundle. The full suite passes, 908 tests.)
 
 
 ## Surprises & Discoveries
@@ -104,7 +105,7 @@ refusals prints the agent's answer and exits 0 as it does now. In addition,
   Under the fail-on-any-denial rule, a batch run in such an environment fails even when the
   blueprint declares everything it needs. The error names each refused command, so the user
   can see where it came from, either a hook or the blueprint. The Decision Log keeps the rule,
-  and ADR 0025 and the user docs state this consequence.
+  and ADR 0026 and the user docs state this consequence.
 
 
 ## Decision Log
@@ -180,6 +181,11 @@ refusals prints the agent's answer and exits 0 as it does now. In addition,
   and gains the same detail.
   Date: 2026-11-11
 
+- Decision: Record the decision as ADR 0026, not ADR 0025 as first planned.
+  Rationale: ExecPlan 120 created `docs/adr/0025-a-module-owns-only-its-own-directory-under-seihou.md`
+  after this plan was written. References in this plan were updated.
+  Date: 2026-11-11
+
 - Decision: Keep failing on every denial, including those caused by the user's own hooks or
   global instructions.
   Rationale: The probe showed ambient hooks can add refused calls. Seihou cannot tell those
@@ -191,7 +197,36 @@ refusals prints the agent's answer and exits 0 as it does now. In addition,
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Completed 2026-11-11. All of IR-18's acceptance criteria hold. A batch `claude-cli`
+`seihou agent run` whose agent was refused a tool exits 1, names each refusal as
+`Bash (nix build .#docs)` or `Write (/repo/.git/x)`, and writes no applied-blueprint entry.
+A run with no refusals behaves as before, and the legacy fixtures in the batch and trace
+end-to-end specs pass unchanged. `seihou validate-blueprint` warns about a blueprint with
+no or empty `allowedTools` and exits 0. The new end-to-end case fails with `ExitSuccess`
+when the adapter change is reverted. The suite has 908 tests and passes, and
+`nix flake check` passes.
+
+The Milestone 1 probe was worth its cost. It confirmed that guard refusals are visible, and
+it found two things the plan had not foreseen: a refused `Write` carries `file_path` and no
+`command`, and the user's own hooks add refusals. Both shaped the renderer and the
+documentation. The second has a practical cost. In an environment like the developer's,
+where a SessionStart hook asks every session to run `rex session rename`, a batch run fails
+until that command is granted in the user's Claude Code settings. The error names it, and
+ADR 0026 and the docs say so.
+
+The adapter is now shared with `agent migrate` (`registerValidatedCli`), so the two batch
+paths differ only in their extra arguments, exit message and validator. As planned, batch
+`claude-cli` traces lose token counts and the session id. A Baikai change that keeps
+`permission_denials` on its report would let both paths return to the stock provider.
+
+The code for Milestones 2 and 3 went into one commit, because they share `Main.hs` and the
+cabal file. The ADR number in the plan changed from 0025 to 0026, because ExecPlan 120 had
+taken 0025 in the meantime.
+
+Friction: `FRIC-13` (the test binary must run from `seihou-cli/`, and `cabal test
+--test-options` cannot carry a compound `-p` pattern) is left `logged`. The fix belongs in
+the test harness's schema lookup, outside this plan's scope. Concrete Steps now give the
+working commands.
 
 
 ## Context and Orientation
@@ -280,7 +315,7 @@ decided that batch migrations go through a migration-specific adapter that valid
 process exit and structured output. It requires a Claude result with no reported permission
 denials, adds no permission bypasses, and keeps that boundary "separate from ordinary text
 completions". This plan extends the denial rule to batch blueprint runs. It does not extend
-the rest of the migration contract, and it records that in a new ADR 0025 rather than
+the rest of the migration contract, and it records that in a new ADR 0026 rather than
 widening 0019. [ADR 0015](../adr/0015-diagnostics-name-things-as-users-do-and-never-fall-back-to-show.md)
 requires diagnostics to name things as users write them. The error must therefore print the
 tool and command as Claude reported them, and the warning must name the `allowedTools` field
@@ -301,7 +336,7 @@ and ask for `nix --version`. Second, run with `Bash(echo *)` allowed and ask for
 Record each run's `permission_denials` in Surprises & Discoveries with the Claude Code version.
 The milestone is accepted when all three are recorded, whatever they show. If a guard refusal
 does not appear, say so in Surprises & Discoveries, amend the second Decision Log entry, and
-carry the limit into ADR 0025 and the help text.
+carry the limit into ADR 0026 and the help text.
 
 Milestone 2 makes the batch run fail. In `seihou-cli/src/Seihou/CLI/AgentMigrationProtocol.hs`,
 lift `deniedTools`/`commandDetail` out of `validateMigrationOutput`'s `where` clause into a
@@ -364,7 +399,7 @@ Milestone 4 documents the behavior and closes the request. Describe the refusal 
 batch blueprint runs are explained in `seihou-cli/help/agent.md`, `docs/user/blueprints.md`
 and `docs/user/agent-assistance.md`. Describe the warning in `docs/cli/validate-blueprint.md`
 and next to the `allowedTools` field in `seihou-cli/help/blueprints.md`. Write
-`docs/adr/0025-a-batch-blueprint-run-fails-on-reported-tool-refusals.md` in the format of the
+`docs/adr/0026-a-batch-blueprint-run-fails-on-reported-tool-refusals.md` in the format of the
 existing ADRs. Its context is IR-18. Its decision is the denial rule, the tolerated-absence
 rule and the Claude-only scope. Its consequences are the lost trace usage and the possible
 Baikai follow-up. Link it from ADR 0019's Consequences with one sentence. Then update IR-18

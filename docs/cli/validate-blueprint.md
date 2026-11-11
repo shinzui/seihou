@@ -45,6 +45,26 @@ If `blueprint.dhall` is missing, `validate-blueprint` exits with code
 4. If any rule above is violated, it exits with code 1 after printing a
 report listing each failed check. A clean blueprint exits 0.
 
+## Warnings
+
+A warning is printed with `⚠` on every run and never changes the exit code.
+
+- **Allowed tools declared.** The blueprint declares no `allowedTools`, or an
+  empty list. Such a blueprint gets only Seihou's setup tools in a batch
+  `seihou agent run`. Claude refuses every other command the prompt needs, and
+  the run fails. Declare the commands, for example
+  `allowedTools = Some [ "Bash(nix *)" ]`. An interactive run is unaffected,
+  because you can approve tools as they are asked for.
+
+```text
+  ✓ Allowed tools
+  ⚠ Allowed tools declared
+      allowedTools is not declared, so an unattended run pre-approves only Seihou's setup tools: Bash(seihou *), Bash(git *), Bash(ls *), Bash(mkdir *), Bash(cat *), Bash(pwd), Read, Write, Edit, Glob, Grep, EnterWorktree, ExitWorktree. Claude refuses every other command the prompt needs. Declare them, for example allowedTools = Some [ "Bash(nix *)" ].
+  ✓ Launch settings
+
+Blueprint 'example' is valid.
+```
+
 ## Examples
 
 ```sh

@@ -161,6 +161,15 @@ SUBCOMMANDS
       provider. A successful non-debug run records applied-blueprint
       provenance in `.seihou/manifest.json`.
 
+      A batch run (--batch, or stdin that is not a terminal) has no one to
+      approve tools. With claude-cli, a run in which Claude refused any tool
+      call exits 1, names each refused tool and command, and records no
+      applied blueprint. Refusals count whatever their cause: a command
+      missing from the blueprint's allowedTools, a guarded write such as one
+      inside .git/ or a shell redirection, or a command run by your own Claude
+      Code hooks. Declare what the blueprint needs in allowedTools, or run it
+      interactively. codex-cli batch runs are not checked this way.
+
   seihou agent migrate BLUEPRINT [--from VERSION] [--to VERSION] [PROMPT]
       Run one agent session per in-window migration declared by the blueprint.
       Versions are dotted numbers; gaps are allowed. Successful edges are

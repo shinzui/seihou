@@ -2,6 +2,9 @@
 
 ## 2026-11-11
 
+* **Addition**: FRIC-13 records detour tooling friction with mori://shinzui/seihou: seihou-cli-test e2e specs fail unless run from seihou-cli/
+
+
 * **Update**: FRIC-12 resolved: Resolved by documenting the formatter entry point in the contributing guide under ExecPlan 120.
 
 * **Addition**: FRIC-12 records slowdown documentation friction with mori://shinzui/seihou: Running fourmolu directly fails to parse; only nix fmt formats Haskell sources

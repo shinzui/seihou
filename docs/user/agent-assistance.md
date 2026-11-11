@@ -423,6 +423,25 @@ mounted references while using `claude -p` or `codex exec`. Explicit `--batch`
 is recommended in reusable automation because it documents the intended launch
 mode.
 
+A batch run has no one to approve tools, so Claude refuses any tool call that
+is not pre-approved. With `claude-cli`, Seihou treats a run in which Claude
+refused anything as a failed run. It exits 1, names each refused tool and
+command, and does not record the blueprint as applied:
+
+```text
+Error: Claude refused 2 tool calls during this unattended run: Bash (nix build .#docs), Bash (bun install). An unattended run cannot approve tools. Declare the commands the blueprint needs in its allowedTools, or run it interactively, then retry.
+```
+
+Every refusal counts, whatever caused it: a command missing from the
+blueprint's `allowedTools`, a write Claude guards even when `Write` is allowed
+(a file inside `.git/`, or a shell redirection such as `echo hi > out.txt`),
+or a command run on behalf of your own Claude Code hooks or global
+instructions. When the named command comes from your own setup rather than the
+blueprint, grant it in your Claude Code settings. `seihou validate-blueprint`
+warns about a blueprint that declares no `allowedTools`. `codex-cli` batch runs
+are not checked this way. A batch `claude-cli` trace records no token counts,
+because Seihou reads Claude's output itself to see the refusals.
+
 Blueprint `allowedTools` entries are added to the base runner tools with
 duplicates removed. Claude Code receives the effective list through
 `--allowedTools`. Codex continues to use its workspace-write sandbox and

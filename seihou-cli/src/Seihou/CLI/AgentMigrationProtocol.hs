@@ -3,7 +3,7 @@
 -- Two contracts live here. 'validateMigrationOutput' is the strict migration
 -- contract (ADR 0019): unknown fields are compatible, but corrupt or incomplete
 -- evidence is not. 'validateBatchRunOutput' is the narrower contract for an
--- ordinary batch blueprint run (ADR 0025): it keeps the old acceptance rules and
+-- ordinary batch blueprint run (ADR 0026): it keeps the old acceptance rules and
 -- adds only a failure on reported tool refusals.
 module Seihou.CLI.AgentMigrationProtocol
   ( validateMigrationOutput,

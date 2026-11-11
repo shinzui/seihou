@@ -8,9 +8,12 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-11-10T22:29:39Z"
-timestamp: 2026-11-11T13:55:57Z
+timestamp: 2026-11-11T15:30:00Z
 requestId: IR-18
-status: accepted
+status: completed
+completedAt: "2026-11-11T15:30:00Z"
+resolution: >-
+  A batch seihou agent run on claude-cli now exits 1 when Claude reports any refused tool call, names each refused tool with its command or file path, and records no applied blueprint; seihou validate-blueprint warns, without failing, about a blueprint that declares no allowedTools.
 targetPlan: docs/plans/122-fail-a-batch-blueprint-run-whose-agent-was-refused-tools.md
 origin: mori://shinzui/kotei-docs
 reviews:
@@ -27,22 +30,40 @@ reviews:
       Author check against the Seihou source at fcaa6f4 and two real batch runs on Seihou
       0.15.0.0. The cause of the missed denials is not established. Not an independent
       approval.
+  - kind: model
+    reviewer: claude-code/claude-opus-5-5
+    reviewed_at: "2026-11-11T15:30:00Z"
+    document_timestamp: "2026-11-11T15:30:00Z"
+    scope: content-and-metadata
+    outcome: approved
+    context: Completion self-review against the implemented source, end-to-end tests and the linked plan; not an independent review.
+    provider: anthropic
+    model: claude-opus-5-5
+    effort: unspecified
 ---
 
 # Improvement Request: Fail a Batch Blueprint Run Whose Agent Was Refused Tools
 
 ## Status
 
-Accepted. Raised from `FRIC-5`
-(`mori://shinzui/kotei-docs/okf/friction-log/concepts/FRIC-5`) against Seihou 0.15.0.0.
-Planned on 2026-11-11 in
+Completed 2026-11-11 by
 [ExecPlan 122](../plans/122-fail-a-batch-blueprint-run-whose-agent-was-refused-tools.md).
-The plan detects refusals in a batch `agent run` with a Seihou-side adapter, like the one
-`agent migrate` uses, that reads Claude's `permission_denials`. It also adds the
-`validate-blueprint` warning. It answers the design question below by failing a run on every
-reported refusal, guard refusals included, after a first milestone confirms that real Claude
-Code reports them. It leaves the optional early stop and Codex batch runs out of scope.
-Implementation has not started.
+The decision is recorded in
+[ADR 0026](../adr/0026-a-batch-blueprint-run-fails-on-reported-tool-refusals.md). Raised
+from `FRIC-5` (`mori://shinzui/kotei-docs/okf/friction-log/concepts/FRIC-5`) against
+Seihou 0.15.0.0.
+
+The cause was as suspected. Baikai's Claude CLI provider drops `permission_denials`. A
+probe of Claude Code 2.1.322 confirmed that allow-list refusals and both guard refusals
+(a write inside `.git/`, a shell redirection) appear in that array. A batch `agent run`
+on `claude-cli` now goes through a Seihou-side adapter that reads it. Any reported
+refusal makes the run exit 1, listing each tool with its command or file path, and no
+applied blueprint is recorded. This answers the design question below: every refusal
+fails the run, including guard refusals and refusals caused by the user's own Claude Code
+hooks. `seihou validate-blueprint` warns about a blueprint without `allowedTools` and
+still exits 0. A fake-provider case in `AgentMigrateE2ESpec` covers `agent run --batch`.
+The optional early stop (request 3) and Codex batch runs are out of scope. A batch
+`claude-cli` trace no longer records token counts. Unreleased.
 
 ## Context
 

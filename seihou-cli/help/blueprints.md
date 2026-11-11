@@ -113,6 +113,12 @@ ALLOWED TOOLS
   its workspace-write sandbox and on-request approval policy because it has no
   equivalent per-tool allow-list option.
 
+  Without allowedTools, a blueprint gets only the base set. A batch run
+  (--batch, or stdin that is not a terminal) cannot approve anything else:
+  Claude refuses it, and `seihou agent run` exits 1 naming each refused
+  command. `seihou validate-blueprint` warns about a blueprint that declares
+  no allowedTools, without failing.
+
 LIBRARY UPGRADE MIGRATIONS
 
   A blueprint migration describes one forward dotted-numeric version edge:

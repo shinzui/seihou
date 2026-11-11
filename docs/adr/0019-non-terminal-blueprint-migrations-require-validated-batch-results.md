@@ -44,5 +44,7 @@ semantic refusals in prose cannot be detected reliably. Per [ADR 0011](0011-a-mi
 not prove the project passes its checks. [ADR 0007](0007-a-deliberate-no-op-is-a-third-outcome-not-a-success.md)
 and [ADR 0008](0008-an-entailed-migration-edge-is-owned-by-the-blueprint-that-declares-it.md)
 continue to govern outcomes and edge ownership.
+[ADR 0026](0026-a-batch-blueprint-run-fails-on-reported-tool-refusals.md)
+extends the denial rule, and only that rule, to batch `agent run`.
 
 Implementation: [plan 111](../plans/111-run-blueprint-migrations-without-an-interactive-terminal.md).

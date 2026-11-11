@@ -263,7 +263,7 @@ runAgentCompletion = runAgentCompletionWith registerAgentProviders
 -- A @claude-cli@ request goes through a Seihou-side adapter rather than
 -- Baikai's stock provider, because Baikai drops Claude's
 -- @permission_denials@. The adapter fails the run when Claude reports any
--- refused tool call, naming each one ('validateBatchRunOutput', ADR 0025): an
+-- refused tool call, naming each one ('validateBatchRunOutput', ADR 0026): an
 -- unattended run cannot approve tools, so a refusal is work the blueprint
 -- expected and did not get. Its response carries zero usage, so a trace of
 -- such a run has no token counts. Other providers are unchanged.

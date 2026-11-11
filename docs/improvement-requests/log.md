@@ -2,6 +2,9 @@
 
 ## 2026-11-11
 
+* **Completed**: IR-18: ExecPlan 122 makes a batch seihou agent run on claude-cli exit 1 when Claude reports any refused tool call, naming each tool with its command or file path and recording no applied blueprint; every refusal counts, including .git/ and shell-redirection guards and the user's own hooks. A Claude Code 2.1.322 probe confirmed those refusals appear in permission_denials, which Baikai drops. seihou validate-blueprint warns, without failing, about a blueprint without allowedTools. ADR 0026 records the rule. The early stop and Codex batch runs are out of scope; unreleased.
+
+
 * **Completed**: IR-17: ExecPlan 121 makes seihou upgrade refresh installed blueprints and prompts from their recorded sources, each blueprint with its baseModules closure by content comparison; ADR 0006 refusals and unprovenanced named entries are failed rows that leave the cache untouched, and the command exits 1 on any failed row. seihou outdated lists blueprints and prompts. ADR 0006 amended. Verified end to end, including seihou agent --debug run showing the refreshed version; unreleased.
 
 
