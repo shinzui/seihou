@@ -25,7 +25,7 @@ import Seihou.CLI.InstallShared
     writeOriginMeta,
   )
 import Seihou.CLI.Update.Types
-import Seihou.Core.ArtifactIdentity (normalizeOriginUrl)
+import Seihou.Core.ArtifactIdentity (repositoryOriginKey, sameRepositoryOrigin)
 import Seihou.Core.ArtifactRef (ArtifactRefError, resolveArtifactOrigin)
 import Seihou.Core.Module (defaultSearchPaths, validateModule)
 import Seihou.Core.Recipe (validateRecipe)
@@ -70,7 +70,7 @@ stageFlatCandidateSources sessionRoot projectRoot installedDirectory selected = 
   requirements <- requirementsFor projectRoot installedDirectory selected
   let remoteOrigins =
         Map.fromList
-          [ (normalizeOriginUrl (origin ^. #sourceUrl), origin)
+          [ (repositoryOriginKey (origin ^. #sourceUrl), origin)
           | requirement <- requirements,
             Just origin <- [requirement ^. #origin]
           ]
@@ -376,7 +376,7 @@ verifyRemoteRequirements requirements artifacts = traverse_ verify requirements
       Just candidate -> case requirement ^. #origin of
         Nothing -> Right ()
         Just origin
-          | fmap normalizeOriginUrl (candidate ^. #sourceUrl) == Just (normalizeOriginUrl (origin ^. #sourceUrl)) -> Right ()
+          | maybe False (sameRepositoryOrigin (origin ^. #sourceUrl)) (candidate ^. #sourceUrl) -> Right ()
           | otherwise -> Left (CandidateArtifactMissing (requirement ^. #kind) (requirement ^. #name))
 
 gitRevision :: FilePath -> IO (Maybe Text)
@@ -448,7 +448,7 @@ stageRecipeCandidateSources session projectRoot installed applications = runExce
         pure (ArtifactRequirement kind name resolved (fmap (\url -> OriginInfo url Nothing Nothing) source))
   mapM_ visit roots
   remoteRequirements <- liftIO (readIORef remotes)
-  let grouped = Map.elems (Map.fromListWith (\(origin, xs) (_, ys) -> (origin, xs <> ys)) [(normalizeOriginUrl (origin ^. #sourceUrl), (origin, [requirement])) | requirement <- remoteRequirements, Just origin <- [requirement ^. #origin]])
+  let grouped = Map.elems (Map.fromListWith (\(origin, xs) (_, ys) -> (origin, xs <> ys)) [(repositoryOriginKey (origin ^. #sourceUrl), (origin, [requirement])) | requirement <- remoteRequirements, Just origin <- [requirement ^. #origin]])
   groups <- forM (zip [0 :: Int ..] grouped) $ \(index, (origin, requirements)) -> do
     let url = origin ^. #sourceUrl
         clone = clones </> show index

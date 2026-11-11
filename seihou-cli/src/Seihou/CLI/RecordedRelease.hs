@@ -153,6 +153,9 @@ locateRecordedRelease session url name definitionFile version = do
 -- the session that names the same origin.
 cloneForHistory :: FilePath -> Text -> IO (Either RecordedReleaseError FilePath)
 cloneForHistory session url = do
+  -- A connection cache, not an identity verdict: the key is deliberately
+  -- transport-specific, so a clone made over one transport never stands in for
+  -- another whose access might fail.
   let key = T.take 16 (hashContent (normalizeOriginUrl url) ^. #unSHA256)
       clone = releasesRoot session </> T.unpack ("clone-" <> key)
   existing <- doesDirectoryExist clone

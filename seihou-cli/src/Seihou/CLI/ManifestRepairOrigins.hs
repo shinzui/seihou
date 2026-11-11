@@ -56,7 +56,6 @@ import Control.Monad (unless, when)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types (parseMaybe, (.:))
 import Data.ByteString.Lazy qualified as LBS
-import Data.Char (isDigit, toLower)
 import Data.Generics.Labels ()
 import Data.List (nub, nubBy)
 import Data.Map.Strict qualified as Map
@@ -65,7 +64,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.ApplicationDisplay (appliedModuleLabel, appliedTargetName, moduleNameText)
 import Seihou.CLI.InstallShared (expandLocalPath)
-import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl, normalizeOriginUrl)
+import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl, normalizeOriginUrl, sameRepositoryOrigin)
 import Seihou.Core.ArtifactOriginDetect (readOriginInfo)
 import Seihou.Core.ArtifactRef (resolveArtifactOrigin)
 import Seihou.Core.Module (defaultSearchPaths)
@@ -281,10 +280,11 @@ validateOverrides sites overrides =
 --
 -- An override for any artifact recorded under the path wins over evidence.
 -- Otherwise the evidence must agree on one repository ('sameRepository', so
--- an @ssh@ checkout remote and an @https@ install of the same repository
--- agree). The URL written is the installed copy's spelling when there is one,
--- because that is what the guard compares the manifest against on this
--- machine; otherwise the checkout remote's.
+-- an @ssh@ checkout remote and an @https@ install of the same public GitHub
+-- repository agree). The URL written is the installed copy's spelling when
+-- there is one — the guard accepts either equivalent spelling, but the
+-- installed one is what this machine fetched from; otherwise the checkout
+-- remote's.
 planRepair :: Map Text [OriginSite] -> Map Text [OriginEvidence] -> [(Text, Text)] -> [RepairDecision]
 planRepair sites evidence overrides =
   [ decide key siteList
@@ -375,37 +375,11 @@ overManifestOrigins f manifest =
     . #origin
     %~ f
 
--- | Whether two git URLs name the same repository regardless of transport:
--- @git\@github.com:o\/r.git@, @ssh:\/\/git\@github.com\/o\/r@ and
--- @https:\/\/github.com\/o\/r.git@ all agree.
+-- | Whether two git URLs name the same repository. Repair evidence uses the
+-- shared 'sameRepositoryOrigin' contract: public GitHub transports agree,
+-- while other servers keep their users, ports and path forms distinct.
 sameRepository :: Text -> Text -> Bool
-sameRepository left right = repositoryKey left == repositoryKey right
-
-repositoryKey :: Text -> Text
-repositoryKey raw =
-  let url = normalizeOriginUrl raw
-      (schemeless, hadScheme) = case T.breakOn "://" url of
-        (_, rest) | not (T.null rest) -> (T.drop 3 rest, True)
-        _ -> (url, False)
-      withoutUser = case T.breakOn "@" schemeless of
-        (_, rest)
-          | not (T.null rest),
-            not (T.isInfixOf "/" (T.takeWhile (/= '@') schemeless)) ->
-              T.drop 1 rest
-        _ -> schemeless
-      (host, path) =
-        if hadScheme
-          then T.breakOn "/" withoutUser
-          else case T.breakOn ":" withoutUser of
-            (h, rest)
-              | not (T.null rest),
-                not (T.isInfixOf "/" h) ->
-                  (h, "/" <> T.drop 1 rest)
-            _ -> T.breakOn "/" withoutUser
-      hostWithoutPort = case T.breakOn ":" host of
-        (h, port) | not (T.null port), T.all isDigit (T.drop 1 port) -> h
-        _ -> host
-   in T.map toLower hostWithoutPort <> "/" <> T.dropWhile (== '/') path
+sameRepository = sameRepositoryOrigin
 
 -- ----------------------------------------------------------------------------
 -- IO shell

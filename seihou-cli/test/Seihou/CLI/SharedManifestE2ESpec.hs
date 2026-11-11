@@ -19,12 +19,14 @@ import Seihou.CLI.TwoDeveloperFixture
     gitCommitAll,
     gitStatus,
     installModuleVersion,
+    installModuleVersionFrom,
     moduleSourceUrl,
     prepareTwoDeveloperFixture,
     resetWorkingTree,
     runSeihouAs,
     seihouBinary,
   )
+import System.Directory (doesFileExist, removeDirectoryRecursive)
 import System.Exit (ExitCode (..))
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
@@ -119,6 +121,96 @@ spec = do
 
       (afterCode, afterOut, afterErr) <- runSeihouAs binary fixture (fixture ^. #homeB) ["status"]
       expectSuccess "status after the upgrade" afterCode afterOut afterErr
+
+  describe "equivalent public GitHub transport spellings" $ do
+    it "status accepts an SSH-recorded manifest against an HTTPS install without writing" $
+      withTransportProject "seihou-shared-ssh-https" githubSsh githubHttps $ \binary fixture -> do
+        out <- statusWithoutWrites binary fixture
+        out `shouldNotSatisfy` T.isInfixOf "Artifacts that differ"
+        out `shouldNotSatisfy` T.isInfixOf "this project records"
+
+    it "status accepts an HTTPS-recorded manifest against an SSH install without writing" $
+      withTransportProject "seihou-shared-https-ssh" githubHttps githubSsh $ \binary fixture -> do
+        out <- statusWithoutWrites binary fixture
+        out `shouldNotSatisfy` T.isInfixOf "Artifacts that differ"
+
+    it "status still reports a genuinely different repository" $
+      withTransportProject "seihou-shared-other-repo" githubSsh "https://github.com/shinzui/other-modules.git" $ \binary fixture -> do
+        out <- statusWithoutWrites binary fixture
+        out `shouldSatisfy` T.isInfixOf "Artifacts that differ"
+        out `shouldSatisfy` T.isInfixOf "this project records"
+        out `shouldSatisfy` T.isInfixOf "other-modules"
+
+    it "status still reports a different owner" $
+      withTransportProject "seihou-shared-other-owner" githubSsh "https://github.com/someone/seihou-modules.git" $ \binary fixture -> do
+        out <- statusWithoutWrites binary fixture
+        out `shouldSatisfy` T.isInfixOf "this project records"
+
+    it "status keeps the missing-producer notice when nothing is installed" $
+      withTransportProject "seihou-shared-empty-cache" githubSsh githubHttps $ \binary fixture -> do
+        removeDirectoryRecursive (fixture ^. #homeB </> "seihou" </> "installed" </> "demo")
+        out <- statusWithoutWrites binary fixture
+        out `shouldSatisfy` T.isInfixOf "Remote producer cache: 1 not cached locally"
+        out `shouldNotSatisfy` T.isInfixOf "Artifacts that differ"
+
+    it "run still refuses an older version from an equivalent spelling" $
+      withSystemTempDirectory "seihou-shared-ssh-stale" $ \root -> do
+        fixture <- prepareTwoDeveloperFixture root "2.0.0" "1.4.0"
+        installModuleVersionFrom githubSsh (fixture ^. #homeA) "demo" "2.0.0"
+        installModuleVersionFrom githubHttps (fixture ^. #homeB) "demo" "1.4.0"
+        binary <- seihouBinary
+        (code, out, err) <- runSeihouAs binary fixture (fixture ^. #homeA) ["run", "demo"]
+        expectSuccess "developer A's run" code out err
+        gitCommitAll fixture "feat: apply demo 2.0.0 over SSH"
+        (staleCode, staleOut, staleErr) <- runSeihouAs binary fixture (fixture ^. #homeB) ["run", "demo"]
+        staleCode `shouldSatisfy` (/= ExitSuccess)
+        (staleOut <> staleErr) `shouldSatisfy` T.isInfixOf "1.4.0"
+        gitStatus fixture `shouldReturn` ""
+
+githubSsh :: Text
+githubSsh = "git@github.com:shinzui/seihou-modules.git"
+
+githubHttps :: Text
+githubHttps = "https://github.com/shinzui/seihou-modules.git"
+
+-- | Models existing state rather than repairing it: developer A installed
+-- @demo@ 2.0.0 recording @recordedUrl@ and generated the project with it;
+-- developer B has the same version installed recording @installedUrl@.
+withTransportProject :: String -> Text -> Text -> (FilePath -> TwoDeveloperFixture -> IO ()) -> IO ()
+withTransportProject label recordedUrl installedUrl action =
+  withSystemTempDirectory label $ \root -> do
+    fixture <- prepareTwoDeveloperFixture root "2.0.0" "2.0.0"
+    installModuleVersionFrom recordedUrl (fixture ^. #homeA) "demo" "2.0.0"
+    installModuleVersionFrom installedUrl (fixture ^. #homeB) "demo" "2.0.0"
+    binary <- seihouBinary
+    (code, out, err) <- runSeihouAs binary fixture (fixture ^. #homeA) ["run", "demo"]
+    expectSuccess "developer A's run" code out err
+    manifest <- TIO.readFile (fixture ^. #manifestPath)
+    manifest `shouldSatisfy` T.isInfixOf recordedUrl
+    gitCommitAll fixture "feat: apply demo 2.0.0"
+    action binary fixture
+
+-- | Run developer B's ordinary @seihou status@ twice and prove it wrote
+-- nothing: the project is clean and the manifest and installed metadata keep
+-- their bytes. Returns the first run's combined output.
+statusWithoutWrites :: FilePath -> TwoDeveloperFixture -> IO Text
+statusWithoutWrites binary fixture = do
+  let originFile = fixture ^. #homeB </> "seihou" </> "installed" </> "demo" </> ".seihou-origin.json"
+  manifestBefore <- LBS.readFile (fixture ^. #manifestPath)
+  originBefore <- readIfPresent originFile
+  (code, out, err) <- runSeihouAs binary fixture (fixture ^. #homeB) ["status"]
+  expectSuccess "developer B's status" code out err
+  (againCode, againOut, againErr) <- runSeihouAs binary fixture (fixture ^. #homeB) ["status"]
+  expectSuccess "developer B's repeated status" againCode againOut againErr
+  againOut `shouldBe` out
+  gitStatus fixture `shouldReturn` ""
+  LBS.readFile (fixture ^. #manifestPath) `shouldReturn` manifestBefore
+  readIfPresent originFile `shouldReturn` originBefore
+  pure (out <> err)
+  where
+    readIfPresent path = do
+      present <- doesFileExist path
+      if present then Just <$> LBS.readFile path else pure Nothing
 
 -- | Developer A, on 2.0.0, generates the project and commits. Developer B has
 -- 1.4.0 installed. Every scenario starts here.

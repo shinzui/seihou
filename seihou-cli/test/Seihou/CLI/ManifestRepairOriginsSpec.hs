@@ -192,6 +192,14 @@ spec = do
       sameRepository "ssh://git@github.com:22/shinzui/seihou-modules" remoteUrl `shouldBe` True
     it "tells different repositories apart" $
       sameRepository "https://github.com/shinzui/other.git" remoteUrl `shouldBe` False
+    it "keeps users, ports and scp paths distinct outside documented GitHub mappings" $ do
+      sameRepository "ssh://alice@git.example:2222/team/repo" "https://git.example/team/repo" `shouldBe` False
+      sameRepository "ssh://alice@git.example/team/repo" "ssh://bob@git.example/team/repo" `shouldBe` False
+      sameRepository "ssh://git@git.example:2222/team/repo" "ssh://git@git.example:2223/team/repo" `shouldBe` False
+      sameRepository "git@git.example:team/repo" "ssh://git@git.example/team/repo" `shouldBe` False
+      sameRepository "git@github.com:shinzui/seihou-modules.git" "ssh://git@github.com:2222/shinzui/seihou-modules" `shouldBe` False
+    it "agrees with the core comparator the guard uses" $
+      sameRepository "ssh://git@ssh.github.com:443/shinzui/seihou-modules.git" remoteUrl `shouldBe` True
 
   describe "gatherOriginEvidence" $
     it "reads the origin remote of a recorded path that is a checkout here" $

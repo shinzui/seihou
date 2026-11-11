@@ -48,7 +48,7 @@ import Data.Ord (comparing)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl, normalizeOriginUrl, normalizeProjectPath, sameArtifactIdentity)
+import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl, normalizeProjectPath, sameArtifactIdentity, sameRepositoryOrigin)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef
   ( ArtifactRefError,
@@ -174,7 +174,7 @@ judgeVersion recorded local = Just (ArtifactVersionIncomparable recorded local)
 originRelation :: ArtifactOrigin -> ArtifactOrigin -> OriginRelation
 originRelation recorded local = case (recorded, local) of
   (RemoteOrigin recordedUrl _ _, RemoteOrigin localUrl _ _)
-    | normalizeOriginUrl recordedUrl == normalizeOriginUrl localUrl -> OriginMatches
+    | sameRepositoryOrigin recordedUrl localUrl -> OriginMatches
     | otherwise -> OriginDiffers
   (RemoteOrigin {}, _) -> OriginUnverifiable
   (ProjectOrigin recordedPath, ProjectOrigin localPath)

@@ -31,6 +31,12 @@ demoUrl = "https://example.com/demo-modules.git"
 otherUrl :: Text
 otherUrl = "https://example.com/other-modules.git"
 
+githubSsh :: Text
+githubSsh = "git@github.com:shinzui/seihou-modules.git"
+
+githubHttps :: Text
+githubHttps = "https://github.com/shinzui/seihou-modules.git"
+
 remote :: Text -> ArtifactOrigin
 remote url = RemoteOrigin url "demo" (Just "demo-modules")
 
@@ -117,6 +123,25 @@ spec = do
         (remote "https://example.com/demo-modules/")
         (Just "2.0.0")
         `shouldBe` ArtifactOk
+
+    it "treats public GitHub SSH and HTTPS spellings as the same repository, both ways" $ do
+      judgeArtifact (remote githubSsh) (Just "0.2.0") (remote githubHttps) (Just "0.2.0") `shouldBe` ArtifactOk
+      judgeArtifact (remote githubHttps) (Just "0.2.0") (remote githubSsh) (Just "0.2.0") `shouldBe` ArtifactOk
+      judgeArtifact (remote "ssh://git@ssh.github.com:443/shinzui/seihou-modules") (Just "0.2.0") (remote githubHttps) (Just "0.2.0") `shouldBe` ArtifactOk
+
+    it "still refuses an older version from an equivalent spelling" $
+      judgeArtifact (remote githubSsh) (Just "2.0.0") (remote githubHttps) (Just "1.4.0")
+        `shouldBe` ArtifactStale "2.0.0" "1.4.0"
+
+    it "reports a different GitHub owner or repository as a mismatch" $ do
+      judgeArtifact (remote githubSsh) (Just "0.2.0") (remote "https://github.com/someone/seihou-modules.git") (Just "0.2.0")
+        `shouldBe` ArtifactOriginMismatch (remote githubSsh) (remote "https://github.com/someone/seihou-modules.git")
+      judgeArtifact (remote githubSsh) (Just "0.2.0") (remote "https://github.com/shinzui/other.git") (Just "0.2.0")
+        `shouldBe` ArtifactOriginMismatch (remote githubSsh) (remote "https://github.com/shinzui/other.git")
+
+    it "keeps transports distinct on other servers" $
+      judgeArtifact (remote "git@git.example:team/demo.git") (Just "2.0.0") (remote "https://git.example/team/demo.git") (Just "2.0.0")
+        `shouldBe` ArtifactOriginMismatch (remote "git@git.example:team/demo.git") (remote "https://git.example/team/demo.git")
 
     it "reports a recorded LocalOrigin as unverifiable when versions agree" $
       judgeArtifact (LocalOrigin "demo") (Just "2.0.0") (LocalOrigin "demo") (Just "2.0.0")

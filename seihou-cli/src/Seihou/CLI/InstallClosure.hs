@@ -14,7 +14,7 @@ import Seihou.CLI.InstallShared
 import Seihou.CLI.ValidateRecipeReport (recipeLoadErrorText)
 import Seihou.Composition.RecipeChain (loadRecipeChain)
 import Seihou.Core.AgentPrompt (validateAgentPrompt)
-import Seihou.Core.ArtifactIdentity (normalizeOriginUrl)
+import Seihou.Core.ArtifactIdentity (repositoryOriginKey)
 import Seihou.Core.Blueprint (validateBlueprintForInstall)
 import Seihou.Core.Module (validateModule)
 import Seihou.Core.Recipe (validateRecipe, validateRecipeVersion)
@@ -84,13 +84,16 @@ stageClosuresInto report cache force groups = withSystemTempDirectory "seihou-cl
   rootRepos <- forM groups $ \(rootDir, recorded, roots) -> do
     contents <- readContents rootDir
     pure (Repo rootDir recorded contents, roots)
-  repos <- newIORef (Map.fromList [(normalizeOriginUrl recorded, repo) | (repo@(Repo _ recorded _), _) <- rootRepos])
+  -- Repositories and dependency sources are keyed by repository identity, so
+  -- equivalent public GitHub spellings share one clone and never read as
+  -- conflicting sources for one artifact.
+  repos <- newIORef (Map.fromList [(repositoryOriginKey recorded, repo) | (repo@(Repo _ recorded _), _) <- rootRepos])
   nodes <- newIORef Map.empty
   ordered <- newIORef []
   let failWith = throwIO . userError . T.unpack
       getRepo source = do
         known <- readIORef repos
-        case Map.lookup (normalizeOriginUrl source) known of
+        case Map.lookup (repositoryOriginKey source) known of
           Just repo -> pure repo
           Nothing -> do
             let dir = tmp </> ("repo-" ++ show (Map.size known))
@@ -98,23 +101,23 @@ stageClosuresInto report cache force groups = withSystemTempDirectory "seihou-cl
             origin <- recordedSourceUrl <$> resolveRecordedSource source
             discovered <- readContents dir
             let repo = Repo dir origin discovered
-            modifyIORef' repos (Map.insert (normalizeOriginUrl source) repo . Map.insert (normalizeOriginUrl origin) repo)
+            modifyIORef' repos (Map.insert (repositoryOriginKey source) repo . Map.insert (repositoryOriginKey origin) repo)
             pure repo
       visit active chain repo@(Repo repoDir origin _) name dir expectedArtifact = do
-        let key = (normalizeOriginUrl origin, name)
+        let key = (repositoryOriginKey origin, name)
             context = chain <> name <> " [" <> origin <> "]"
         unless (safeName name) $ failWith (context <> ": unsafe install name")
         when (key `elem` active) $ failWith (context <> ": dependency cycle")
         known <- readIORef nodes
         case Map.lookup name known of
-          Just (other, _) | other /= fst key -> failWith (context <> ": conflicting sources for " <> name <> "; also required from " <> other)
+          Just (otherKey, other, _) | otherKey /= fst key -> failWith (context <> ": conflicting sources for " <> name <> "; also required from " <> other)
           _ -> pure ()
         checkTree repoDir dir
         (file, deps, version) <- inspect dir expectedArtifact `withContext` context
         case Map.lookup name known of
           Just _ -> pure ()
           Nothing -> do
-            modifyIORef' nodes (Map.insert name (fst key, context))
+            modifyIORef' nodes (Map.insert name (fst key, origin, context))
             -- Evaluate every declaration independently of generation bindings.
             forM_ deps $ \(Requirement depName source expected) -> do
               depRepo <- case source of

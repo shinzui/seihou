@@ -76,6 +76,18 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
       pendingBlueprintMigrations False owners receipts migrationPlan
         `shouldBe` [second]
 
+    -- Switching a public GitHub install between SSH and HTTPS does not rerun
+    -- an edge recorded under the other transport.
+    it "treats public GitHub SSH and HTTPS as the same origin, both ways" $ do
+      let migrationPlan = plan [first, second]
+          sshReceipts = [receipt (RemoteOrigin "git@github.com:acme/one.git" "payments" Nothing) blueprintName "1.0.0" "2.0.0"]
+          sshOwners = ownersFrom [("payments", (blueprintName, RemoteOrigin "git@github.com:acme/one.git" "payments" Nothing))]
+          httpsReceipts = [receipt blueprintOrigin blueprintName "1.0.0" "2.0.0"]
+      pendingBlueprintMigrations False owners sshReceipts migrationPlan `shouldBe` [second]
+      pendingBlueprintMigrations False sshOwners httpsReceipts migrationPlan `shouldBe` [second]
+      pendingBlueprintMigrations False owners [receipt (RemoteOrigin "git@github.com:acme/two.git" "payments" Nothing) blueprintName "1.0.0" "2.0.0"] migrationPlan
+        `shouldBe` [first, second]
+
     -- Receipts written before origins were recorded decode as LocalOrigin.
     -- They match each other, and they match nothing installed from a URL.
     it "matches a legacy receipt only against an equally unprovenanced blueprint" $ do

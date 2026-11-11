@@ -27,7 +27,7 @@ import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.Composition.Graph (buildGraph, topoSort)
 import Seihou.Composition.Instance (ModuleInstance (..), mkInstance, primaryInstance)
-import Seihou.Core.ArtifactIdentity (normalizeOriginUrl)
+import Seihou.Core.ArtifactIdentity (sameRepositoryOrigin)
 import Seihou.Core.ArtifactOriginDetect (OriginInfo (..), readOriginInfo)
 import Seihou.Core.Module (discoverModule, validateModule)
 import Seihou.Core.Types
@@ -593,7 +593,7 @@ verifyDependencySources paths _declaringDir deps = runExceptT $ do
         let name = dep ^. #module_
         dir <- ExceptT (discoverModule paths name)
         actual <- liftIO (readOriginInfo dir)
-        unless (maybe False (\info -> normalizeOriginUrl (info ^. #sourceUrl) == normalizeOriginUrl required) actual) $
+        unless (maybe False (\info -> sameRepositoryOrigin (info ^. #sourceUrl) required) actual) $
           ExceptT $
             pure $
               Left $

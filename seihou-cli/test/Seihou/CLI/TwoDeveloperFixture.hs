@@ -11,6 +11,7 @@ module Seihou.CLI.TwoDeveloperFixture
   ( TwoDeveloperFixture (..),
     prepareTwoDeveloperFixture,
     installModuleVersion,
+    installModuleVersionFrom,
     moduleSourceUrl,
     seihouBinary,
     runSeihouAs,
@@ -84,7 +85,12 @@ prepareTwoDeveloperFixture root versionA versionB = do
 -- the module directory, its template files, and the @.seihou-origin.json@
 -- recording where it came from.
 installModuleVersion :: FilePath -> Text -> Text -> IO ()
-installModuleVersion home name version = do
+installModuleVersion = installModuleVersionFrom moduleSourceUrl
+
+-- | 'installModuleVersion' with an explicit recorded source URL, for
+-- scenarios whose installed copies record a different spelling or repository.
+installModuleVersionFrom :: Text -> FilePath -> Text -> Text -> IO ()
+installModuleVersionFrom sourceUrl home name version = do
   let installed = home </> "seihou" </> "installed" </> T.unpack name
   createDirectoryIfMissing True (installed </> "files")
   TIO.writeFile (installed </> "module.dhall") (moduleDhall name version)
@@ -92,7 +98,7 @@ installModuleVersion home name version = do
   TIO.writeFile
     (installed </> ".seihou-origin.json")
     ( "{\"sourceUrl\":\""
-        <> moduleSourceUrl
+        <> sourceUrl
         <> "\",\"repoName\":\"demo-modules\",\"version\":\""
         <> version
         <> "\",\"installedAt\":\"2026-07-01T00:00:00Z\",\"tags\":[]}"

@@ -84,6 +84,23 @@ spec = do
         collision <- classifyInstallCollision installed repoOne
         collision `shouldBe` SameSource Nothing
 
+    -- Public GitHub SSH and HTTPS are two transports for one repository, so
+    -- reinstalling over the other one needs no --force.
+    it "treats public GitHub SSH and HTTPS spellings as the same source, in both directions" $
+      withSystemTempDirectory "seihou-collision" $ \dir -> do
+        let installed = dir </> "git-init"
+        seedInstalled installed (Just "https://github.com/shinzui/seihou-modules.git") (Just "0.2.0")
+        classifyInstallCollision installed "git@github.com:shinzui/seihou-modules.git" `shouldReturn` SameSource (Just "0.2.0")
+        seedInstalled installed (Just "git@github.com:shinzui/seihou-modules.git") (Just "0.2.0")
+        classifyInstallCollision installed "https://github.com/shinzui/seihou-modules" `shouldReturn` SameSource (Just "0.2.0")
+
+    it "keeps other servers' transports and users distinct" $
+      withSystemTempDirectory "seihou-collision" $ \dir -> do
+        let installed = dir </> "shared-thing"
+        seedInstalled installed (Just "ssh://alice@git.example:2222/acme/one") Nothing
+        classifyInstallCollision installed "https://git.example/acme/one" `shouldReturn` DifferentSource "ssh://alice@git.example:2222/acme/one"
+        classifyInstallCollision installed "ssh://bob@git.example:2222/acme/one" `shouldReturn` DifferentSource "ssh://alice@git.example:2222/acme/one"
+
     it "classifies a different source URL as DifferentSource, carrying the recorded URL" $
       withSystemTempDirectory "seihou-collision" $ \dir -> do
         let installed = dir </> "shared-thing"
@@ -145,6 +162,27 @@ spec = do
         doesFileExist (root </> "shared-thing" </> "incoming.txt") `shouldReturn` False
         recorded <- readOriginInfo (root </> "shared-thing")
         fmap (^. #sourceUrl) recorded `shouldBe` Just repoOne
+
+    it "replaces an equivalent GitHub transport without force" $
+      withSystemTempDirectory "seihou-collision" $ \dir -> do
+        let root = dir </> "installed"
+            incoming = dir </> "incoming"
+        seedInstalled (root </> "git-init") (Just "git@github.com:shinzui/seihou-modules.git") Nothing
+        seedIncoming incoming
+        outcome <- installModuleDirInto root False incoming "git-init" "https://github.com/shinzui/seihou-modules.git" Nothing Nothing []
+        outcome `shouldBe` InstallPerformed
+        doesFileExist (root </> "git-init" </> "incoming.txt") `shouldReturn` True
+
+    it "refuses a different GitHub owner before touching the installation" $
+      withSystemTempDirectory "seihou-collision" $ \dir -> do
+        let root = dir </> "installed"
+            incoming = dir </> "incoming"
+        seedInstalled (root </> "git-init") (Just "git@github.com:shinzui/seihou-modules.git") Nothing
+        seedIncoming incoming
+        outcome <- installModuleDirInto root False incoming "git-init" "https://github.com/someone/seihou-modules.git" Nothing Nothing []
+        outcome `shouldBe` InstallRefused (DifferentSource "git@github.com:shinzui/seihou-modules.git")
+        readFile (root </> "git-init" </> "marker.txt") `shouldReturn` "the copy that was already here"
+        doesFileExist (root </> "git-init" </> "incoming.txt") `shouldReturn` False
 
     it "refuses an installation with no provenance and leaves it untouched" $
       withSystemTempDirectory "seihou-collision" $ \dir -> do

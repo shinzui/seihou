@@ -38,7 +38,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time (getCurrentTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
-import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl, normalizeOriginUrl)
+import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl, sameRepositoryOrigin)
 import Seihou.Core.ArtifactOriginDetect (OriginInfo (..), readOriginInfo)
 import Seihou.Prelude
 import System.Directory
@@ -138,9 +138,10 @@ data InstallOutcome
 -- | Classify what is already installed at @installDir@ against the source URL
 -- an install is about to write there.
 --
--- URLs are compared through 'normalizeOriginUrl', so a user who typed
--- @https:\/\/host\/repo.git@ last week and @https:\/\/host\/repo@ today is not
--- told they have a different artifact. That is the same normalisation the
+-- URLs are compared through 'sameRepositoryOrigin', so a user who typed
+-- @https:\/\/host\/repo.git@ last week and @https:\/\/host\/repo@ today, or
+-- who installed a public GitHub repository over SSH and then over HTTPS, is
+-- not told they have a different artifact. That is the same comparison the
 -- manifest guard and the migration receipt ledger use; sharing it is what
 -- keeps a refusal here consistent with a mismatch reported there.
 classifyInstallCollision :: FilePath -> Text -> IO InstallCollision
@@ -153,7 +154,7 @@ classifyInstallCollision installDir incomingUrl = do
       pure $ case recorded of
         Nothing -> UnknownSource
         Just info
-          | normalizeOriginUrl (info ^. #sourceUrl) == normalizeOriginUrl incomingUrl ->
+          | sameRepositoryOrigin (info ^. #sourceUrl) incomingUrl ->
               SameSource (info ^. #version)
           | otherwise -> DifferentSource (info ^. #sourceUrl)
 

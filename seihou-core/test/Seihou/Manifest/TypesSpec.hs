@@ -744,6 +744,22 @@ spec = do
         manifest2
         `shouldBe` False
 
+    -- A receipt recorded while the blueprint was installed over SSH is the
+    -- same edge once it is installed over HTTPS, and the other way round:
+    -- completed work stays done and no second receipt is appended.
+    it "treats equivalent public GitHub transports as one receipt identity, both ways" $ do
+      let ssh = RemoteOrigin "git@github.com:acme/payments.git" "payments" Nothing
+          https = RemoteOrigin "https://github.com/acme/payments.git" "payments" Nothing
+          edgeFrom origin at = AppliedBlueprintMigration (ModuleName "payments") origin (Just "0.5.0") "1.0.0" "2.0.0" MigrationApplied at Nothing
+      forM_ [(ssh, https), (https, ssh)] $ \(recorded, installed) -> do
+        let original = edgeFrom recorded fixedTime
+            manifest1 = writeAppliedBlueprintMigration original (emptyManifest fixedTime)
+            rerun = edgeFrom installed fixedTime2
+        hasAppliedBlueprintMigration installed "payments" "1.0.0" "2.0.0" manifest1 `shouldBe` True
+        (writeAppliedBlueprintMigration rerun manifest1 ^. #blueprintMigrations) `shouldBe` [rerun]
+        hasAppliedBlueprintMigration (RemoteOrigin "git@github.com:other/payments.git" "payments" Nothing) "payments" "1.0.0" "2.0.0" manifest1 `shouldBe` False
+        hasAppliedBlueprintMigration (RemoteOrigin "https://github.com/acme/payments.git" "billing" Nothing) "payments" "1.0.0" "2.0.0" manifest1 `shouldBe` False
+
     -- The upsert key deliberately ignores the outcome, so a re-run replaces
     -- the earlier record. The read side does not ignore it: an edge that
     -- reported itself inapplicable has not been applied.

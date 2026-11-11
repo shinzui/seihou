@@ -10,7 +10,7 @@ import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Seihou.Composition.Recipe
 import Seihou.Composition.Resolve (verifyDependencySources)
-import Seihou.Core.ArtifactIdentity (normalizeOriginUrl, sameArtifactIdentity)
+import Seihou.Core.ArtifactIdentity (sameArtifactIdentity, sameRepositoryOrigin)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin, readOriginInfo)
 import Seihou.Core.Module (discoverModule, discoverRunnable)
 import Seihou.Core.Recipe (validateRecipe, validateRecipeVersion)
@@ -55,7 +55,7 @@ loadRecipeChain projectRoot paths target targetDir = do
                 Nothing -> pure ()
                 Just required -> do
                   actual <- liftIO (readOriginInfo baseDir)
-                  unless (maybe False (\info -> normalizeOriginUrl (info ^. #sourceUrl) == normalizeOriginUrl required) actual) $
+                  unless (maybe False (\info -> sameRepositoryOrigin (info ^. #sourceUrl) required) actual) $
                     failure ("Base '" <> ref ^. #recipe . #unRecipeName <> "' requires " <> required <> "; resolved origin is different or unknown")
               case validateRecipeVersion ref base of
                 Left errors -> failure ("Base '" <> ref ^. #recipe . #unRecipeName <> "' from " <> maybe "local discovery" id (ref ^. #source) <> ": " <> T.intercalate "; " errors)
