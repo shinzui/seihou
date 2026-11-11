@@ -55,9 +55,12 @@ and observing that no line wraps and every source sits on the same line as its n
   gains `wrapParagraphs`; status output is byte-identical and the new module's unit tests pass.
   Done 2026-11-11: `TextLayoutSpec` (10 tests) passes; `cabal test all --enable-tests` passes
   with `StatusSpec` untouched; fourmolu, placement, and record-convention checks clean.
-- [ ] Milestone 2 — the bounded list view: `seihou list` renders kind sections, name-sorted
+- [x] Milestone 2 — the bounded list view: `seihou list` renders kind sections, name-sorted
   two-line entries, no `[kind]` source suffix, and no rendered line wider than 76 columns;
   `Seihou.CLI.List` tests assert this exact rendering.
+  Done 2026-11-11: the golden test matches the Validation sample byte for byte; seihou-cli
+  suite 874/874 passes; `seihou list` against the 47 real installed artifacts prints no line
+  over 76 columns.
 - [ ] Milestone 3 — `seihou list --full` prints complete descriptions word-wrapped at 72
   columns under a four-space indent, with a blank line between entries.
 - [ ] Milestone 4 — user documentation, command help, CHANGELOG, and ADR 0013 describe the new

@@ -13,12 +13,14 @@ import Data.Aeson (FromJSON (..), withObject, (.:?))
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
+import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Shared (shortenHome)
-import Seihou.CLI.Style (dim, red, useColor)
+import Seihou.CLI.Style (bold, dim, red, useColor)
+import Seihou.CLI.TextLayout (truncateForSummary)
 import Seihou.Core.Module (DiscoveredModule (..), DiscoveredRunnable (..), ModuleSource (..), RunnableKind (..), defaultSearchPaths, discoverAllModules, discoverAllRunnables)
 import Seihou.Core.Types
 import Seihou.Prelude
@@ -90,18 +92,15 @@ runnableToEntryWithOrigin origins dr =
   let (originName, originVer, tags) = case Map.lookup (dr ^. #dir) origins of
         Just (Just info) -> (info ^. #repoName, info ^. #version, info ^. #tags)
         _ -> (Nothing, Nothing, [])
+      -- The kind is not part of the label: 'formatListOutputEntries' shows it
+      -- once, as the heading of the section the entry is listed under.
       srcLabel = sourceLabelWithOrigin (dr ^. #source) originName originVer
-      kindSuffix = case dr ^. #kind of
-        KindModule -> ""
-        KindRecipe -> " [recipe]"
-        KindBlueprint -> " [blueprint]"
-        KindPrompt -> " [prompt]"
    in if dr ^. #isError
         then
           Entry
             { name = dr ^. #name,
               desc = "[error: " <> fromMaybe "unknown" (dr ^. #error) <> "]",
-              source = srcLabel <> kindSuffix,
+              source = srcLabel,
               isError = True,
               repoName = originName,
               tags = tags,
@@ -111,7 +110,7 @@ runnableToEntryWithOrigin origins dr =
           Entry
             { name = dr ^. #name,
               desc = fromMaybe "(no description)" (dr ^. #description),
-              source = srcLabel <> kindSuffix,
+              source = srcLabel,
               isError = False,
               repoName = originName,
               tags = tags,
@@ -136,11 +135,7 @@ formatListOutputEntries color entries searchPaths listOpts
         <> "\n\nSearched:\n"
         <> T.unlines (map ("  " <>) searchPaths)
   | otherwise =
-      let maxNameLen = maximum (map (T.length . (^. #name)) entries)
-          maxDescLen = maximum (map (T.length . (^. #desc)) entries)
-          header = "Available modules, recipes, blueprints, and prompts:\n"
-          fileLines = map (formatEntry color maxNameLen maxDescLen) entries
-          n = length entries
+      let n = length entries
           nSources = length searchPaths
           -- The count noun reflects the kinds actually shown: a single shared
           -- kind names that kind; a mix falls back to the neutral "item".
@@ -154,7 +149,7 @@ formatListOutputEntries color entries searchPaths listOpts
               <> " sources searched)"
               <> filterSuffix
               <> "\n"
-       in header <> "\n" <> T.unlines fileLines <> "\n" <> summary
+       in T.unlines (formatSections color entries) <> summary
   where
     filterSuffix = formatFilterSuffix listOpts
 
@@ -278,15 +273,54 @@ briefError (MissingSourceFile _ _) = "missing source file"
 briefError (CircularDependency _) = "circular dependency"
 briefError (RegistryEvalError _ _) = "registry eval failed"
 
-formatEntry :: Bool -> Int -> Int -> Entry -> Text
-formatEntry color maxNameLen maxDescLen entry =
-  let name = (entry ^. #name)
-      desc = (entry ^. #desc)
-      src = (entry ^. #source)
-      paddedName = name <> T.replicate (maxNameLen - T.length name + 3) " "
-      paddedDesc = desc <> T.replicate (maxDescLen - T.length desc + 3) " "
-      srcTag = "(" <> src <> ")"
-      colorDesc = if color && entry ^. #isError then red desc else desc
-      colorSrc = if color then dim srcTag else srcTag
-      colorPaddedDesc = colorDesc <> T.replicate (maxDescLen - T.length desc + 3) " "
-   in "  " <> paddedName <> (if color && entry ^. #isError then colorPaddedDesc else paddedDesc) <> colorSrc
+-- | How much of an entry's description the bounded list shows: one line
+-- indented by four spaces, so the description line never exceeds 76 columns
+-- and fits an 80-column terminal. @seihou list@ is a scannable summary like
+-- @seihou status@, and follows the same rule (see
+-- docs/adr/0013-status-is-a-bounded-summary-the-manifest-is-the-record.md).
+descriptionWidth :: Int
+descriptionWidth = 72
+
+-- | The widest the name column grows. A longer name is not truncated; it
+-- pushes its own source label further right instead of every row's.
+nameColumnCap :: Int
+nameColumnCap = 32
+
+-- | The order sections appear in, with their headings.
+kindSections :: [(RunnableKind, Text)]
+kindSections =
+  [ (KindModule, "Modules"),
+    (KindRecipe, "Recipes"),
+    (KindBlueprint, "Blueprints"),
+    (KindPrompt, "Prompts")
+  ]
+
+-- | Render entries as one section per kind, each a heading with a count, a
+-- blank line, the entries sorted by name, and a closing blank line. A kind
+-- with no entries has no section.
+formatSections :: Bool -> [Entry] -> [Text]
+formatSections color entries = concatMap section kindSections
+  where
+    nameWidth = min nameColumnCap (maximum (0 : map (T.length . (^. #name)) entries))
+    section (k, title) = case sortOn (^. #name) (filter ((== k) . (^. #kind)) entries) of
+      [] -> []
+      es ->
+        [styleIf bold (title <> " (" <> T.pack (show (length es)) <> ")"), ""]
+          <> concatMap (formatEntry color nameWidth) es
+          <> [""]
+    styleIf f t = if color then f t else t
+
+-- | Render one entry as two lines: the name padded to the name column and its
+-- source label, then the description, collapsed and bounded, indented under it.
+formatEntry :: Bool -> Int -> Entry -> [Text]
+formatEntry color nameWidth entry =
+  [ "  " <> paddedName <> "  " <> styleIf dim (entry ^. #source),
+    "    " <> styleDesc (truncateForSummary descriptionWidth desc)
+  ]
+  where
+    name = entry ^. #name
+    paddedName = name <> T.replicate (nameWidth - T.length name) " "
+    rawDesc = entry ^. #desc
+    desc = if T.null (T.strip rawDesc) then "(no description)" else rawDesc
+    styleDesc = if entry ^. #isError then styleIf red else id
+    styleIf f t = if color then f t else t
