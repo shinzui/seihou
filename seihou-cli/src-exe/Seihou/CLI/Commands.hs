@@ -377,6 +377,10 @@ data CheckOpts = CheckOpts
   { judgement :: !(Maybe Text),
     -- | Explicitly select the staged changes, which is also the default.
     staged :: !Bool,
+    -- | @BASE..HEAD@: check every commit in the range instead.
+    range :: !(Maybe Text),
+    -- | Read the judgements from this trusted ref's manifest.
+    policyRef :: !(Maybe Text),
     dryRun :: !Bool,
     json :: !Bool
   }
@@ -2581,7 +2585,7 @@ checkInfo =
     (checkParser <**> helper)
     ( fullDesc
         <> progDesc "Run the project's active judgements over the staged changes"
-        <> footer "Exit status: 0 pass or nothing to check, 10 blocked, 11 needs human review, 1 error. A check may send the staged changes to the configured review route (judgement.provider and judgement.model); --dry-run sends nothing and approves nothing."
+        <> footer "Exit status: 0 pass or nothing to check, 10 blocked, 11 needs human review, 1 error. A check may send the staged changes (or, with --range, every commit's changes) to the configured review route (judgement.provider and judgement.model); --dry-run sends nothing and approves nothing. In CI, use --range origin/main..HEAD --policy-ref origin/main so a change cannot weaken the policy it is checked against."
     )
   where
     checkParser =
@@ -2589,6 +2593,8 @@ checkInfo =
         <$> ( CheckOpts
                 <$> optional (argument (T.pack <$> str) (metavar "NAME" <> help "Run only this active judgement, for diagnosis"))
                 <*> switch (long "staged" <> help "Check the staged changes (the default)")
+                <*> optional (option (T.pack <$> str) (long "range" <> metavar "BASE..HEAD" <> help "Check every commit in this range instead of the staged changes"))
+                <*> optional (option (T.pack <$> str) (long "policy-ref" <> metavar "REF" <> help "Use the judgements recorded at this trusted ref, read from Git objects"))
                 <*> switch (long "dry-run" <> help "Show the checks, route and coverage plan without any model request")
                 <*> switch (long "json" <> help "Print one versioned JSON report")
             )

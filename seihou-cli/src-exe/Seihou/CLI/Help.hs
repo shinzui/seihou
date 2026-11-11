@@ -41,6 +41,7 @@ helpTopics =
     HelpTopic "manifest" "What .seihou/manifest.json records and how to upgrade it" manifestContent,
     HelpTopic "migrations" "Migrating a project between module versions" migrationsContent,
     HelpTopic "prompts" "Reusable agent-session prompt artifacts" promptsContent,
+    HelpTopic "judgements" "Check staged changes before each commit" judgementsContent,
     HelpTopic "templating" "Placeholder substitution, {{#if}} blocks, and patterns" templatingContent,
     HelpTopic "workflow" "Choose commands for generation, updates, and recovery" workflowContent,
     HelpTopic "sync" "Set up and restore local checkout links" syncContent,
@@ -82,6 +83,9 @@ migrationsContent = $(embedStringFile "help/migrations.md")
 
 promptsContent :: Text
 promptsContent = $(embedStringFile "help/prompts.md")
+
+judgementsContent :: Text
+judgementsContent = $(embedStringFile "help/judgements.md")
 
 templatingContent :: Text
 templatingContent = $(embedStringFile "help/templating.md")

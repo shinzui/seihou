@@ -80,7 +80,7 @@ servicesWith root be = do
   pure (CheckServices (gitBytes root) sc (\_ -> pure (Right (BackendChoice be True (Just "stub model")))))
 
 request :: CheckRequest
-request = CheckRequest Nothing False False
+request = CheckRequest Nothing Nothing False False
 
 tests :: IO TestTree
 tests = testSpec "judgement check, adoption and hooks" $ do

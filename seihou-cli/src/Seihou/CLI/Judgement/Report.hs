@@ -9,6 +9,7 @@ module Seihou.CLI.Judgement.Report
     exitCodeFor,
     combinedStatus,
     renderHuman,
+    renderHumanFor,
     renderJson,
   )
 where
@@ -59,10 +60,15 @@ loc :: Location -> Text
 loc l = T.pack (l ^. #path) <> maybe "" (\n -> ":" <> T.pack (show n)) (l ^. #line)
 
 renderHuman :: JudgementDefinition -> JudgementDecision -> Text
-renderHuman def d =
+renderHuman = renderHumanFor "staged changes"
+
+-- | The human report for a named evidence scope, such as
+-- @staged changes@ or @commits abc1234..def5678@.
+renderHumanFor :: Text -> JudgementDefinition -> JudgementDecision -> Text
+renderHumanFor scopeLabel def d =
   T.unlines $
     [ d ^. #judgement <> "  " <> renderJudgementStatus (d ^. #status),
-      "Scope: staged changes; " <> coverageLine
+      "Scope: " <> scopeLabel <> "; " <> coverageLine
     ]
       <> [ loc (f ^. #location) <> "  critical  " <> f ^. #rule <> " (deterministic " <> renderDeterministicCheck (f ^. #check) <> ")"
          | f <- d ^. #deterministic

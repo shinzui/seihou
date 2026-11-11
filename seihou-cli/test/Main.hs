@@ -33,6 +33,7 @@ import Seihou.CLI.JudgementArtifactE2ESpec qualified as JudgementArtifactE2ESpec
 import Seihou.CLI.JudgementAuthoringSpec qualified as JudgementAuthoringSpec
 import Seihou.CLI.JudgementCheckSpec qualified as JudgementCheckSpec
 import Seihou.CLI.JudgementExecuteSpec qualified as JudgementExecuteSpec
+import Seihou.CLI.JudgementRangeSpec qualified as JudgementRangeSpec
 import Seihou.CLI.JudgementRuntimeSpec qualified as JudgementRuntimeSpec
 import Seihou.CLI.ListSpec qualified as ListSpec
 import Seihou.CLI.ManifestCapabilityUpgradeSpec qualified as ManifestCapabilityUpgradeSpec
@@ -103,6 +104,7 @@ main = do
         JudgementArtifactE2ESpec.tests,
         JudgementCheckSpec.tests,
         JudgementExecuteSpec.tests,
+        JudgementRangeSpec.tests,
         JudgementRuntimeSpec.tests,
         InstalledRunnablesSpec.tests,
         UpgradeRunnablesE2ESpec.tests,

@@ -66,6 +66,18 @@ REMOVAL AND COMMITS
   and ignore rules. Accepted link adoption can stage tracked-link removals.
   Ignore discovery links and transient caches/traces. See modules and sync.
 
+CHECKS BEFORE COMMITTING
+
+  seihou run security-review
+  seihou check --dry-run
+  seihou check
+
+  A judgement checks the staged changes before each commit; adoption installs
+  a pre-commit hook that runs seihou check, and seihou run, update and migrate
+  run it before their own --commit. In CI, check a range against the base
+  branch's policy: seihou check --range origin/main..HEAD --policy-ref
+  origin/main. See judgements.
+
 SHELL COMPLETIONS
 
   seihou completions bash

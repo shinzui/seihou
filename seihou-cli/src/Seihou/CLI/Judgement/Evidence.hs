@@ -16,6 +16,8 @@ module Seihou.CLI.Judgement.Evidence
     EvidenceFile (..),
     Snapshot (..),
     captureStaged,
+    captureRange,
+    sourcePath,
     GitRunner,
     gitBytes,
 
@@ -61,9 +63,17 @@ data EvidenceFile = EvidenceFile
     beforeBlob :: !(Maybe Text),
     afterBlob :: !(Maybe Text),
     content :: !(Maybe ByteString),
-    before :: !(Maybe ByteString)
+    before :: !(Maybe ByteString),
+    -- | For an intermediate version in a commit range, the commit that
+    -- introduced it and the file's own path; 'path' is then
+    -- @<path>\@<short commit>@ so each version is reviewed and cited apart.
+    revision :: !(Maybe (Text, FilePath))
   }
   deriving stock (Eq, Show, Generic)
+
+-- | The project path a file stands for, used for path filters.
+sourcePath :: EvidenceFile -> FilePath
+sourcePath f = maybe (f ^. #path) snd (f ^. #revision)
 
 data Snapshot = Snapshot
   { scope :: !EvidenceScopeKind,
@@ -136,7 +146,7 @@ captureStaged limits git = do
                 pure $ do
                   a <- afterBytes
                   b <- beforeBytes
-                  Right (EvidenceFile p change m beforeId afterId a b)
+                  Right (EvidenceFile p change m beforeId afterId a b Nothing)
               pure $ do
                 fs <- sequence captured
                 let cover f = (f, unsupported limits f)
@@ -155,6 +165,69 @@ captureStaged limits git = do
     readBlobIf ok = \case
       Just sha | ok -> fmap Just <$> git ["cat-file", "blob", T.unpack sha]
       _ -> pure (Right Nothing)
+
+-- | Capture every change introduced by the commits in @BASE..HEAD@, not
+-- merely the net difference: a file added and then removed inside the range
+-- is still captured, so the scanner sees it. Both ends are resolved to
+-- commits first, and the index and worktree are never read. Each commit is
+-- compared with its first parent. The final version of each path keeps its
+-- path; earlier distinct versions appear as @path\@<short commit>@.
+captureRange :: CoverageLimits -> GitRunner -> Text -> Text -> IO (Either Text Snapshot)
+captureRange limits git baseRef headRef = do
+  resolved <- (,) <$> resolve baseRef <*> resolve headRef
+  case resolved of
+    (Left e, _) -> pure (Left e)
+    (_, Left e) -> pure (Left e)
+    (Right base, Right hd) -> do
+      shallow <- git ["rev-parse", "--is-shallow-repository"]
+      mergeBase <- git ["merge-base", base, hd]
+      case (shallow, mergeBase) of
+        (Right s, Left _)
+          | BC.strip s == "true" ->
+              pure (Left ("this clone is shallow and does not contain the history between " <> baseRef <> " and " <> headRef <> "; fetch it with git fetch --unshallow (or set fetch-depth: 0 in CI)"))
+        _ ->
+          git ["rev-list", "--reverse", "--topo-order", base <> ".." <> hd] >>= \case
+            Left e -> pure (Left e)
+            Right listing -> do
+              let commits = map BC.unpack (filter (not . BS.null) (BC.lines listing))
+              perCommit <- forM commits $ \c ->
+                git ["diff-tree", "-r", "-z", "--raw", "--no-renames", "--full-index", "--no-ext-diff", "--no-textconv", "--no-commit-id", "--root", "--diff-merges=first-parent", c, "--"] >>= \case
+                  Left e -> pure (Left e)
+                  Right out -> pure (fmap (map (c,)) (parseRaw out))
+              case sequence perCommit of
+                Left e -> pure (Left e)
+                Right nested -> do
+                  let changes = concat nested
+                      lastFor = foldl' (\m (c, (_, _, _, _, _, p)) -> Map.insert p c m) Map.empty changes
+                      introduced = [(c, ch) | (c, ch@(_, _, _, ns, st, _)) <- changes, st /= "D", not (T.all (== '0') ns)]
+                      distinct = Map.elems (Map.fromList [((p, ns), (c, ch)) | (c, ch@(_, _, _, ns, _, p)) <- introduced])
+                  captured <- forM distinct $ \(c, (_, nm, os, ns, st, p)) -> do
+                    bytes <- if supportedMode nm then fmap Just <$> git ["cat-file", "blob", T.unpack ns] else pure (Right Nothing)
+                    let final = Map.lookup p lastFor == Just c
+                        short = T.pack (take 7 c)
+                        shown = if final then p else p <> "@" <> T.unpack short
+                        change = case st of
+                          "A" -> Added
+                          "T" -> TypeChanged
+                          _ -> Modified
+                        beforeId = if T.all (== '0') os then Nothing else Just os
+                    pure (fmap (\b -> EvidenceFile shown change nm beforeId (Just ns) b Nothing (if final then Nothing else Just (T.pack c, p))) bytes)
+                  pure $ do
+                    fs <- sequence captured
+                    let judged = [(f, unsupported limits f) | f <- fs]
+                        identity = case hashContent (T.pack (base <> ".." <> hd) <> "\0" <> T.intercalate "\0" [T.pack c <> " " <> ns <> " " <> T.pack p | (c, (_, _, _, ns, _, p)) <- changes]) of SHA256 h -> h
+                    Right
+                      Snapshot
+                        { scope = CommitRangeScope,
+                          identity = identity,
+                          files = [f | (f, Nothing) <- judged],
+                          uncovered = [(sourcePath f, why) | (f, Just why) <- judged]
+                        }
+  where
+    resolve ref =
+      git ["rev-parse", "--verify", "--quiet", T.unpack ref <> "^{commit}"] <&> \case
+        Right out -> Right (BC.unpack (BC.strip out))
+        Left _ -> Left ("'" <> ref <> "' does not name a commit in this clone; fetch it first (for example git fetch origin " <> ref <> ")")
 
 supportedMode :: Text -> Bool
 supportedMode m = m == "100644" || m == "100755"
@@ -221,8 +294,8 @@ pathMatches pat fp
 -- and the deliberately excluded paths, which are counted, never dropped.
 selectForDefinition :: JudgementDefinition -> Snapshot -> ([EvidenceFile], [FilePath], [(FilePath, Text)])
 selectForDefinition def snap =
-  ( filter (selected . (^. #path)) (snap ^. #files),
-    [f ^. #path | f <- snap ^. #files, not (selected (f ^. #path))] <> [p | (p, _) <- snap ^. #uncovered, not (selected p)],
+  ( filter (selected . sourcePath) (snap ^. #files),
+    [f ^. #path | f <- snap ^. #files, not (selected (sourcePath f))] <> [p | (p, _) <- snap ^. #uncovered, not (selected p)],
     [(p, why) | (p, why) <- snap ^. #uncovered, selected p]
   )
   where

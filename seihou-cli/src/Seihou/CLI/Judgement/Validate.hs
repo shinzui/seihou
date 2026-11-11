@@ -68,7 +68,7 @@ resolveJudgementTarget = \case
 -- @<example id>/<path>@ so cases never collide.
 exampleEvidence :: JudgementExample -> [EvidenceFile]
 exampleEvidence e =
-  [ EvidenceFile (T.unpack (e ^. #id) </> f ^. #path) Added "100644" Nothing Nothing (Just (TE.encodeUtf8 (f ^. #content))) Nothing
+  [ EvidenceFile (T.unpack (e ^. #id) </> f ^. #path) Added "100644" Nothing Nothing (Just (TE.encodeUtf8 (f ^. #content))) Nothing Nothing
   | f <- e ^. #files
   ]
 

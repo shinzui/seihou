@@ -63,6 +63,9 @@ RUNNING A CHECK
   seihou check NAME              one judgement, for diagnosis
   seihou check --dry-run         plan only: no model request, no approval
   seihou check --json            versioned JSON report
+  seihou check --range origin/main..HEAD --policy-ref origin/main
+                                 every commit in a range (for CI), against the
+                                 judgements recorded at a trusted ref
 
   Exit status: 0 passed or nothing to check, 10 blocked, 11 needs human
   review, 1 error. The pre-commit hook runs seihou check --staged. It is
@@ -88,13 +91,18 @@ CHANGING POLICY
   seihou judgement configure NAME --enforcement advisory
   seihou judgement configure NAME --provider codex-cli --model MODEL
 
+SEIHOU'S OWN COMMITS
+
+  seihou run, update and migrate with --commit run every active judgement on
+  the staged changes before producing a commit message, so nothing reaches an
+  AI commit-message generator unreviewed. A block leaves the changes applied
+  and staged, exits nonzero and says "Changes applied; commit blocked".
+
 LIMITS IN THIS RELEASE
 
-  Only staged changes are checked; commit ranges for CI are not available
-  yet. The judgment-only gate is not available. seihou run, update and
-  migrate do not yet run judgements before their own --commit. git commit
-  --no-verify skips the hook; CI is the place to enforce judgements
-  independently of local hooks.
+  The judgment-only gate is not available. git commit --no-verify skips the
+  hook; run seihou check --range with --policy-ref in CI to enforce
+  judgements independently of local hooks.
 
 SEE ALSO
 

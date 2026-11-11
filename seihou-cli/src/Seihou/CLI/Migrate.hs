@@ -38,6 +38,7 @@ import Seihou.CLI.InstallShared
     readOriginInfo,
     summarizeInstallRefusal,
   )
+import Seihou.CLI.Judgement.CommitGate (CommitBlocked (..), gatedCommit, renderBlocked)
 import Seihou.CLI.ManifestGuard
   ( ArtifactCheck,
     blockingChecks,
@@ -86,7 +87,7 @@ import Seihou.Engine.Migrate
   )
 import Seihou.Prelude
 import System.Directory (doesFileExist, getCurrentDirectory)
-import System.Exit (ExitCode (..), exitFailure, exitSuccess)
+import System.Exit (ExitCode (..), exitFailure, exitSuccess, exitWith)
 import System.FilePath (takeFileName, (</>))
 import System.IO (stderr)
 import System.IO.Temp (withSystemTempDirectory)
@@ -638,16 +639,23 @@ commitMigratedFiles opts manifestPath plan = do
       case addExit of
         ExitFailure _ -> TIO.hPutStrLn stderr ("git add failed: " <> addErr)
         ExitSuccess -> do
-          msg <- case opts ^. #commitMessage of
-            Just m -> pure m
-            Nothing -> do
-              diffText <- runEff $ runProcessIO gitDiffCached
-              generateCommitMessage [opts ^. #module_] diffText
-          (cExit, _, cErr) <- runEff $ runProcessIO $ gitCommit msg
-          case cExit of
-            ExitSuccess -> pure ()
-            ExitFailure _ ->
-              TIO.hPutStrLn stderr ("git commit failed: " <> cErr)
+          root <- getCurrentDirectory
+          let mkMessage = case opts ^. #commitMessage of
+                Just m -> pure m
+                Nothing -> do
+                  diffText <- runEff $ runProcessIO gitDiffCached
+                  generateCommitMessage [opts ^. #module_] diffText
+              commitWith msg = do
+                (cExit, _, cErr) <- runEff $ runProcessIO $ gitCommit msg
+                pure $ case cExit of
+                  ExitSuccess -> Right ()
+                  ExitFailure _ -> Left cErr
+          gatedCommit root mkMessage commitWith >>= \case
+            Right () -> pure ()
+            Left failed@(CommitFailed _) -> TIO.hPutStr stderr (renderBlocked failed)
+            Left blocked@(CommitBlocked code _) -> do
+              TIO.putStr (renderBlocked blocked)
+              exitWith (ExitFailure code)
   where
     pathsForOp inst = case inst of
       MoveFileInst src dest _ -> [src, dest]

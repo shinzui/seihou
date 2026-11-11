@@ -31,6 +31,7 @@ import Seihou.CLI.CommandExecution
 import Seihou.CLI.Commands (RunOpts (..))
 import Seihou.CLI.CommitMessage (generateCommitMessage)
 import Seihou.CLI.Git (gitAdd, gitCheckIgnore, gitCommit, gitDiffCached, isGitRepo)
+import Seihou.CLI.Judgement.CommitGate (CommitBlocked (..), gatedCommit, renderBlocked)
 import Seihou.CLI.ManifestCapabilityUpgrade (prepareRecipeInheritance, prepareRecordedSeedOwnership)
 import Seihou.CLI.ManifestGuard
   ( blockingChecks,
@@ -738,15 +739,22 @@ handleRun runOpts = do
                         case addExit of
                           ExitFailure _ -> logIO level (logWarn $ "git add failed: " <> addErr)
                           ExitSuccess -> do
-                            commitMsg <- case runOpts ^. #commitMessage of
-                              Just msg -> pure msg
-                              Nothing -> do
-                                diffText <- runEff $ runProcessIO $ gitDiffCached
-                                generateCommitMessage modNames diffText
-                            (commitExit, _, commitErr) <- runEff $ runProcessIO $ gitCommit commitMsg
-                            case commitExit of
-                              ExitSuccess -> logIO level (logInfo "Committed generated files to git.")
-                              ExitFailure _ -> logIO level (logWarn $ "git commit failed: " <> commitErr)
+                            let mkMessage = case runOpts ^. #commitMessage of
+                                  Just msg -> pure msg
+                                  Nothing -> do
+                                    diffText <- runEff $ runProcessIO $ gitDiffCached
+                                    generateCommitMessage modNames diffText
+                                commitWith msg = do
+                                  (commitExit, _, commitErr) <- runEff $ runProcessIO $ gitCommit msg
+                                  pure $ case commitExit of
+                                    ExitSuccess -> Right ()
+                                    ExitFailure _ -> Left commitErr
+                            gatedCommit projectRoot mkMessage commitWith >>= \case
+                              Right () -> logIO level (logInfo "Committed generated files to git.")
+                              Left failed@(CommitFailed _) -> logIO level (logWarn (T.stripEnd (renderBlocked failed)))
+                              Left blocked@(CommitBlocked code _) -> do
+                                TIO.putStr (renderBlocked blocked)
+                                exitWith (ExitFailure code)
                   else
                     logIO level (logDebug "--commit: not inside a git repository, skipping.")
 

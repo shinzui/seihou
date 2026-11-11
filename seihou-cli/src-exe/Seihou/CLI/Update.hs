@@ -15,6 +15,7 @@ import Seihou.CLI.CommandExecution (CommandPolicy (..))
 import Seihou.CLI.Commands (UpdateOpts (..))
 import Seihou.CLI.CommitMessage (generateCommitMessage)
 import Seihou.CLI.Git (gitAdd, gitCheckIgnore, gitCommit, gitDiffCached, isGitRepo)
+import Seihou.CLI.Judgement.CommitGate (gatedCommit, renderBlocked)
 import Seihou.CLI.Style (useColor)
 import Seihou.CLI.Update.Interaction
   ( InteractionError (..),
@@ -32,6 +33,7 @@ import Seihou.CLI.Update.Render
 import Seihou.Core.Types (ModuleName (..))
 import Seihou.Effect.ProcessInterp (runProcessIO)
 import Seihou.Prelude
+import System.Directory (getCurrentDirectory)
 import System.Exit (ExitCode (..), exitFailure)
 import System.FilePath (isAbsolute)
 import System.IO (hFlush, hIsTerminalDevice, isEOF, stderr, stdin)
@@ -164,16 +166,19 @@ commitUpdate opts result = do
           case addExit of
             ExitFailure _ -> pure (Left (T.strip addErr))
             ExitSuccess -> do
-              message <- case opts ^. #commitMessage of
-                Just custom -> pure custom
-                Nothing -> do
-                  diff <- runEff $ runProcessIO gitDiffCached
-                  let modules = map (ModuleName . (^. #name)) (result ^. #versions)
-                  generateCommitMessage modules diff
-              (commitExit, _, commitErr) <- runEff $ runProcessIO $ gitCommit message
-              pure $ case commitExit of
-                ExitSuccess -> Right ()
-                ExitFailure _ -> Left (T.strip commitErr)
+              root <- getCurrentDirectory
+              let mkMessage = case opts ^. #commitMessage of
+                    Just custom -> pure custom
+                    Nothing -> do
+                      diff <- runEff $ runProcessIO gitDiffCached
+                      let modules = map (ModuleName . (^. #name)) (result ^. #versions)
+                      generateCommitMessage modules diff
+                  commitWith message = do
+                    (commitExit, _, commitErr) <- runEff $ runProcessIO $ gitCommit message
+                    pure $ case commitExit of
+                      ExitSuccess -> Right ()
+                      ExitFailure _ -> Left (T.strip commitErr)
+              first (T.stripEnd . renderBlocked) <$> gatedCommit root mkMessage commitWith
 
 failInteraction :: UpdateOpts -> InteractionError -> IO a
 failInteraction opts err = case err of

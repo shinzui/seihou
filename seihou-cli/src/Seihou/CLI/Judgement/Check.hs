@@ -16,6 +16,8 @@ module Seihou.CLI.Judgement.Check
     runCheck,
     productionServices,
     loadActiveJudgements,
+    loadPolicyAt,
+    parseRange,
   )
 where
 
@@ -38,11 +40,14 @@ import Seihou.Core.Types (ActiveJudgement)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.ManifestStore (readManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
+import Seihou.Manifest.Types (manifestFromJSON)
 import Seihou.Prelude
 
 data CheckRequest = CheckRequest
   { -- | One active judgement to run for diagnosis; 'Nothing' runs them all.
     judgement :: !(Maybe Text),
+    -- | @BASE..HEAD@ instead of the staged changes.
+    range :: !(Maybe (Text, Text)),
     dryRun :: !Bool,
     json :: !Bool
   }
@@ -106,6 +111,30 @@ loadActiveJudgements root =
     Right Nothing -> Right []
     Right (Just m) -> Right (m ^. #judgements)
 
+-- | Read the active judgements recorded at a trusted ref, from Git objects
+-- only: nothing is checked out, and the working tree's manifest, which the
+-- change under test may have weakened, is not consulted.
+loadPolicyAt :: GitRunner -> Text -> IO (Either Text [ActiveJudgement])
+loadPolicyAt git ref =
+  git ["rev-parse", "--verify", "--quiet", T.unpack ref <> "^{commit}"] >>= \case
+    Left _ -> pure (Left ("The policy ref '" <> ref <> "' does not name a commit in this clone; fetch it first."))
+    Right raw -> do
+      let commit = T.unpack (T.strip (TE.decodeUtf8 raw))
+      git ["cat-file", "-e", commit <> ":.seihou/manifest.json"] >>= \case
+        Left _ -> pure (Left ("No trusted policy exists at " <> ref <> ": it has no .seihou/manifest.json. First adoption needs an explicit review of the proposed policy, not a check against it."))
+        Right _ ->
+          git ["cat-file", "blob", commit <> ":.seihou/manifest.json"] <&> \case
+            Left err -> Left err
+            Right bytes -> case manifestFromJSON (LBS.fromStrict bytes) of
+              Left err -> Left ("The manifest at " <> ref <> " cannot be read: " <> T.pack err)
+              Right m -> Right (m ^. #judgements)
+
+-- | Parse @BASE..HEAD@.
+parseRange :: Text -> Either Text (Text, Text)
+parseRange t = case T.splitOn ".." t of
+  [b, h] | not (T.null b), not (T.null h), not ("." `T.isPrefixOf` h) -> Right (b, h)
+  _ -> Left ("'" <> t <> "' is not a range; write BASE..HEAD, for example origin/main..HEAD")
+
 failure :: Bool -> Text -> CheckOutcome
 failure asJson msg
   | asJson = CheckOutcome 1 (encodeJson (Aeson.object ["version" Aeson..= reportVersion, "status" Aeson..= ("error" :: Text), "exitCode" Aeson..= (1 :: Int), "error" Aeson..= msg, "judgements" Aeson..= ([] :: [Aeson.Value])]))
@@ -122,13 +151,25 @@ runCheck services active req = case selected of
       if req ^. #json
         then CheckOutcome 0 (encodeJson (renderJson []))
         else CheckOutcome 0 "No judgements are active in this project; nothing was checked.\n"
-  Right judgements ->
-    captureStaged defaultCoverageLimits (services ^. #git) >>= \case
-      Left err -> pure (failure (req ^. #json) ("Cannot read the staged changes: " <> err))
+  Right candidates ->
+    capture >>= \case
+      Left err -> pure (failure (req ^. #json) ("Cannot read the " <> scopeLabel <> ": " <> err))
       Right snap
-        | req ^. #dryRun -> dryRunReport judgements snap
-        | otherwise -> runAll judgements snap
+        | null judgements -> pure (CheckOutcome 0 (T.unlines notApplicable <> "Nothing was checked.\n"))
+        | req ^. #dryRun -> (\o -> o & #output %~ (T.unlines notApplicable <>)) <$> dryRunReport judgements snap
+        | otherwise -> (\o -> if req ^. #json then o else o & #output %~ (T.unlines notApplicable <>)) <$> runAll judgements snap
+    where
+      wanted = maybe StagedChangesScope (const CommitRangeScope) (req ^. #range)
+      declares j = wanted `elem` (j ^. #definition . #evidence . #scopes)
+      judgements = filter declares candidates
+      notApplicable = [j ^. #definition . #name <> ": not checked; it does not declare " <> renderScopeKind wanted <> " evidence" | j <- candidates, not (declares j)]
   where
+    capture = case req ^. #range of
+      Nothing -> captureStaged defaultCoverageLimits (services ^. #git)
+      Just (b, h) -> captureRange defaultCoverageLimits (services ^. #git) b h
+    scopeLabel = case req ^. #range of
+      Nothing -> "staged changes"
+      Just (b, h) -> "commits " <> b <> ".." <> h
     selected = case req ^. #judgement of
       Nothing -> Right active
       Just n -> case [j | j <- active, j ^. #definition . #name == n] of
@@ -153,7 +194,7 @@ runCheck services active req = case selected of
           pure $
             if req ^. #json
               then CheckOutcome code (encodeJson (renderJson [(def, d) | (def, d, _, _) <- decided]))
-              else CheckOutcome code (T.concat [renderHuman def d <> routeLines lbl seen | (def, d, lbl, seen) <- decided])
+              else CheckOutcome code (T.concat [renderHumanFor scopeLabel def d <> routeLines lbl seen | (def, d, lbl, seen) <- decided])
 
     routeLines :: Maybe Text -> [RouteObservation] -> Text
     routeLines lbl seen = case (lbl, seen) of
@@ -178,7 +219,7 @@ runCheck services active req = case selected of
             [ def ^. #name <> " " <> maybe "" id (def ^. #version) <> "  (" <> T.take 12 (j ^. #digest . #unSHA256) <> ")",
               "  data policy: " <> renderDataPolicy (j ^. #policy . #dataPolicy) <> "; route: " <> route,
               "  scanner: " <> maybe "not found" T.pack (services ^. #scanner),
-              "  scope: staged changes; " <> T.pack (show (length sel)) <> " file(s) selected in " <> T.pack (show (length chunks)) <> " chunk(s), " <> T.pack (show (length excluded)) <> " excluded"
+              "  scope: " <> scopeLabel <> "; " <> T.pack (show (length sel)) <> " file(s) selected in " <> T.pack (show (length chunks)) <> " chunk(s), " <> T.pack (show (length excluded)) <> " excluded"
             ]
               <> ["  would not review: " <> T.pack p <> " (" <> why <> ")" | (p, why) <- uncovered <> overflow]
               <> [ "  check " <> c ^. #name <> ": " <> renderEnforcement (cp ^. #enforcement) <> ", pass at " <> num (cp ^. #review . #passAt) <> ", block at " <> num (cp ^. #review . #blockAt)

@@ -32,6 +32,7 @@ extra-source-files:
   help/contexts.md
   help/extensions.md
   help/git-repository.md
+  help/judgements.md
   help/kit.md
   help/manifest.md
   help/migrations.md
@@ -92,6 +93,7 @@ library seihou-cli-internal
     Seihou.CLI.InstalledRunnables
     Seihou.CLI.Judgement.Adopt
     Seihou.CLI.Judgement.Check
+    Seihou.CLI.Judgement.CommitGate
     Seihou.CLI.Judgement.Config
     Seihou.CLI.Judgement.Configure
     Seihou.CLI.Judgement.Evaluate
@@ -308,6 +310,7 @@ test-suite seihou-cli-test
     Seihou.CLI.JudgementAuthoringSpec
     Seihou.CLI.JudgementCheckSpec
     Seihou.CLI.JudgementExecuteSpec
+    Seihou.CLI.JudgementRangeSpec
     Seihou.CLI.JudgementRuntimeSpec
     Seihou.CLI.ListSpec
     Seihou.CLI.ManifestCapabilityUpgradeSpec
