@@ -19,6 +19,7 @@ module Seihou.Engine.Reconcile
     resolveFileConflict,
     resolveEditedOrphan,
     reconciliationSummary,
+    reconciliationDifferences,
     reconciliationMutationPaths,
     unresolvedPaths,
     recordedSharedWriteMode,
@@ -757,3 +758,58 @@ unresolvedPaths plan = Map.keysSet (Map.filter unresolved (plan ^. #files))
     unresolved (FileConflict _ _ _ _ _ _ Nothing) = True
     unresolved (FileOrphanEdited _ _ _ _ Nothing) = True
     unresolved _ = False
+
+-- | Explain exact plan inequality without disclosing file contents or hashes.
+-- This is diagnostic only: callers must continue comparing complete plans.
+reconciliationDifferences :: ReconciliationPlan -> ReconciliationPlan -> Map FilePath [Text]
+reconciliationDifferences planned actual =
+  Map.fromList
+    [ (path, categories before after)
+    | path <- Set.toAscList (Map.keysSet (planned ^. #files) `Set.union` Map.keysSet (actual ^. #files)),
+      let before = Map.lookup path (planned ^. #files),
+      let after = Map.lookup path (actual ^. #files),
+      before /= after
+    ]
+    `Map.union` Map.fromSet (const ["metadata"]) directoryChanges
+  where
+    directoryChanges = ((planned ^. #requiredDirectories) Set.\\ (actual ^. #requiredDirectories)) `Set.union` ((actual ^. #requiredDirectories) Set.\\ (planned ^. #requiredDirectories))
+    categories before after =
+      let changes =
+            ["classification" | fmap classification before /= fmap classification after]
+              <> ["observed content" | fmap observation before /= fmap observation after]
+              <> ["planned output" | fmap output before /= fmap output after]
+       in if null changes then ["metadata"] else changes
+    classification = \case
+      FileCreate {} -> "create" :: Text
+      FileUpdate {} -> "update"
+      FileAutoMerge {} -> "auto-merge"
+      FileUnchanged {} -> "unchanged"
+      FileConflict {} -> "conflict"
+      FileDeleteSafe {} -> "delete"
+      FileOrphanEdited {} -> "edited-orphan"
+      FileReleaseSharedOwnership {} -> "release-shared-ownership"
+      FileAlreadyAbsent {} -> "already-absent"
+      FileSeedCreate {} -> "seed-create"
+      FileSeedSettle {} -> "seed-settle"
+      FileSeedRelease {} -> "seed-release"
+      FileSeedAbandon {} -> "seed-abandon"
+    observation = \case
+      FileCreate _ _ observed -> Just observed
+      FileUpdate _ _ observed _ -> Just observed
+      FileAutoMerge _ _ observed _ -> Just observed
+      FileUnchanged _ _ observed _ -> Just observed
+      FileConflict _ _ _ _ observed _ _ -> Just observed
+      FileDeleteSafe _ _ observed -> Just observed
+      FileOrphanEdited _ _ _ observed _ -> Just observed
+      FileReleaseSharedOwnership _ _ observed -> Just observed
+      FileAlreadyAbsent _ _ observed -> Just observed
+      _ -> Nothing
+    output = \case
+      FileCreate desired state _ -> Just (desired ^. #generatedContent, state ^. #appliedContent)
+      FileUpdate desired state _ _ -> Just (desired ^. #generatedContent, state ^. #appliedContent)
+      FileAutoMerge desired state _ _ -> Just (desired ^. #generatedContent, state ^. #appliedContent)
+      FileUnchanged desired state _ _ -> Just (desired ^. #generatedContent, state ^. #appliedContent)
+      FileConflict desired current _ _ _ _ _ -> Just (desired ^. #generatedContent, current)
+      FileOrphanEdited _ _ current _ _ -> Just ("", current)
+      FileSeedCreate action _ -> ("",) <$> action ^. #newContent
+      _ -> Nothing

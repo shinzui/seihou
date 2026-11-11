@@ -28,6 +28,7 @@ seihou help [TOPIC]
 | `git-repository` | Sharing and installing items from git |
 | `kit` | Manage Claude Code and Codex skills and subagents |
 | `manifest` | What .seihou/manifest.json records and how to upgrade it |
+| `judgements` | Check staged changes before each commit |
 | `migrations` | Migrating a project between module versions |
 | `prompts` | Reusable agent-session prompt artifacts |
 | `templating` | Placeholder substitution, `{{#if}}` blocks, and patterns |
@@ -56,6 +57,7 @@ Every public top-level command belongs to a topic. This table is checked by
 | `sync` | `sync` |
 | `manifest` | `manifest` |
 | `migrations` | `migrate` |
+| `judgements` | `check`, `judgement`, `new-judgement`, `validate-judgement` |
 | `blueprints` | `new-blueprint`, `validate-blueprint` |
 | `prompts` | `prompt`, `new-prompt`, `validate-prompt` |
 | `agent` | `agent` |

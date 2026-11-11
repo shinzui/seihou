@@ -167,7 +167,7 @@ inventing inverse shell. Preview with
 ### Versioning and migrations
 
 Set an explicit module version. Declare layout changes with `S.Migration` and
-`S.MigrationOp.MoveFile`, `MoveDir`, `DeleteFile`, `DeleteDir`, or `RunCommand`.
+`S.MigrationOp.MoveFile`, `MoveDir`, `DeleteFile`, `DeleteDir`, `RemoveLine`, or `RunCommand`.
 Edges run in ascending `from` order within the requested version window; gaps
 are allowed, duplicate starts are invalid, and overlaps/overshoots are skipped.
 Content-only changes normally need no migration: `seihou update TARGET`
@@ -229,3 +229,11 @@ outputs must apply the same condition to their cleanup steps. Omitted conditions
 remain unconditional. Require Seihou 0.15.0.0+ before publishing these descriptors.
 A recorded single-module root removes its unshared inherited instances in the same
 operation; shared qualified instances remain owned by surviving applications.
+
+For exact cleanup, use `S.MigrationOp.RemoveLine { path = ".gitignore", line = ".envrc" }`.
+It removes all exact matches, preserves other text and LF/CRLF endings, and is a
+no-op for a missing target or absent match. Use it instead of a shell text edit
+so update can preview the effect. Empty/multiline lines, unsafe paths, links,
+directories and seeds are rejected; shared targets require all owners. Older
+five-operation declarations remain readable, but old CLIs cannot decode an
+extended union. Shell migrations remain opaque and unexpected drift rolls back.

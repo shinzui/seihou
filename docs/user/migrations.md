@@ -113,9 +113,9 @@ in S.Module::{
 - `from` and `to` are dotted versions parsed by `parseVersion`.
 - `ops` is the list of operations applied **in order**.
 
-## The five operations
+## The six operations
 
-Migrations compose from five typed `MigrationOp` variants:
+Migrations compose from six typed `MigrationOp` variants:
 
 | Variant       | Purpose                                                                | Manifest effect                                              |
 |---------------|------------------------------------------------------------------------|--------------------------------------------------------------|
@@ -123,7 +123,30 @@ Migrations compose from five typed `MigrationOp` variants:
 | `MoveDir`     | Rename a directory and everything under it.                            | Every key under `src/` is rewritten with the `dest/` prefix. |
 | `DeleteFile` | Remove one tracked file.                                                | Drops the key.                                               |
 | `DeleteDir`  | Recursively remove a directory.                                         | Drops every key under that prefix.                           |
+| `RemoveLine` | Remove every exact logical line from a regular file. | Retains existing ownership and trusted-baseline semantics. |
 | `RunCommand` | Execute a shell command. The escape hatch.                              | **Not** automatically updated.                               |
+
+For predictable cleanup during `seihou update`, declare an exact removal:
+
+```dhall
+S.MigrationOp.RemoveLine { path = ".gitignore", line = ".envrc" }
+```
+
+This removes every exact `.envrc` line and preserves `.envrc.local`, `/.envrc`,
+comments, whitespace variants, surviving LF/CRLF endings, and the final-newline
+state of surviving lines. A missing file or absent match is a no-op and does
+not create a file. Empty or multiline arguments are rejected. The path must be
+project-relative, without symbolic-link components, and name a regular file or
+be absent. Seeds and Seihou/Git control paths remain protected.
+
+Unrelated user edits do not require `--force`: the operation authorizes only the
+matching line. Shared files require all recorded owners to be selected; the
+normal `--include-shared-owners` option can expand the selection. Preview and
+apply use the same transformation. Shell commands are not run during preview;
+unexpected drift still causes rollback and names the differing paths and kinds
+of change. Inspect those paths and the migration declaration before retrying.
+Old five-operation declarations remain readable. An extended union requires a
+CLI that supports `RemoveLine`; old CLIs cannot decode it.
 
 Use `RunCommand` only for changes the typed ops can't express (running
 a build script, applying a patch). The engine will not infer manifest

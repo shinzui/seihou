@@ -28,12 +28,24 @@ spec = do
         case result of
           Right m -> map (^. #ops) (m ^. #migrations) `shouldBe` [[RemoveLine ".gitignore" ".envrc"]]
           Left err -> expectationFailure (show err)
-    it "decodes older constructors in the extended union" $ do
-      let extended = T.replace " >" " | RemoveLine : { path : Text, line : Text } >" (oneMigration moveFileOp)
-      withModuleDhall extended $ \result ->
+    it "decodes all older constructors in the extended union" $ do
+      let cases = [(moveFileOp, MoveFile "old/Path.hs" "new/Path.hs"), (moveDirOp, MoveDir "app" "src"), (deleteFileOp, DeleteFile "Setup.hs"), (deleteDirOp, DeleteDir "obsolete"), (runCommandNoWorkDir, RunCommand "echo hi" Nothing)]
+      mapM_
+        ( \(old, expectedOp) -> do
+            let extended = T.replace " >" " | RemoveLine : { path : Text, line : Text } >" (oneMigration old)
+            withModuleDhall extended $ \result -> case result of
+              Right m -> map (^. #ops) (m ^. #migrations) `shouldBe` [[expectedOp]]
+              Left err -> expectationFailure (show err)
+        )
+        cases
+    it "decodes an empty extended migrations list" $
+      withModuleDhall (T.replace " >" " | RemoveLine : { path : Text, line : Text } >" emptyMigrations) $ \result ->
         case result of
-          Right m -> map (^. #ops) (m ^. #migrations) `shouldBe` [[MoveFile "old/Path.hs" "new/Path.hs"]]
+          Right m -> m ^. #migrations `shouldBe` []
           Left err -> expectationFailure (show err)
+    it "refuses an unsupported migration constructor" $
+      withModuleDhall (oneMigration ("(" <> T.replace " >" " | Unsupported : Text >" migrationOpType <> ").Unsupported \"x\"")) $ \result ->
+        result `shouldSatisfy` either (const True) (const False)
 
     it "decodes a module with no migrations field as []" $
       withModuleDhall noMigrationsField $ \result ->

@@ -73,36 +73,51 @@ not itself the fix for this defect.
 ## Progress
 
 
-- [ ] Milestone 1: declarative exact-line removal is decoded and executes identically in pure staging and real migration, with an early representative update proof.
-- [ ] Milestone 2: managed updates preview, apply, roll back, and retry the edit correctly; unexpected shell drift still refuses and names affected paths.
+- [x] Milestone 1 (2026-11-11): `RemoveLine` schema/decoder/engine share exact execution; 1,788 core tests pass and historical/fixed consumer replays reproduce failure and success. Schema commit `82b073b` is published.
+- [x] Milestone 2 (2026-11-11): managed preview/apply/repeat and late-failure rollback pass; shared owners, untracked targets and user edits are protected. Final CLI suite: 998 tests pass; shell drift retains exact refusal and names differing paths.
 - [ ] Milestone 3: the published module uses the declarative migration, engine/schema/module compatibility and documentation pass, and the untouched consumer replay succeeds.
 - [ ] Milestone 4: the delivered executable and public module pass the installed-consumer workflow, and the original FRIC-1 changes from accepted workaround to resolved product fix with versioned evidence.
 
 
-Implementation handoff (2026-11-11): a source-only foundation now adds `RemoveLine`,
-legacy/extended Dhall extraction, exact LF/CRLF-preserving transformation, seed/path
-protection, execution-time file-kind validation, standalone rendering, managed preview
-line-removal detail, and transaction/touched-path enumeration. `cabal build exe:seihou` succeeds and `cabal test seihou-core-test` passes all
-1,782 tests, including old/new union file evaluation and removal execution.
-`git diff --check` passes. These checks establish the source foundation only.
-No milestone is complete: schema authoring/publication and the larger safety matrix
-remain open. The early representative consumer proof now passes: after reconstructing
-the ignored `.envrc` from its recorded baseline with explicit user authorization, the
-historical candidate at `2eaba137` reproduces `changed_after_migration_command` with
-identical counts. A test-only producer candidate `abeb1bd` replaces that shell command
-with `RemoveLine`; source CLI apply succeeds, removes the exact ignore entry, retains
-two owners, and a repeat preview returns `alreadyUpToDate: true`. This is source/test
-candidate evidence, not a published fix. Logs live under the replay directory named by
-`/tmp/seihou-112-replay-root`. All 59 selected CLI Update tests pass, including staging
-an untracked declared edit target without assigning ownership or changing real bytes.
+Implementation status (2026-11-11): source implementation is complete, with 1,788
+core tests, 998 CLI tests and 54 exporter tests passing. The final CLI run also covers the ownership refinement, the existing schema/evidence
+paths, and late-command rollback.
+`cabal build all`, package checks, `nix fmt`, `nix flake check`, and the CLI guidance
+audit pass. The audit covers 19 topics, 37 commands, six authoring examples and eight
+provider-free prompt renders. It exposed two inherited audit gaps: a missing judgements
+index row and treating an embedded Dhall asset as an unlisted Markdown page; both were
+corrected without changing judgement behavior.
 
-On 2026-11-11 the user additionally authorized upgrading the real reporting consumer to
-the latest public module. Installed Seihou 0.15.0.0 (`d67cf67`) successfully updated that
-checkout from 0.36.0 to 0.37.1, reused all 21 inputs, and its repeat preview is stable.
-The real consumer's `.envrc` was already present and tracked and remains unchanged;
-the baseline reconstruction applied only to the detached historical fixture. This
-real upgrade does not traverse the failing 0.34.0 edge and is not proof of product-fix
-delivery. Its generated changes remain uncommitted for review.
+The latest producer candidate is 0.38.0, using a pinned standalone MigrationOp import
+at schema `82b073b1a737f234f877ae7365fb1045c226477b`, hash
+`sha256:62e1881490f0f5ec556f13e33fa605da54cddc9d19d4adb09e55245eb8f01b22`.
+The CLI schema scaffold and Nix/submodule pins are coherent; package hash is
+`sha256:0f66857b347b93b73c32ce3f71adc29f6850881a4db673d103219f2d8cfe4393`.
+Producer module/catalog validation and generation of 29 strictly validated concepts
+pass using its documented `scripts/generate-okf-docs.py` adapter. Normal catalog sync
+also corrects its existing haskell-cli-app version mismatch. Producer publication waits
+for the supporting CLI release; minimum-version guidance must be finalized then.
+
+Separate untouched 0.34.0 consumer checkpoints pass JSON preview/apply/repeat and human
+preview/confirmation/apply with candidate 0.38.0. Each fixture reconstructs only its
+then-ignored `.envrc` from the recorded baseline, as explicitly authorized by the user.
+The preview names the exact removal; ordinary shared-owner expansion includes master-plan.
+No force or `.gitignore` pre-edit is used. Both owners survive, saved inputs are reused,
+and repeat JSON preview reports `alreadyUpToDate: true`. The real installed cache is
+byte-identical before/after the isolated JSON replay. Evidence resides under the path
+in `/tmp/seihou-112-current-root` (`preview.json`, `apply.json`, `repeat.json`, `human.txt`).
+This is source/test-candidate verification, not released-product delivery.
+
+The real consumer was separately upgraded, at the user's explicit request, from 0.36.0
+to public 0.37.1 using installed Seihou 0.15.0.0 (`d67cf67`); its tracked `.envrc` remained
+intact and follow-up preview was stable. Those generated changes remain uncommitted.
+Do not mix them into this plan's historical fixture or FRIC-1 closure.
+
+Release handoff: adding a constructor to the exported MigrationOp sum type requires a
+PVP major bump, proposed 0.15.0.0 -> 0.16.0.0. The release skill requires ratification
+before changing package versions. Finish that normal release, finalize/publish producer
+0.38.0 after the CLI is usable, verify public installed-artifact replays, then amend the
+original consumer FRIC-1. It remains accepted until that delivery evidence exists.
 
 
 ## Surprises & Discoveries
@@ -167,7 +182,14 @@ without printing file contents or prescribing the failed retry as a cure.
 ## Outcomes & Retrospective
 
 
-(To be filled during implementation.)
+The source fix uses one declarative operation and existing transactions; no generic
+text-edit framework, new manifest schema, or baseline overlay was needed. Historical
+shell drift remains rejected and now names paths. [ADR 0028](../adr/0028-declarative-line-edits-share-preview-and-apply-semantics.md)
+records the durable boundary. Release and public-consumer evidence remain open.
+
+FRIC-16 is resolved by using the current local Mori database connection. FRIC-17 is
+accepted with the existing producer documentation adapter; the unrelated exporter
+external-link defect remains separately recorded by the producer's FRIC-14.
 
 
 ## Context and Orientation
@@ -185,7 +207,7 @@ publish. A trusted baseline is the prior generated content stored under
 `planAndStageMigrationsWithSeeds`, snapshots managed files into `PureFS` and executes
 migrations using `runFilesystemPure`. `RunCommand` is deliberately mocked as successful
 and reported as `MigrationCommandNotSimulated`; it has no simulated file effects.
-`migrationTouchedPaths` presently knows move/delete targets, but no text-edit targets.
+`migrationTouchedPaths` includes move/delete and exact-removal targets.
 
 `seihou-cli/src/Seihou/CLI/Update.hs` stages candidates, materializes the simulated tree,
 and plans reconciliation. `applyAcceptedPlan` starts the transaction, runs real migrations,
@@ -195,7 +217,7 @@ comparison even when classifications have equal totals. Keep this safety conditi
 `transactionTargetPaths`, `observePaths`, and transaction backups must include the new
 operation even when reconciliation itself classifies that path as unchanged.
 
-`seihou-core/src/Seihou/Core/Migration.hs` defines the five current `MigrationOp`
+`seihou-core/src/Seihou/Core/Migration.hs` defines the six supported `MigrationOp`
 constructors. `seihou-core/src/Seihou/Dhall/Eval.hs` decodes them through
 `migrationOpDecoder`. Its module evaluator normalizes Dhall and extracts directly rather
 than requiring the whole input record to equal the decoder's expected annotation. However,
@@ -237,14 +259,14 @@ release; retain the edge window so projects at 0.34.0 still receive it. Use the 
 published canonical migration union as a separate immutable import if necessary, rather
 than incidentally upgrading the producer's entire older Module schema. Preserve unrelated
 generation behavior and update its registry version and maintained docs through its normal
-workflow. No producer change has been made during planning.
+workflow. The prepared 0.38.0 producer change uses that standalone union import.
 
 The reporting consumer is `mori://tan/notification-hub`, with background in
 `mori://tan/notification-hub/plans/109-upgrade-to-keiro-0-22-and-nix-haskell-flake-0-36-0`.
 Commit `ef0f4f4c12821d58518b8e2958b5909b775f2895` is a verified pre-update checkpoint:
 module 0.34.0, manifest schema 10, `.envrc` in `.gitignore`, and two recorded owners of
 that file. The consumer is now migrated, so replay only in a disposable detached worktree.
-Its original requested module 0.36.0 remains untouched in its current checkout. A replay
+The user subsequently authorized a real-checkout upgrade to public 0.37.1; its generated diff remains uncommitted. A replay
 against the new fix-containing release verifies this plan, without pretending that new
 release is identical to historical 0.36.0. Mori's indexed registration currently lacks the
 friction bundle; use the intended canonical FRIC-1 URI above even if resolution fails.
@@ -400,9 +422,9 @@ and both `.gitignore` owners. Required dependency locks and template-generated c
 be reviewable in the ordinary update; neither `--force` nor manual pre-edits may stand in
 for the fix.
 
-The original consumer task requested module 0.36.0. This replay does not authorize advancing
-its current main checkout to a later module: use disposable worktrees, and leave its real
-application unchanged while amending its friction entry. Once delivery and acceptance pass,
+The original consumer task requested module 0.36.0. The user separately authorized
+upgrading its current checkout to 0.37.1. Further acceptance uses disposable worktrees,
+preserving the real checkout while amending its friction entry. Once delivery passes,
 use the bundled friction script against that repository's bundle to change FRIC-1 from
 `accepted` to `resolved`, append authorship, and explain that the product fix addressed the
 cause. Include exact versions and a canonical reference to this plan. Preserve the original
@@ -414,7 +436,7 @@ leave this milestone and the friction closure open.
 ## Concrete Steps
 
 
-Work from the Seihou repository. The new intention is recorded in frontmatter; do not
+Work from the Seihou repository. The intention is recorded in frontmatter; do not
 prompt for it again. On first implementation edit, resolve the current runtime model and
 append one revision with `agents/skills/exec-plan/record-provenance.ts --mode implement`.
 Each implementation commit uses Conventional Commits and both trailers below; in other
@@ -530,7 +552,7 @@ supporting executable/schema are ready, use its documented authoring workflow:
 seihou validate-module modules/haskell/nix-haskell-flake
 seihou registry sync-versions
 seihou registry validate
-seihou extension run okf -- docs --dir . --out okf-docs --force
+python3 scripts/generate-okf-docs.py
 ```
 
 Use the just-built executable explicitly for pre-release checks; repeat with the delivered

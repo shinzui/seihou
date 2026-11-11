@@ -2,6 +2,7 @@ module Seihou.CLI.UpdateE2ESpec (tests) where
 
 import Control.Lens ((&), (.~), (^.))
 import Data.Aeson qualified as Aeson
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.Char (isHexDigit)
 import Data.Generics.Labels ()
@@ -42,6 +43,87 @@ tests = testSpec "Update end-to-end" spec
 
 spec :: Spec
 spec = do
+  describe "declarative line removal" $ do
+    it "previews and applies an untracked target without claiming ownership and repeats stably" $
+      withSystemTempDirectory "seihou-remove-line" $ \root -> do
+        fixture <- prepareUpdateFixture root
+        binary <- seihouBinary
+        publishMigration fixture "[ Op.RemoveLine { path = \".gitignore\", line = \".envrc\" } ]"
+        let target = fixture ^. #projectRoot </> ".gitignore"
+            original = ".envrc\r\n.envrc.local\r\n/.envrc\n .envrc\n# user\n.envrc"
+            expected = ".envrc.local\r\n/.envrc\n .envrc\n# user\n"
+        TIO.writeFile target original
+        (previewExit, preview, _) <- runSeihou binary fixture ["update", "demo", "--dry-run", "--json"]
+        previewExit `shouldBe` ExitSuccess
+        preview `shouldSatisfy` T.isInfixOf "remove-line"
+        preview `shouldSatisfy` T.isInfixOf "\"containsCommands\":false"
+        TIO.readFile target `shouldReturn` original
+        (appliedExit, applied, _) <- runSeihou binary fixture ["update", "demo", "--json"]
+        appliedExit `shouldBe` ExitSuccess
+        applied `shouldSatisfy` T.isInfixOf "\"outcome\":\"applied\""
+        TIO.readFile target `shouldReturn` expected
+        manifest <- either fail pure . manifestFromJSON =<< LBS.readFile (fixture ^. #manifestPath)
+        Map.member ".gitignore" (manifest ^. #files) `shouldBe` False
+        (repeatExit, repeated, _) <- runSeihou binary fixture ["update", "demo", "--dry-run", "--json"]
+        repeatExit `shouldBe` ExitSuccess
+        repeated `shouldSatisfy` T.isInfixOf "\"alreadyUpToDate\":true"
+
+    it "requires shared owners for a removal even when generation is additive" $
+      withSystemTempDirectory "seihou-remove-shared" $ \root -> do
+        fixture <- prepareSharedPathFixture CoOwnerAppends root
+        binary <- seihouBinary
+        publishMigrationAt (root </> "remote" </> "alpha") "[ Op.RemoveLine { path = \".gitignore\", line = \".envrc\" } ]"
+        current <- TIO.readFile (fixture ^. #gitignorePath)
+        let edited = current <> ".envrc\n.envrc.local\n# user\n"
+        TIO.writeFile (fixture ^. #gitignorePath) edited
+        (refused, refusal, _) <- runSeihouShared binary fixture ["update", "alpha", "--json"]
+        refused `shouldBe` ExitFailure 1
+        refusal `shouldSatisfy` T.isInfixOf "shared_path_requires_applications"
+        TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` edited
+        (applied, output, _) <- runSeihouShared binary fixture ["update", "alpha", "--json", "--include-shared-owners"]
+        expectSuccess "shared removal" applied output ""
+        content <- TIO.readFile (fixture ^. #gitignorePath)
+        T.lines content `shouldNotContain` [".envrc"]
+        content `shouldSatisfy` T.isInfixOf ".envrc.local\n# user\n"
+        content `shouldSatisfy` T.isInfixOf "/result\n"
+        manifest <- either fail pure . manifestFromJSON =<< LBS.readFile (fixture ^. #projectRoot </> ".seihou/manifest.json")
+        fmap (Set.size . (^. #applicationIds)) (Map.lookup ".gitignore" (manifest ^. #files)) `shouldBe` Just 2
+
+    it "rolls a removal and published state back when a later command fails" $
+      withSystemTempDirectory "seihou-remove-line-rollback" $ \root -> do
+        fixture <- prepareUpdateFixture root
+        binary <- seihouBinary
+        let modulePath = fixture ^. #remote </> "module.dhall"
+        candidate <- TIO.readFile modulePath
+        TIO.writeFile modulePath (T.replace "printf should-not-run >> command.log" "exit 7" candidate)
+        publishMigration fixture "[ Op.RemoveLine { path = \".gitignore\", line = \".envrc\" } ]"
+        let target = fixture ^. #projectRoot </> ".gitignore"
+        TIO.writeFile target ".envrc\n# user\n"
+        beforeManifest <- LBS.fromStrict <$> BS.readFile (fixture ^. #manifestPath)
+        beforeInstalled <- LBS.fromStrict <$> BS.readFile (fixture ^. #installedModule </> "module.dhall")
+        beforeProject <- LBS.fromStrict <$> BS.readFile (fixture ^. #projectFile)
+        (exitCode, output, _) <- runSeihou binary fixture ["update", "demo", "--json"]
+        exitCode `shouldBe` ExitFailure 1
+        output `shouldSatisfy` T.isInfixOf "rolled back"
+        TIO.readFile target `shouldReturn` ".envrc\n# user\n"
+        LBS.readFile (fixture ^. #manifestPath) `shouldReturn` beforeManifest
+        LBS.readFile (fixture ^. #installedModule </> "module.dhall") `shouldReturn` beforeInstalled
+        LBS.readFile (fixture ^. #projectFile) `shouldReturn` beforeProject
+
+    it "keeps shell drift refusal and explains affected paths without exposing contents" $
+      withSystemTempDirectory "seihou-shell-drift" $ \root -> do
+        fixture <- prepareUpdateFixture root
+        binary <- seihouBinary
+        publishMigration fixture "[ Op.RunCommand { run = \"printf 'user-secret\\n' >> README.md\", workDir = None Text } ]"
+        before <- LBS.fromStrict <$> BS.readFile (fixture ^. #projectFile)
+        (exitCode, output, _) <- runSeihou binary fixture ["update", "demo", "--json"]
+        exitCode `shouldBe` ExitFailure 1
+        output `shouldSatisfy` T.isInfixOf "changed_after_migration_command"
+        output `shouldSatisfy` T.isInfixOf "README.md"
+        output `shouldSatisfy` T.isInfixOf "observed content"
+        output `shouldNotSatisfy` T.isInfixOf "user-secret"
+        LBS.readFile (fixture ^. #projectFile) `shouldReturn` before
+
   it "updates a source-pinned dependency using its fetched provenance" $
     withSystemTempDirectory "seihou-update-source-pinned" $ \root -> do
       fixture <- prepareSourcePinnedUpdateFixture root Nothing
@@ -550,3 +632,16 @@ runProcessText binary args workingDirectory environment = do
 
 shouldReturnSatisfy :: IO T.Text -> (T.Text -> Bool) -> Expectation
 shouldReturnSatisfy action predicate = action >>= (`shouldSatisfy` predicate)
+
+-- Use a real local remote so update follows the ordinary candidate fetch path.
+publishMigration :: UpdateFixture -> T.Text -> IO ()
+publishMigration fixture = publishMigrationAt (fixture ^. #remote)
+
+publishMigrationAt :: FilePath -> T.Text -> IO ()
+publishMigrationAt remote operations = do
+  let path = remote </> "module.dhall"
+      opType = "< MoveFile : { src : Text, dest : Text } | MoveDir : { src : Text, dest : Text } | DeleteFile : { path : Text } | DeleteDir : { path : Text } | RunCommand : { run : Text, workDir : Optional Text } | RemoveLine : { path : Text, line : Text } >"
+  original <- TIO.readFile path
+  TIO.writeFile path ("let Op = " <> opType <> " in " <> T.dropEnd 1 (T.stripEnd original) <> ", migrations = [ { from = \"1.0.0\", to = \"2.0.0\", ops = " <> operations <> " } ] }")
+  callProcess "git" ["-C", remote, "add", "module.dhall"]
+  callProcess "git" ["-C", remote, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "commit", "-qm", "test: publish migration"]

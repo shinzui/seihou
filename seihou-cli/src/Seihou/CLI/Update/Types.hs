@@ -296,7 +296,7 @@ data UpdateError
   | UpdatePlanStale (Set FilePath)
   | UpdateTransactionFailed TransactionError
   | UpdateMigrationFailed ModuleName MigrationExecError
-  | UpdateChangedAfterMigrationCommand ReconciliationSummary ReconciliationSummary
+  | UpdateChangedAfterMigrationCommand ReconciliationSummary ReconciliationSummary (Map FilePath [Text])
   | UpdateCommandFailed CommandExecutionError [UpdateWarning]
   | UpdateCachePublicationFailed Text
   | UpdateManifestWriteFailed Text

@@ -2,6 +2,12 @@
 
 ## 2026-11-11
 
+* **Update**: FRIC-17 accepted: Use the established producer authoring workflow; keep the unrelated external-link exporter defect outside plan 112.
+
+
+* **Addition**: FRIC-17 records blocked tooling friction with mori://shinzui/seihou: Registry documentation generation fails on an existing external module link
+
+
 * **Update**: FRIC-16 resolved: Correct diagnosis after user clarified the local database migration; verified registry access using local connection.
 
 

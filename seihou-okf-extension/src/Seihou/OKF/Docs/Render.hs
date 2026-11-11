@@ -683,6 +683,7 @@ renderMigrationOp MoveFile {src, dest} = "- move `" <> T.pack src <> "` → `" <
 renderMigrationOp MoveDir {src, dest} = "- move directory `" <> T.pack src <> "` → `" <> T.pack dest <> "`"
 renderMigrationOp DeleteFile {path} = "- delete `" <> T.pack path <> "`"
 renderMigrationOp DeleteDir {path} = "- delete directory `" <> T.pack path <> "`"
+renderMigrationOp RemoveLine {path, line} = "- remove exact line `" <> line <> "` from `" <> T.pack path <> "`"
 renderMigrationOp RunCommand {run, workDir} =
   "- run `" <> run <> "`" <> foldMap (\dir -> " in `" <> T.pack dir <> "`") workDir
 

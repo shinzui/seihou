@@ -39,6 +39,8 @@ import Seihou.Prelude
 --     manifest.
 --   * 'DeleteDir'  — remove a directory recursively and drop every manifest
 --     entry under that prefix.
+--   * 'RemoveLine' — remove every exact logical line, preserving unrelated
+--     bytes and terminators. Missing targets or matches are no-ops.
 --   * 'RunCommand' — execute a shell command. The manifest is not rewritten
 --     by this op; if the command moves files, the migration author is
 --     responsible for following it with explicit move/delete ops.

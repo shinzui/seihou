@@ -15,6 +15,7 @@ module Seihou.CLI.Update.Render
 where
 
 import Data.Aeson (Value, encode, object, (.=))
+import Data.Aeson.Types (Pair)
 import Data.ByteString.Lazy (ByteString)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
@@ -143,7 +144,7 @@ renderUpdateHuman _ (UpdatePlanOutput (UpdatePlanView plan)) =
       <> ["  checkout " <> (if isUpdateNoOp plan then "not-run-no-update" else dispositionText (command ^. #disposition)) <> ": " <> fromMaybe "" (commandText (command ^. #operation)) | command <- plan ^. #commandPlan . #commands, isCheckoutCommand (command ^. #operation)]
       <> T.lines (renderCheckoutPlan True (plan ^. #checkoutPlan))
       <> ["Adopt link: " <> T.pack path <> " (stop tracking in Git; keep working link)" | path <- Map.keys (plan ^. #checkoutAdoptions)]
-      <> ["  Remove exact line " <> line <> " from " <> T.pack path | migration <- plan ^. #migrations, RemoveLineInst path line <- migration ^. #stagedPlan . #ops]
+      <> ["  Remove exact line \"" <> line <> "\" from " <> T.pack path | migration <- plan ^. #migrations, RemoveLineInst path line <- migration ^. #stagedPlan . #ops]
       <> conflictLines (plan ^. #reconciliation)
       <> warningLines (plan ^. #warnings)
 renderUpdateHuman _ (UpdateAppliedOutput (UpdateResultView result)) =
@@ -206,7 +207,7 @@ outputValue (UpdateFailedOutput (UpdateErrorView _ err)) =
   object
     [ "schemaVersion" .= (1 :: Int),
       "outcome" .= ("error" :: Text),
-      "error" .= object ["code" .= errorCode err, "message" .= errorMessage err]
+      "error" .= object (["code" .= errorCode err, "message" .= errorMessage err] <> driftDetails err)
     ]
 
 -- | The manifest change a targeted update stages before it plans.
@@ -380,8 +381,8 @@ migrationValue :: PlannedUpdateMigration -> Value
 migrationValue migration =
   object
     [ "module" .= (migration ^. #moduleName . #unModuleName),
-      "from" .= showText (migration ^. #sourcePlan . #from),
-      "to" .= showText (migration ^. #sourcePlan . #to),
+      "from" .= renderVersion (migration ^. #sourcePlan . #from),
+      "to" .= renderVersion (migration ^. #sourcePlan . #to),
       "steps" .= length (migration ^. #sourcePlan . #steps),
       "containsCommands" .= (migration ^. #containsCommands),
       "lineRemovals" .= [object ["op" .= ("remove-line" :: Text), "path" .= path, "line" .= line] | RemoveLineInst path line <- migration ^. #stagedPlan . #ops]
@@ -666,12 +667,14 @@ errorMessage (UpdateTransactionFailed err) =
   "Publishing the update failed: " <> transactionErrorText err
 errorMessage (UpdateMigrationFailed name err) =
   "A migration of " <> moduleNameText name <> " failed and the update was rolled back: " <> migrationExecErrorText err
-errorMessage (UpdateChangedAfterMigrationCommand planned actual) =
+errorMessage (UpdateChangedAfterMigrationCommand planned actual differences) =
   "A migration command changed the project in a way the plan did not show (planned "
     <> summaryText planned
     <> "; found "
     <> summaryText actual
-    <> "). The update was rolled back; review the migration and plan again."
+    <> "). Differences: "
+    <> T.intercalate "; " [T.pack path <> " (" <> T.intercalate ", " kinds <> ")" | (path, kinds) <- Map.toAscList differences]
+    <> ". The update was rolled back; inspect the named paths and the migration declaration."
 errorMessage (UpdateCommandFailed failure warnings) =
   "Command"
     <> maybe "" (\command -> " '" <> command <> "'") (commandText (failure ^. #command . #operation))
@@ -831,3 +834,11 @@ recipeChainLines allow app
           manifest = emptyManifest (current ^. #appliedAt) & #applications .~ maybe [] pure (app ^. #previous)
           (checks, changes) = checkRecipeChain (current ^. #applicationId) (fromMaybe [] (current ^. #recipeChain)) manifest
        in changes <> [formatGuardOverride (blockingChecks checks) | allow, not (null (blockingChecks checks))]
+
+driftDetails :: UpdateError -> [Pair]
+driftDetails (UpdateChangedAfterMigrationCommand planned actual differences) =
+  [ "planned" .= summaryValue planned,
+    "actual" .= summaryValue actual,
+    "differences" .= [object ["path" .= path, "categories" .= kinds] | (path, kinds) <- Map.toAscList differences]
+  ]
+driftDetails _ = []

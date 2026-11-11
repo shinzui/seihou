@@ -209,3 +209,17 @@ RECIPE BASES
   and candidate node arrays, applicationId, adopted) and cacheChanges (names).
   The arrays are empty when unchanged. Producer source/range checks cannot be
   waived by --allow-downgrade.
+
+EXACT LINE-REMOVAL MIGRATIONS
+
+  A module can declare RemoveLine { path = ".gitignore", line = ".envrc" }.
+  Update previews and applies this exact cleanup transactionally, preserving
+  unrelated edits and line endings. Missing targets or matches are no-ops.
+  Shared targets require all owners (--include-shared-owners). Seeds, unsafe
+  paths and symbolic links remain protected.
+
+  Arbitrary shell migrations are not simulated. Unexpected drift still causes
+  rollback with changed_after_migration_command; the error names differing
+  paths and whether classification, observed content, planned output or metadata
+  changed. JSON includes error.planned, error.actual and error.differences.
+  Inspect the named paths and migration declaration before retrying.

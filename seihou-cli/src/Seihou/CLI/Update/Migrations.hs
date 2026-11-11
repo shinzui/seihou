@@ -7,7 +7,7 @@ module Seihou.CLI.Update.Migrations
   )
 where
 
-import Control.Monad (filterM, guard)
+import Control.Monad (guard)
 import Data.Generics.Labels ()
 import Data.List (find)
 import Data.Map.Strict qualified as Map
@@ -15,13 +15,15 @@ import Data.Maybe (mapMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Effectful (runPureEff)
+import Effectful (runEff, runPureEff)
 import Seihou.CLI.Update.Types
 import Seihou.Composition.Instance (ModuleInstance (..))
 import Seihou.Core.Migration (Migration (..), MigrationOp (..), MigrationPlan (..), planMigrationChain)
 import Seihou.Core.Path (validateProjectRelativePath)
 import Seihou.Core.Types
 import Seihou.Core.Version (parseVersion)
+import Seihou.Effect.Filesystem (PathEntry (..), inspectPath)
+import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.FilesystemPure (PureFS (..), runFilesystemPure)
 import Seihou.Effect.ProcessPure (ProcessMock (..), runProcessPure)
 import Seihou.Engine.Migrate
@@ -212,36 +214,18 @@ snapshotTrackedFiles :: FilePath -> Manifest -> [FilePath] -> IO PureFS
 snapshotTrackedFiles projectRoot manifest declaredTargets = do
   let tracked = Set.toAscList (Set.fromList (Map.keys (manifest ^. #files) <> declaredTargets))
       components = Set.toAscList (Set.fromList (tracked <> concatMap parents tracked))
-  links <- fmap Map.fromList . fmap concat $ traverse readLink components
-  files <- fmap Map.fromList . fmap concat $ traverse (readTracked links) tracked
-  existingDirectories <- filterM (Directory.doesDirectoryExist . (projectRoot </>)) components
-  let directories =
-        Set.fromList existingDirectories
-          `Set.union` Set.fromList
-            [ directory
-            | path <- Map.keys files,
-              directory <- parents path
-            ]
+  entries <- Map.fromList <$> traverse (\path -> (path,) <$> runEff (runFilesystem (inspectPath (projectRoot </> path)))) components
+  let links = Map.mapMaybe (\case EntrySymlink target -> Just target; _ -> Nothing) entries
+      directories = Map.keysSet (Map.filter (== EntryDirectory) entries)
+  files <- fmap Map.fromList . fmap concat $ traverse (readTracked links entries) tracked
   pure PureFS {files, dirs = directories, links}
   where
-    readLink path = do
-      let fullPath = projectRoot </> path
-      exists <- Directory.doesPathExist fullPath
-      symlink <- if exists then Directory.pathIsSymbolicLink fullPath else pure False
-      if symlink
-        then do
-          target <- Directory.getSymbolicLinkTarget fullPath
-          pure [(path, target)]
-        else pure []
-    readTracked links path | any (`Map.member` links) (path : parents path) = pure []
-    readTracked _ path = do
-      let fullPath = projectRoot </> path
-      exists <- Directory.doesFileExist fullPath
-      if exists
-        then do
-          content <- TIO.readFile fullPath
-          pure [(path, content)]
-        else pure []
+    readTracked links _ path | any (`Map.member` links) (path : parents path) = pure []
+    readTracked _ entries path = case Map.lookup path entries of
+      Just EntryFile -> do
+        content <- TIO.readFile (projectRoot </> path)
+        pure [(path, content)]
+      _ -> pure []
 
     parents path = takeWhile (\directory -> directory /= "." && directory /= "") (iterate takeDirectory (takeDirectory path))
 

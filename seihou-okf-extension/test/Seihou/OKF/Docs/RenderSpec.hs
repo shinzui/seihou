@@ -144,6 +144,7 @@ spec = do
       body `shouldSatisfy` T.isInfixOf "- move `old.nix` → `new.nix`"
       body `shouldSatisfy` T.isInfixOf "### 0.2.0 → 0.3.0"
       body `shouldSatisfy` T.isInfixOf "- delete directory `legacy`"
+      body `shouldSatisfy` T.isInfixOf "- remove exact line `.envrc` from `.gitignore`"
       body `shouldSatisfy` T.isInfixOf "- run `just fmt` in `."
 
     it "omits sections the module declares nothing for" $ do
@@ -607,6 +608,7 @@ richModule =
               to = "0.3.0",
               ops =
                 [ DeleteDir {path = "legacy"},
+                  RemoveLine {path = ".gitignore", line = ".envrc"},
                   RunCommand {run = "just fmt", workDir = Just "."}
                 ]
             }

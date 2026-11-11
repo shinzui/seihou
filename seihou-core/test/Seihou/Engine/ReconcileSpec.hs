@@ -23,6 +23,14 @@ tests = testSpec "Seihou.Engine.Reconcile" spec
 
 spec :: Spec
 spec = do
+  describe "exact reconciliation drift" $ do
+    it "names changed observations and output even when summary counts are equal" $ do
+      let desired = DesiredFile "README.md" "new" "owner" Template Set.empty False
+          state = PlannedFileState "new" "new" (hashContent "new") True
+          planned = ReconciliationPlan Set.empty (Map.singleton "README.md" (FileUpdate desired state (ObservedFile True (Just (hashContent "old"))) Nothing)) Set.empty
+          actual = ReconciliationPlan Set.empty (Map.singleton "README.md" (FileUpdate desired (PlannedFileState "new" "new with user edit" (hashContent "new with user edit") True) (ObservedFile True (Just (hashContent "old with user edit"))) Nothing)) Set.empty
+      reconciliationSummary planned `shouldBe` reconciliationSummary actual
+      reconciliationDifferences planned actual `shouldBe` Map.singleton "README.md" ["observed content", "planned output"]
   describe "materialization" $ do
     it "folds four ordered patches into one desired file" $ do
       let operations =

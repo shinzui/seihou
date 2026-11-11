@@ -9,11 +9,11 @@ import Data.Text (Text)
 
 -- | Raw URL for the seihou-schema package.dhall at a pinned commit
 schemaUrl :: Text
-schemaUrl = "https://raw.githubusercontent.com/shinzui/seihou-schema/9080a472d739456b429455c4da167ed8ee36b483/package.dhall"
+schemaUrl = "https://raw.githubusercontent.com/shinzui/seihou-schema/82b073b1a737f234f877ae7365fb1045c226477b/package.dhall"
 
 -- | SHA256 integrity hash for the schema import
 schemaHash :: Text
-schemaHash = "sha256:251d9e01c4b2987d5d57e8b38d98e97bd0f6216f280ce3418e3e1759a8755532"
+schemaHash = "sha256:0f66857b347b93b73c32ce3f71adc29f6850881a4db673d103219f2d8cfe4393"
 
 -- | Complete Dhall import line for use in generated modules
 schemaImportLine :: Text

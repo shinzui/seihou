@@ -24,6 +24,7 @@ import Seihou.Engine.Migrate
     classifyMigration,
     executeMigration,
     removeExactLine,
+    validateSeedMigration,
   )
 import Seihou.Manifest.Hash (hashContent)
 import Seihou.Manifest.Types (emptyManifest)
@@ -137,6 +138,20 @@ spec = do
           (result, finalFS) = runExecute fs manifest plan False
       result `shouldSatisfy` either (const True) (const False)
       finalFS `shouldBe` fs
+    it "rejects protected seed targets and their parent paths" $ do
+      mapM_ (\path -> validateSeedMigration (Set.singleton "owned/seed") [RemoveLine path ".envrc"] `shouldSatisfy` either (const True) (const False)) ["owned/seed", "owned"]
+    it "rejects unsafe paths before reading any target" $ do
+      mapM_ (\path -> runClassifyResult (mkFS []) (mkManifest []) (chain1 "1.0.0" "2.0.0" [RemoveLine path ".envrc"]) `shouldSatisfy` either (const True) (const False)) ["../outside", "/absolute", ".git/config", ".seihou/manifest.json"]
+    it "rejects directories and paths through symbolic-link parents" $ do
+      let fs = (mkFS [("real/ignore", ".envrc\n")]) & #dirs .~ Set.singleton "directory" & #links .~ Map.singleton "linked" "real"
+      mapM_
+        ( \path -> do
+            let plan = runClassify fs (mkManifest []) (chain1 "1.0.0" "2.0.0" [RemoveLine path ".envrc"])
+                (result, finalFS) = runExecute fs (mkManifest []) plan False
+            result `shouldSatisfy` either (const True) (const False)
+            finalFS `shouldBe` fs
+        )
+        ["directory", "linked/ignore"]
     it "rejects empty and multiline removal arguments" $ do
       let manifest = mkManifest []
       mapM_ (\line -> runClassifyResult (mkFS []) manifest (chain1 "1.0.0" "2.0.0" [RemoveLine ".gitignore" line]) `shouldSatisfy` either (const True) (const False)) ["", "a\nb", "a\rb"]

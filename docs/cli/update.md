@@ -419,3 +419,26 @@ used only by conditions. `seihou update RECIPE` reuses them in fresh clones;
 values during ordinary preview; conflicts require `--var KEY=VALUE` or
 `--reconfigure`. Saving prompted values to local config remains optional and
 respects `--save-prompted` and `--no-save-prompted`; previews do not save them.
+
+## Exact line-removal migrations
+
+Authors can declare `MigrationOp.RemoveLine { path = ".gitignore", line = ".envrc" }`
+for deterministic cleanup. It removes all exact matching logical lines while
+preserving unrelated content, whitespace and LF/CRLF endings. Missing files and
+absent matches are no-ops. Empty/multiline line arguments, unsafe paths,
+symbolic links, directories and protected seeds are rejected.
+
+Managed update previews the removal and applies it inside the rollback
+transaction. Unrelated user edits need no `--force`; shared targets still
+require all owners (`--include-shared-owners`). JSON previews expose
+`migrations[].lineRemovals` with `op`, `path` and `line`. Standalone migration
+JSON exposes the operation in `operations` and includes its path in `--commit`
+staging. Old five-operation declarations remain supported; an extended union
+requires a CLI supporting `RemoveLine`.
+
+Arbitrary `RunCommand` migrations are not simulated. When their actual effects
+differ from the accepted plan, update keeps `changed_after_migration_command`,
+rolls back, and reports differing paths and categories. JSON also supplies
+`error.planned`, `error.actual` and `error.differences`. Equal file counts do not
+mean the bytes or metadata agree. Inspect the named paths and migration before
+retrying.

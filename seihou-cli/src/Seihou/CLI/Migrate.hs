@@ -739,7 +739,7 @@ renderOp c op = case op of
   DeleteDir {path} ->
     TIO.putStrLn $ "    " <> applyColor c yellow "delete-dir" <> " " <> T.pack path
   RemoveLine {path, line} ->
-    TIO.putStrLn $ "    remove exact line " <> line <> " from " <> T.pack path
+    TIO.putStrLn $ "    remove exact line \"" <> line <> "\" from " <> T.pack path
   RunCommand {run, workDir} ->
     let suffix = case workDir of
           Just wd -> applyColor c dim (" (in " <> T.pack wd <> ")")

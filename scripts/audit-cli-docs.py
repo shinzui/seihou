@@ -72,7 +72,10 @@ def source_audit():
     for directory in ('src', 'src-exe'):
         for path in (CLI / directory).rglob('*.hs'):
             embedded.update(re.findall(r'embed(?:String)?File "((?:data|help)/[^"]+)"', path.read_text()))
-    require(assets == embedded, f'unembedded/missing assets: {assets ^ embedded}')
+    markdown_embedded = {asset for asset in embedded if asset.endswith('.md')}
+    require(assets == markdown_embedded, f'unembedded/missing assets: {assets ^ markdown_embedded}')
+    require(embedded <= packaged, f'embedded assets missing from sdist: {embedded - packaged}')
+    require(all((CLI / asset).is_file() for asset in embedded), 'embedded asset is missing')
     for asset in assets:
         for target in re.findall(r'seihou help ([a-z][a-z-]*)', (CLI / asset).read_text()):
             require(target in topics, f'{asset}: link to unknown help topic {target}')

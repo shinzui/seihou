@@ -69,7 +69,7 @@ THE MIGRATION RECORD
 
 OPERATIONS
 
-  Authors compose migrations from five typed operations:
+  Authors compose migrations from six typed operations:
 
   MoveFile    Rename a single tracked file. The engine rewrites the
               manifest's files-map key from src to dest so subsequent
@@ -90,6 +90,18 @@ OPERATIONS
               entry under that prefix.
 
                 S.MigrationOp.DeleteDir { path = "obsolete" }
+
+  RemoveLine  Remove every exact logical line, preserving all other text and
+              its LF/CRLF endings. Missing file or absent line is a no-op.
+              Empty/multiline arguments, links, directories, unsafe paths and
+              protected seeds are refused. Unrelated edits need no --force.
+
+                S.MigrationOp.RemoveLine { path = ".gitignore", line = ".envrc" }
+
+              Managed update previews this edit and applies it transactionally.
+              Shared paths require all owners (--include-shared-owners).
+              Extended unions require a CLI supporting RemoveLine; old
+              five-operation declarations continue to work.
 
   RunCommand  Run a shell command. The escape hatch for changes the
               other ops can't express. The manifest is *not*

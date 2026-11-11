@@ -47,6 +47,7 @@ import Seihou.CLI.Update.Recovery
 import Seihou.CLI.Update.Selection
 import Seihou.CLI.Update.Source
 import Seihou.CLI.Update.Types
+import Seihou.CLI.Update.Types qualified as Update
 import Seihou.Composition.Instance (ModuleInstance (..))
 import Seihou.Composition.Plan (ComposedPlan (..), compileComposedPlan)
 import Seihou.Composition.Recipe (ExpandedRecipe (..), ResolvedRecipeMember (..), ResolvedRecipeNode (..), recipeLiteralSources)
@@ -180,7 +181,7 @@ planProjectUpdateIn sessionDirectory request = do
                     Right migrationStage -> do
                       let (operations, owners, compositionWarnings) = combineApplicationPlans plannedApplications
                           selectedIds = Set.fromList (map (^. #candidate . #applicationId) plannedApplications)
-                      stageRoot <- materializeStagedProject sessionDirectory projectRoot (migrationStage ^. #filesystem) operations
+                      stageRoot <- materializeStagedProject sessionDirectory projectRoot (migrationStage ^. #filesystem) (migrationTouchedPaths (migrationStage ^. #plans)) operations
                       reconciliationResult <-
                         runEff $
                           runFilesystem $
@@ -327,8 +328,30 @@ resolveSelection request sessionDirectory projectRoot installedDirectory manifes
 
     closeOver attempt current staged sources named = case enforceOwnershipClosure policy current named of
       Left err -> pure (Left err)
-      Right (ClosureSatisfied ids warnings) ->
-        pure (Right (SelectionResolution current (applicationsWithIds current ids) warnings (reusable ids staged) sources))
+      Right (ClosureSatisfied ids warnings) -> do
+        stagedResult <- case reusable ids staged of
+          Just existing -> pure (Right existing)
+          Nothing -> stageSelection request (sessionDirectory </> ("selection-" <> show attempt)) projectRoot installedDirectory now (applicationsWithIds current ids)
+        case stagedResult of
+          Left err -> pure (Left err)
+          Right selectedStage -> do
+            let previous = applicationsWithIds current ids
+                inputs = [(Just prior, planned ^. #modulesInOrder) | (prior, planned) <- zip previous (selectedStage ^. #plannedApplications)]
+            migrationsResult <- planAndStageMigrations projectRoot current (selectedStage ^. #catalog) inputs
+            case migrationsResult of
+              Left err -> pure (Left err)
+              Right migrations -> do
+                let editTargets = Set.fromList [path | migration <- migrations ^. #plans, RemoveLineInst path _ <- migration ^. #stagedPlan . #ops]
+                    additions = [(path, owner) | path <- Set.toAscList editTargets, Just record <- [Map.lookup path (current ^. #files)], owner <- Set.toAscList ((record ^. #applicationIds) Set.\\ ids)]
+                    extraWarnings = [SelectionExpandedForSharedPath path (applicationRef current owner) | (path, owner) <- additions]
+                case additions of
+                  [] -> pure (Right (SelectionResolution current previous warnings (Just selectedStage) sources))
+                  (path, _) : _
+                    | not (request ^. #includeSharedOwners) ->
+                        pure (Left (Update.SharedPathRequiresApplications path (Set.map (applicationRef current) ids) (Set.fromList [applicationRef current owner | (target, owner) <- additions, target == path])))
+                  _ -> do
+                    result <- closeOver (attempt + 1) current Nothing sources (ids `Set.union` Set.fromList (map snd additions))
+                    pure (fmap (\resolution -> resolution & #warnings %~ ((warnings <> extraWarnings) <>)) result)
       Right (ClosureNeedsEvidence ids _ paths) -> do
         stagedResult <- case reusable ids staged of
           Just existing -> pure (Right existing)
@@ -508,6 +531,7 @@ applyAcceptedPlan plan = do
                       ( UpdateChangedAfterMigrationCommand
                           (reconciliationSummary (plan ^. #reconciliation))
                           (reconciliationSummary actual)
+                          (reconciliationDifferences (plan ^. #reconciliation) actual)
                       )
                   Right resolvedActual
                     | resolvedActual /= plan ^. #reconciliation ->
@@ -516,6 +540,7 @@ applyAcceptedPlan plan = do
                           ( UpdateChangedAfterMigrationCommand
                               (reconciliationSummary (plan ^. #reconciliation))
                               (reconciliationSummary resolvedActual)
+                              (reconciliationDifferences (plan ^. #reconciliation) resolvedActual)
                           )
                     | otherwise -> do
                         let reconciliationManifest = migratedManifest & #genAt .~ now & #applications .~ foldl' (flip replaceAppliedComposition) (migratedManifest ^. #applications) (plan ^. #applications)
@@ -937,15 +962,15 @@ combineApplicationPlans = foldl' addApplication ([], Map.empty, [])
     mergeOwner newest prior =
       DesiredFileOwner (newest ^. #moduleName) (Set.union (newest ^. #applicationIds) (prior ^. #applicationIds))
 
-materializeStagedProject :: FilePath -> FilePath -> PureFS -> [Operation] -> IO FilePath
-materializeStagedProject sessionDirectory projectRoot filesystem operations = do
+materializeStagedProject :: FilePath -> FilePath -> PureFS -> Set FilePath -> [Operation] -> IO FilePath
+materializeStagedProject sessionDirectory projectRoot filesystem migratedPaths operations = do
   let stageRoot = sessionDirectory </> "staged-project"
   Directory.createDirectoryIfMissing True stageRoot
   forM_ (Map.toAscList (filesystem ^. #files)) $ \(path, content) -> writeStageFile stageRoot path content
   forM_ (Set.toAscList (filesystem ^. #dirs)) $ \path -> Directory.createDirectoryIfMissing True (stageRoot </> path)
   forM_ (Set.toAscList (Set.fromList (mapMaybe operationDestination operations))) $ \path -> do
     stagedExists <- Directory.doesFileExist (stageRoot </> path)
-    when (not stagedExists) $ do
+    when (not stagedExists && Set.notMember path migratedPaths) $ do
       let projectPath = projectRoot </> path
       projectExists <- Directory.doesFileExist projectPath
       when projectExists (TIO.readFile projectPath >>= writeStageFile stageRoot path)
