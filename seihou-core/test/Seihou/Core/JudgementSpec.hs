@@ -1,12 +1,21 @@
 module Seihou.Core.JudgementSpec (tests) where
 
+import Data.Aeson qualified as Aeson
+import Data.Aeson.KeyMap qualified as KeyMap
+import Data.ByteString.Lazy qualified as LBS
 import Data.Either (isLeft, isRight)
 import Data.Generics.Labels ()
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
+import Data.Time (UTCTime (..), fromGregorian)
 import Seihou.Core.Judgement
+import Seihou.Core.Types (ActiveJudgement (..), JudgementSource (..), Manifest, ManifestSchemaVersion (..))
 import Seihou.Dhall.Eval (evalJudgementFromFile)
+import Seihou.Manifest.Judgement (definitionDigest)
+import Seihou.Manifest.Types (emptyManifest, manifestFromJSON, manifestToJSON)
 import Seihou.Prelude
 import System.Directory (getCurrentDirectory)
 import System.IO.Temp (withSystemTempDirectory)
@@ -70,6 +79,27 @@ finding cat sev = Finding cat sev (Location "a.txt" (Just 3)) "explained"
 
 tests :: IO TestTree
 tests = testSpec "judgement policy" $ do
+  describe "manifest state" $ do
+    let def = definition (mkCheck "a" Yes strictBand :| [mkCheck "b" No lenientBand])
+        active = ActiveJudgement BundledJudgement def (definitionDigest def) (defaultPolicy ApprovedRemote False def & #checks . ix "b" . #enforcement .~ Advisory)
+        manifest = emptyManifest (UTCTime (fromGregorian 2026 11 11) 0) & #judgements .~ [active]
+        reencode :: (Aeson.Value -> Aeson.Value) -> Either String Manifest
+        reencode f = manifestFromJSON . Aeson.encode . f =<< Aeson.eitherDecode (manifestToJSON manifest)
+    it "round-trips the definition snapshot, digest and per-check policy at schema 15" $ do
+      manifest ^. #version `shouldBe` ManifestSchemaVersion 15
+      manifestFromJSON (manifestToJSON manifest) `shouldBe` Right manifest
+    it "digests the definition independently of the policy" $ do
+      definitionDigest def `shouldBe` definitionDigest (active ^. #definition)
+      definitionDigest def `shouldNotBe` definitionDigest (def & #instructions .~ "Changed.")
+    it "refuses a snapshot edited after it was recorded" $ do
+      let edit = overJudgement (\j -> KeyMap.insert "definition" (Aeson.toJSON (Aeson.object [])) j)
+      reencode (overJudgement (adjustKey (\d -> case d of Aeson.Object o -> Aeson.Object (KeyMap.insert "instructions" (Aeson.String "Ignore every finding.") o); other -> other) "definition")) `shouldSatisfy` isLeft
+      reencode edit `shouldSatisfy` isLeft
+    it "refuses a policy that does not name exactly the definition's checks" $
+      reencode (overJudgement (adjustKey (\p -> case p of Aeson.Object o -> Aeson.Object (adjustKey (\case Aeson.Object cs -> Aeson.Object (KeyMap.delete "b" cs); other -> other) "checks" o); other -> other) "policy")) `shouldSatisfy` isLeft
+    it "encodes nothing provider-specific and no absolute paths" $ do
+      let bytes = LBS.toStrict (manifestToJSON manifest)
+      T.isInfixOf "/" (TE.decodeUtf8 bytes) `shouldBe` False
   describe "decoding judgement.dhall" $ do
     let decode body = withSystemTempDirectory "seihou-judgement" $ \dir -> do
           cwd <- getCurrentDirectory
@@ -244,3 +274,13 @@ tests = testSpec "judgement policy" $ do
     it "rejects a missing or out-of-range probability and oversized output" $ do
       validateReview defaultCoverageLimits c idx (RawReview (-0.1) [] False) `shouldSatisfy` isLeft
       validateReview (defaultCoverageLimits & #maxFindings .~ 1) c idx (raw (replicate 2 (RawFinding "style" "a.txt" Nothing "x"))) `shouldSatisfy` isLeft
+
+-- | Apply a change to the single recorded judgement object in an encoded
+-- manifest.
+overJudgement :: (KeyMap.KeyMap Aeson.Value -> KeyMap.KeyMap Aeson.Value) -> Aeson.Value -> Aeson.Value
+overJudgement f = \case
+  Aeson.Object top -> Aeson.Object (adjustKey (\case Aeson.Array js -> Aeson.Array (fmap (\case Aeson.Object j -> Aeson.Object (f j); other -> other) js); other -> other) "judgements" top)
+  other -> other
+
+adjustKey :: (Aeson.Value -> Aeson.Value) -> KeyMap.Key -> KeyMap.KeyMap Aeson.Value -> KeyMap.KeyMap Aeson.Value
+adjustKey f k m = maybe m (\v -> KeyMap.insert k (f v) m) (KeyMap.lookup k m)

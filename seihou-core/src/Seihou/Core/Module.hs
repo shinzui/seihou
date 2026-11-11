@@ -42,7 +42,7 @@ import Data.Text qualified as T
 import Seihou.Core.Checkout (CheckoutError (..), validateCheckoutPaths)
 import Seihou.Core.Path (PathOperand (..), controlPathReason, ownStateDirectoryViolation, validateProjectRelativePath)
 import Seihou.Core.Types
-import Seihou.Dhall.Eval (evalAgentPromptFromFile, evalBlueprintFromFile, evalModuleFromFile, evalRecipeFromFile)
+import Seihou.Dhall.Eval (evalAgentPromptFromFile, evalBlueprintFromFile, evalJudgementFromFile, evalModuleFromFile, evalRecipeFromFile)
 import Seihou.Prelude
 import System.Directory (XdgDirectory (..), doesDirectoryExist, doesFileExist, getCurrentDirectory, getXdgDirectory, listDirectory)
 
@@ -114,7 +114,14 @@ discoverRunnable searchPaths name = go searchPaths
                       case result of
                         Left err -> pure (Left err)
                         Right p -> pure (Right (RunnableAgentPrompt p candidate))
-                    else go rest
+                    else do
+                      let judgementDhall = candidate </> "judgement.dhall"
+                      isJudgement <- doesFileExist judgementDhall
+                      if isJudgement
+                        then do
+                          result <- evalJudgementFromFile judgementDhall
+                          pure (fmap (`RunnableJudgement` candidate) result)
+                        else go rest
 
 -- | Search for a blueprint by name in the given directories. Returns
 -- the path to the directory containing @blueprint.dhall@, or

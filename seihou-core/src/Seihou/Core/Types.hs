@@ -45,6 +45,8 @@ module Seihou.Core.Types
     AgentPrompt (..),
     Runnable (..),
     recipeNameToModuleName,
+    ActiveJudgement (..),
+    JudgementSource (..),
     Operation (..),
     isAdditiveOperation,
     ModuleLoadError (..),
@@ -99,6 +101,7 @@ import Data.Text (Text)
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Numeric.Natural (Natural)
+import Seihou.Core.Judgement (JudgementDefinition, JudgementPolicy)
 import Seihou.Core.Migration (BlueprintMigration, Migration)
 
 -- | A module identifier such as @"haskell-base"@.
@@ -472,6 +475,7 @@ data Runnable
   | RunnableRecipe Recipe FilePath
   | RunnableBlueprint Blueprint FilePath
   | RunnableAgentPrompt AgentPrompt FilePath
+  | RunnableJudgement JudgementDefinition FilePath
   deriving stock (Show)
 
 -- | Convert a 'RecipeName' to a 'ModuleName' (they share a namespace).
@@ -608,7 +612,31 @@ data Manifest = Manifest
     applications :: ![AppliedComposition],
     recipe :: !(Maybe AppliedRecipe),
     blueprint :: !(Maybe AppliedBlueprint),
-    blueprintMigrations :: ![AppliedBlueprintMigration]
+    blueprintMigrations :: ![AppliedBlueprintMigration],
+    -- | Active judgements: the resolved definition snapshot and the
+    -- project-owned policy for each, keyed by definition name. Introduced by
+    -- schema 15; older manifests decode with none.
+    judgements :: ![ActiveJudgement]
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Where an active judgement's definition was resolved from.
+data JudgementSource
+  = -- | The catalogue compiled into the seihou binary.
+    BundledJudgement
+  | -- | An ordinary artifact found by discovery or installed from a registry.
+    ArtifactJudgement !ArtifactOrigin
+  deriving stock (Eq, Show, Generic)
+
+-- | One judgement a project has adopted. The definition is a snapshot, so a
+-- later artifact or binary cannot silently change what is checked, and the
+-- digest identifies the reviewed definition bytes. The policy is project
+-- intent: the data policy and per-check enforcement and thresholds.
+data ActiveJudgement = ActiveJudgement
+  { source :: !JudgementSource,
+    definition :: !JudgementDefinition,
+    digest :: !SHA256,
+    policy :: !JudgementPolicy
   }
   deriving stock (Eq, Show, Generic)
 
@@ -635,6 +663,8 @@ data ManifestCapability
   | SeedOwnerClaims
   | CheckoutLocalOutputs
   | CheckoutLocalCommands
+  | -- | Active judgement definitions and their policy (schema 15).
+    JudgementState
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
 
 -- | What the manifest knows about how the owners of a path write it.

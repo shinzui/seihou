@@ -32,6 +32,7 @@ module Seihou.CLI.ManifestCapabilityUpgrade
     prepareRecordedSeedOwnership,
     prepareRecipeInheritance,
     prepareRemovalPolicies,
+    prepareJudgementState,
     gatherSeedOwnershipEvidence,
     CertificationScope (..),
     EvidencePolicy (..),
@@ -549,4 +550,13 @@ prepareRemovalPolicies manifest = do
   (_, document) <-
     first renderManifestUpgradeError $
       upgradeDocumentLosslessly (max (manifest ^. #version) (minimumManifestVersion ConditionalRemovalPolicies)) (Aeson.toJSON manifest)
+  first T.pack (manifestFromJSON (Aeson.encode document))
+
+-- | Stage the lossless judgement-state boundary in memory; the adopting
+-- command publishes it together with the judgement it records.
+prepareJudgementState :: Manifest -> Either Text Manifest
+prepareJudgementState manifest = do
+  (_, document) <-
+    first renderManifestUpgradeError $
+      upgradeDocumentLosslessly (max (manifest ^. #version) (minimumManifestVersion JudgementState)) (Aeson.toJSON manifest)
   first T.pack (manifestFromJSON (Aeson.encode document))

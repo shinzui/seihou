@@ -593,7 +593,7 @@ spec = do
       withSystemTempDirectory "seihou-update-schema-5" $ \root -> do
         fixture <- prepareSharedPathFixture CoOwnerAppends root
         manifestText <- TIO.readFile (fixture ^. #manifestPath)
-        TIO.writeFile (fixture ^. #manifestPath) (T.replace "\"version\":14" "\"version\":5" manifestText)
+        TIO.writeFile (fixture ^. #manifestPath) (T.replace "\"version\":15" "\"version\":5" manifestText)
         withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
           withCurrentDirectory (fixture ^. #projectRoot) $ do
             forM_ [NamedUpdateTargets ["alpha"], AllRecordedApplications] $ \selection -> do
@@ -659,7 +659,8 @@ spec = do
                   blueprint = Nothing,
                   seeds = Map.empty,
                   checkoutOutputs = Map.empty,
-                  blueprintMigrations = []
+                  blueprintMigrations = [],
+                  judgements = []
                 }
             catalog = CandidateCatalog (projectRoot </> "search") Map.empty Map.empty
             candidates = [(instanceOne, candidate, "/candidate/shared"), (instanceTwo, candidate, "/candidate/shared")]
@@ -1100,7 +1101,8 @@ prepareRecipeUpdateFixture root = do
             blueprint = Nothing,
             seeds = Map.empty,
             checkoutOutputs = Map.empty,
-            blueprintMigrations = []
+            blueprintMigrations = [],
+            judgements = []
           }
       sourceUrl = T.pack remote
       remoteOrigin name = RemoteOrigin sourceUrl name Nothing
@@ -1292,7 +1294,8 @@ manifestForApplications applicationRecords fileRecords =
           blueprint = base ^. #blueprint,
           seeds = base ^. #seeds,
           checkoutOutputs = base ^. #checkoutOutputs,
-          blueprintMigrations = base ^. #blueprintMigrations
+          blueprintMigrations = base ^. #blueprintMigrations,
+          judgements = base ^. #judgements
         }
 
 breakCandidatePublication :: UpdatePlan -> UpdatePlan
@@ -1345,7 +1348,8 @@ withoutApplications manifest =
       blueprint = manifest ^. #blueprint,
       seeds = manifest ^. #seeds,
       checkoutOutputs = manifest ^. #checkoutOutputs,
-      blueprintMigrations = manifest ^. #blueprintMigrations
+      blueprintMigrations = manifest ^. #blueprintMigrations,
+      judgements = manifest ^. #judgements
     }
 
 -- | Two applications, @one@ and @two@, co-owning @shared.txt@ with the

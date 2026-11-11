@@ -407,7 +407,8 @@ withFile path fileRecord manifest =
       blueprint = manifest ^. #blueprint,
       seeds = manifest ^. #seeds,
       checkoutOutputs = manifest ^. #checkoutOutputs,
-      blueprintMigrations = manifest ^. #blueprintMigrations
+      blueprintMigrations = manifest ^. #blueprintMigrations,
+      judgements = manifest ^. #judgements
     }
 
 record :: Text -> Maybe BaselineRef -> [ApplicationId] -> FileRecord

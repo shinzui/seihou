@@ -70,7 +70,8 @@ manifestWithFiles t recs =
           blueprint = base ^. #blueprint,
           seeds = base ^. #seeds,
           checkoutOutputs = base ^. #checkoutOutputs,
-          blueprintMigrations = base ^. #blueprintMigrations
+          blueprintMigrations = base ^. #blueprintMigrations,
+          judgements = base ^. #judgements
         }
 
 -- | Extract planned files from operations for computeDiff.

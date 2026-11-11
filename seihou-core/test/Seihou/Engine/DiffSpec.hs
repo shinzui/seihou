@@ -59,7 +59,8 @@ manifestWithFiles recs =
           blueprint = base ^. #blueprint,
           seeds = base ^. #seeds,
           checkoutOutputs = base ^. #checkoutOutputs,
-          blueprintMigrations = base ^. #blueprintMigrations
+          blueprintMigrations = base ^. #blueprintMigrations,
+          judgements = base ^. #judgements
         }
 
 spec :: Spec

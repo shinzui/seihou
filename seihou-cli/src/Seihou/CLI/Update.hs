@@ -165,7 +165,7 @@ planProjectUpdateIn sessionDirectory request = do
                       selectedIdsForSeeds = Set.fromList (map (^. #candidate . #applicationId) plannedApplications)
                       neededLegacy = Set.fromList [path | (path, receipt) <- Map.toAscList (base ^. #seeds), LegacySeedOwners apps <- [receipt ^. #ownership], Map.member path claims || not (Set.null (apps `Set.intersection` selectedIdsForSeeds))]
                       relevant = not (Map.null claims) || any (\receipt -> not (Set.null (seedApplicationIds receipt `Set.intersection` selectedIdsForSeeds))) (Map.elems (base ^. #seeds))
-                      structurallyPrepared = prepareManifestSchema manifestPath ConditionalRemovalPolicies document base >>= \prepared -> if relevant then prepareManifestSchema manifestPath SeedOwnerClaims (Aeson.toJSON prepared) prepared else Right prepared
+                      structurallyPrepared = prepareManifestSchema manifestPath JudgementState document base >>= \prepared -> if relevant then prepareManifestSchema manifestPath SeedOwnerClaims (Aeson.toJSON prepared) prepared else Right prepared
                   paths <- defaultSearchPaths
                   preparedResult <- case structurallyPrepared of
                     Left err -> pure (Left err)
@@ -1255,7 +1255,8 @@ buildFinalManifest now plan filesManifest completedReceipts =
       blueprint = filesManifest ^. #blueprint,
       seeds = filesManifest ^. #seeds,
       checkoutOutputs = plan ^. #checkoutOutputs,
-      blueprintMigrations = filesManifest ^. #blueprintMigrations
+      blueprintMigrations = filesManifest ^. #blueprintMigrations,
+      judgements = filesManifest ^. #judgements
     }
   where
     finalApplications = map finalizeApplication (plan ^. #plannedApplications)

@@ -116,6 +116,7 @@ library
     Seihou.Interaction.Prompt
     Seihou.Manifest.Hash
     Seihou.Manifest.JSON
+    Seihou.Manifest.Judgement
     Seihou.Manifest.Types
     Seihou.Manifest.Upgrade
     Seihou.Prelude

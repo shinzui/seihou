@@ -41,6 +41,7 @@ import Seihou.Core.Seed (renderManifestInvariantError, seedApplicationIds, valid
 import Seihou.Core.Types
 import Seihou.Manifest.Hash (baselineRefFromText)
 import Seihou.Manifest.JSON (decodeManifestValue)
+import Seihou.Manifest.Judgement (definitionDigest, definitionToJSON, parseDefinition, parsePolicy, policyToJSON)
 import Seihou.Prelude hiding ((.=))
 import System.FilePath (takeFileName)
 
@@ -86,8 +87,10 @@ import System.FilePath (takeFileName)
 -- Schema 14 records conditional removal policies and single-root closure retirement.
 -- Missing removal conditions remain unconditional; 13 -> 14 adds null instance
 -- policies where accepted typed evidence is unknown.
+-- Schema 15 records active judgements: a definition snapshot, its digest and
+-- the project policy. 14 -> 15 adds an empty judgement list.
 currentManifestVersion :: ManifestSchemaVersion
-currentManifestVersion = ManifestSchemaVersion 14
+currentManifestVersion = ManifestSchemaVersion 15
 
 -- | The oldest schema the ordinary decoder reads. Anything older records
 -- machine-specific absolute paths and must go through the explicit
@@ -107,6 +110,7 @@ minimumManifestVersion ConditionalRemovalPolicies = ManifestSchemaVersion 14
 minimumManifestVersion SeedOwnerClaims = ManifestSchemaVersion 11
 minimumManifestVersion CheckoutLocalOutputs = ManifestSchemaVersion 9
 minimumManifestVersion CheckoutLocalCommands = ManifestSchemaVersion 10
+minimumManifestVersion JudgementState = ManifestSchemaVersion 15
 
 -- | Whether a manifest's schema can express everything a capability needs.
 -- A decoded schema-6 manifest answers 'False' for
@@ -130,7 +134,8 @@ emptyManifest now =
       blueprint = Nothing,
       seeds = Map.empty,
       checkoutOutputs = Map.empty,
-      blueprintMigrations = []
+      blueprintMigrations = [],
+      judgements = []
     }
 
 -- | Record an applied-blueprint provenance on a manifest, replacing any
@@ -150,7 +155,8 @@ writeAppliedBlueprint ab m =
       blueprint = Just ab,
       seeds = m ^. #seeds,
       checkoutOutputs = m ^. #checkoutOutputs,
-      blueprintMigrations = m ^. #blueprintMigrations
+      blueprintMigrations = m ^. #blueprintMigrations,
+      judgements = m ^. #judgements
     }
 
 -- | Insert or replace one exact blueprint migration receipt. Replacement is
@@ -174,7 +180,8 @@ writeAppliedBlueprintMigration receipt manifest =
       blueprint = manifest ^. #blueprint,
       seeds = manifest ^. #seeds,
       checkoutOutputs = manifest ^. #checkoutOutputs,
-      blueprintMigrations = upsert (manifest ^. #blueprintMigrations)
+      blueprintMigrations = upsert (manifest ^. #blueprintMigrations),
+      judgements = manifest ^. #judgements
     }
   where
     sameEdge existing =
@@ -235,6 +242,7 @@ instance ToJSON Manifest where
       ]
         ++ ["checkoutOutputs" .= Map.map checkoutToJSON (m ^. #checkoutOutputs) | m ^. #version >= ManifestSchemaVersion 9]
         ++ ["seeds" .= Map.map (seedToJSON (m ^. #version)) (m ^. #seeds) | m ^. #version >= ManifestSchemaVersion 8]
+        ++ ["judgements" .= map activeJudgementToJSON (m ^. #judgements) | manifestSupports JudgementState m]
         ++ maybe [] (\r -> ["recipe" .= r]) (m ^. #recipe)
         ++ maybe [] (\b -> ["blueprint" .= b]) (m ^. #blueprint)
 
@@ -257,6 +265,9 @@ instance FromJSON Manifest where
         <*> o Aeson..:? "recipe"
         <*> o Aeson..:? "blueprint"
         <*> o Aeson..:? "blueprintMigrations" Aeson..!= []
+        <*> (if v >= minimumManifestVersion JudgementState then mapM parseActiveJudgement =<< o .: "judgements" else pure [])
+    let judgementNames = map (^. #definition . #name) (manifest ^. #judgements)
+    unless (Set.size (Set.fromList judgementNames) == length judgementNames) $ fail "manifest records the same judgement name more than once"
     unless (manifestSupports ConditionalRemovalPolicies manifest || not (hasConditionalRemoval manifest || hasRemovalPolicy manifest)) $ fail "conditional removal policies require manifest schema 14"
     case validateManifestInvariants manifest of
       Left err -> fail (T.unpack (renderManifestInvariantError err))
@@ -937,6 +948,7 @@ manifestEncodingLoss manifest =
     <> ["removal commands cannot declare checkout setup" | applied <- manifest ^. #modules, removal <- maybe [] pure (applied ^. #removal), any ((== CheckoutCommandLifecycle) . (^. #lifecycle)) (removal ^. #commands)]
     <> ["checkout commands require manifest schema 10" | manifest ^. #version < ManifestSchemaVersion 10, any (not . null . (^. #checkoutCommands)) (manifest ^. #applications)]
     <> ["checkout outputs require manifest schema 9" | manifest ^. #version < ManifestSchemaVersion 9, not (Map.null (manifest ^. #checkoutOutputs))]
+    <> ["judgements require manifest schema 15" | not (manifestSupports JudgementState manifest), not (null (manifest ^. #judgements))]
     <> ["seed receipts require manifest schema 8" | manifest ^. #version < ManifestSchemaVersion 8, not (Map.null (manifest ^. #seeds))]
 
 checkoutToJSON :: CheckoutOutputRecord -> Aeson.Value
@@ -989,3 +1001,36 @@ validateCheckoutCommands manifest = do
       unless (command ^. #occurrence >= 0 && not (T.null (T.strip (command ^. #command)))) (fail "invalid checkout command occurrence or empty shell text")
       forM_ (command ^. #workDir) $ \path ->
         unless (path == ".") $ either (fail . T.unpack) pure (validateCanonicalProjectPath (T.pack path))
+
+activeJudgementToJSON :: ActiveJudgement -> Aeson.Value
+activeJudgementToJSON j =
+  Aeson.object
+    [ "source" .= case j ^. #source of
+        BundledJudgement -> Aeson.object ["kind" .= ("bundled" :: Text)]
+        ArtifactJudgement origin -> Aeson.object ["kind" .= ("artifact" :: Text), "origin" .= origin],
+      "definition" .= definitionToJSON (j ^. #definition),
+      "digest" .= (j ^. #digest . #unSHA256),
+      "policy" .= policyToJSON (j ^. #policy)
+    ]
+
+-- | A recorded snapshot whose digest no longer matches its definition was
+-- edited by hand; refuse it rather than check against unreviewed policy.
+parseActiveJudgement :: Aeson.Value -> Aeson.Parser ActiveJudgement
+parseActiveJudgement = Aeson.withObject "ActiveJudgement" $ \o -> do
+  source <-
+    o .: "source"
+      >>= Aeson.withObject
+        "JudgementSource"
+        ( \s ->
+            (s .: "kind" :: Aeson.Parser Text) >>= \case
+              "bundled" -> pure BundledJudgement
+              "artifact" -> ArtifactJudgement <$> s .: "origin"
+              other -> fail ("unknown judgement source kind: " <> T.unpack other)
+        )
+  definition <- parseDefinition =<< o .: "definition"
+  recorded <- o .: "digest"
+  let actual = definitionDigest definition
+  unless (T.toLower recorded == actual ^. #unSHA256) $
+    fail ("judgement '" <> T.unpack (definition ^. #name) <> "' does not match its recorded digest; re-apply it with 'seihou run " <> T.unpack (definition ^. #name) <> "'")
+  policy <- parsePolicy definition =<< o .: "policy"
+  pure (ActiveJudgement source definition actual policy)

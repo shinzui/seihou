@@ -509,7 +509,8 @@ replaceManifestFiles manifest nextFiles =
       blueprint = manifest ^. #blueprint,
       seeds = manifest ^. #seeds,
       checkoutOutputs = manifest ^. #checkoutOutputs,
-      blueprintMigrations = manifest ^. #blueprintMigrations
+      blueprintMigrations = manifest ^. #blueprintMigrations,
+      judgements = manifest ^. #judgements
     }
 
 writeBaselineBlob :: FilePath -> Text -> IO BaselineRef

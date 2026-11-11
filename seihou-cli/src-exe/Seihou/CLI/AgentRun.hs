@@ -545,7 +545,8 @@ applyBaseline level opts (primary, modulesInOrder) cliOverridesIn resolvedBluepr
                                   blueprint = manifest ^. #blueprint,
                                   seeds = manifest ^. #seeds,
                                   checkoutOutputs = checkoutCandidate ^. #checkoutOutputs,
-                                  blueprintMigrations = manifest ^. #blueprintMigrations
+                                  blueprintMigrations = manifest ^. #blueprintMigrations,
+                                  judgements = manifest ^. #judgements
                                 }
                         actualSeedResult <- executeSeeds projectRoot applicationId now seedPlan seedBase
                         actualSeeds <- case actualSeedResult of

@@ -50,7 +50,7 @@ paymentsOrigin = RemoteOrigin "https://github.com/acme/payments" "payments" Noth
 -- | Helper to set modules on a Manifest without ambiguous record update.
 withManifestModules :: [AppliedModule] -> Manifest -> Manifest
 withManifestModules mods m =
-  Manifest (m ^. #version) (m ^. #genAt) mods (m ^. #vars) (m ^. #files) (m ^. #seeds) (m ^. #checkoutOutputs) (m ^. #applications) (m ^. #recipe) (m ^. #blueprint) (m ^. #blueprintMigrations)
+  Manifest (m ^. #version) (m ^. #genAt) mods (m ^. #vars) (m ^. #files) (m ^. #seeds) (m ^. #checkoutOutputs) (m ^. #applications) (m ^. #recipe) (m ^. #blueprint) (m ^. #blueprintMigrations) (m ^. #judgements)
 
 -- | Every string that appears anywhere inside a value keyed @origin@ or
 -- @targetOrigin@, at any depth.
@@ -445,7 +445,8 @@ spec = do
                 blueprint = Nothing,
                 seeds = Map.empty,
                 checkoutOutputs = Map.empty,
-                blueprintMigrations = []
+                blueprintMigrations = [],
+                judgements = []
               }
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
@@ -485,7 +486,8 @@ spec = do
                 blueprint = Nothing,
                 seeds = Map.empty,
                 checkoutOutputs = Map.empty,
-                blueprintMigrations = []
+                blueprintMigrations = [],
+                judgements = []
               }
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
@@ -942,7 +944,7 @@ spec = do
   describe "version checking" $ do
     it "rejects manifests with version higher than current" $ do
       let base = emptyManifest fixedTime
-          m = Manifest {version = ManifestSchemaVersion 99, genAt = base ^. #genAt, modules = base ^. #modules, vars = base ^. #vars, files = base ^. #files, applications = base ^. #applications, recipe = Nothing, blueprint = Nothing, seeds = Map.empty, checkoutOutputs = Map.empty, blueprintMigrations = []}
+          m = Manifest {version = ManifestSchemaVersion 99, genAt = base ^. #genAt, modules = base ^. #modules, vars = base ^. #vars, files = base ^. #files, applications = base ^. #applications, recipe = Nothing, blueprint = Nothing, seeds = Map.empty, checkoutOutputs = Map.empty, blueprintMigrations = [], judgements = []}
           result = manifestFromJSON (manifestToJSON m)
       case result of
         Left err -> err `shouldContain` "newer version"

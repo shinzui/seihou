@@ -237,7 +237,7 @@ spec = do
       expectSuccess "targeted update" exitCode stdoutText stderrText
       stdoutText `shouldSatisfy` T.isInfixOf "\"outcome\":\"applied\""
       manifestText <- TIO.readFile (fixture ^. #manifestPath)
-      manifestText `shouldSatisfy` T.isInfixOf "\"version\":14"
+      manifestText `shouldSatisfy` T.isInfixOf "\"version\":15"
       manifestText `shouldSatisfy` T.isInfixOf "\"sharedWriteMode\":\"additive-only\""
       -- Recording an answer must not touch a single byte of the project.
       TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` beforeGitignore
@@ -276,7 +276,7 @@ spec = do
       dryOut `shouldSatisfy` T.isInfixOf "\"outcome\":\"plan\""
       dryOut `shouldSatisfy` T.isInfixOf "\"alreadyUpToDate\":false"
       dryOut `shouldSatisfy` T.isInfixOf "\"fromSchema\":6"
-      dryOut `shouldSatisfy` T.isInfixOf "\"toSchema\":14"
+      dryOut `shouldSatisfy` T.isInfixOf "\"toSchema\":15"
       dryOut `shouldSatisfy` T.isInfixOf "{\"from\":\"unknown\",\"path\":\".gitignore\",\"to\":\"additive-only\"}"
       dryOut `shouldNotSatisfy` T.isInfixOf "shared_path_requires_applications"
       LBS.readFile (fixture ^. #manifestPath) `shouldReturn` beforeManifest
@@ -297,7 +297,7 @@ spec = do
       case decoded of
         Left err -> expectationFailure err
         Right manifest -> do
-          (manifest ^. #version) `shouldBe` ManifestSchemaVersion 14
+          (manifest ^. #version) `shouldBe` ManifestSchemaVersion 15
           case Map.lookup ".gitignore" (manifest ^. #files) of
             Nothing -> expectationFailure "the manifest lost .gitignore"
             Just record -> do
@@ -317,7 +317,7 @@ spec = do
       binary <- seihouBinary
       (dryExit, dryOut, dryErr) <- runSeihouShared binary bug1 ["update", "alpha", "--dry-run"]
       expectSuccess "human dry run" dryExit dryOut dryErr
-      dryOut `shouldSatisfy` T.isInfixOf "Manifest:    schema 6 -> 14"
+      dryOut `shouldSatisfy` T.isInfixOf "Manifest:    schema 6 -> 15"
       dryOut `shouldSatisfy` T.isInfixOf ".gitignore evidence unknown -> additive-only"
       (dryOut <> dryErr) `shouldNotSatisfy` leaksInternals
 

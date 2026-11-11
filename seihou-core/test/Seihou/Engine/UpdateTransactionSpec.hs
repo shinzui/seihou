@@ -522,7 +522,8 @@ spec = do
                   blueprint = candidate ^. #blueprint,
                   seeds = candidate ^. #seeds,
                   checkoutOutputs = candidate ^. #checkoutOutputs,
-                  blueprintMigrations = candidate ^. #blueprintMigrations
+                  blueprintMigrations = candidate ^. #blueprintMigrations,
+                  judgements = candidate ^. #judgements
                 }
         setUpdateTransactionExpectedManifest transaction finalManifest `shouldReturn` Right ()
         Directory.createDirectoryIfMissing True (projectRoot </> ".seihou")
@@ -744,7 +745,8 @@ manifestWithFiles fileRecords =
           blueprint = manifest ^. #blueprint,
           seeds = manifest ^. #seeds,
           checkoutOutputs = manifest ^. #checkoutOutputs,
-          blueprintMigrations = manifest ^. #blueprintMigrations
+          blueprintMigrations = manifest ^. #blueprintMigrations,
+          judgements = manifest ^. #judgements
         }
 
 fileRecord :: Text -> Maybe BaselineRef -> [ApplicationId] -> FileRecord

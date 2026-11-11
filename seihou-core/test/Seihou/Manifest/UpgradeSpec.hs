@@ -63,6 +63,12 @@ fileField _ _ _ = Nothing
 
 spec :: Spec
 spec = do
+  it "adds an empty judgement list at schema 15 and refuses a forged one" $ do
+    let document = Aeson.object ["version" Aeson..= (14 :: Int), "producerField" Aeson..= True]
+        expected = Aeson.object ["version" Aeson..= (15 :: Int), "producerField" Aeson..= True, "judgements" Aeson..= ([] :: [Aeson.Value])]
+    fmap snd (upgradeDocumentLosslessly (v 15) document) `shouldBe` Right expected
+    let forged = Aeson.object ["version" Aeson..= (14 :: Int), "judgements" Aeson..= [Aeson.object []]]
+    upgradeDocumentLosslessly (v 15) forged `shouldSatisfy` either (const True) (const False)
   it "upgrades unconditional schema-13 removal without changing producer fields" $ do
     let document = Aeson.object ["version" Aeson..= (13 :: Int), "producerField" Aeson..= True, "modules" Aeson..= [Aeson.object ["removal" Aeson..= Aeson.object ["steps" Aeson..= [Aeson.object ["action" Aeson..= ("remove-file" :: String), "dest" Aeson..= ("package.json" :: String)]]]]]]
     case upgradeDocumentLosslessly (v 14) document of

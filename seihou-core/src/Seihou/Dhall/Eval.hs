@@ -8,6 +8,7 @@ module Seihou.Dhall.Eval
     evalAgentPromptFromFile,
     evalRegistryFromFile,
     evalJudgementFromFile,
+    evalJudgementFromText,
     judgementDecoder,
     moduleDecoder,
     recipeDecoder,
@@ -929,9 +930,14 @@ normalizeInstalledDefinition origin path = do
 -- 'J.JudgementDefinition'. Structural validation ('J.validateDefinition') is
 -- a separate step so a caller can name the failing part precisely.
 evalJudgementFromFile :: FilePath -> IO (Either ModuleLoadError J.JudgementDefinition)
-evalJudgementFromFile path = do
+evalJudgementFromFile path = TIO.readFile path >>= evalJudgementFromText path
+
+-- | Evaluate judgement Dhall source text. Relative imports resolve against
+-- the directory of the given path, which also names the source in errors;
+-- the bundled catalogue passes self-contained text with a virtual path.
+evalJudgementFromText :: FilePath -> Text -> IO (Either ModuleLoadError J.JudgementDefinition)
+evalJudgementFromText path text = do
   result <- try $ do
-    text <- TIO.readFile path
     let settings =
           set rootDirectory (takeDirectory path) $
             set sourceName path defaultInputSettings

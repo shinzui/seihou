@@ -248,7 +248,8 @@ spec = do
                 blueprint = base ^. #blueprint,
                 seeds = base ^. #seeds,
                 checkoutOutputs = base ^. #checkoutOutputs,
-                blueprintMigrations = base ^. #blueprintMigrations
+                blueprintMigrations = base ^. #blueprintMigrations,
+                judgements = base ^. #judgements
               }
           fs = mkFS [("mine.txt", "mine"), ("other.txt", "other")]
           plan = RemovalPlan {targetModule = modName, files = [RemovalSafe "mine.txt"]}
@@ -447,7 +448,8 @@ spec = do
                 blueprint = base ^. #blueprint,
                 seeds = base ^. #seeds,
                 checkoutOutputs = base ^. #checkoutOutputs,
-                blueprintMigrations = base ^. #blueprintMigrations
+                blueprintMigrations = base ^. #blueprintMigrations,
+                judgements = base ^. #judgements
               }
           fs = mkFS [("mine.txt", "mine"), ("other.txt", "other")]
           plan = ExecutedRemovalPlan modName [DeleteFileOp "mine.txt" RFSafe]

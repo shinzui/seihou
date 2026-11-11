@@ -64,6 +64,7 @@ data UpgradeStepAction
   | AddUnknownRecipeChain
   | MakeSeedOwnershipExplicit
   | AddEmptyCheckoutCommands
+  | AddEmptyJudgements
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
 
 -- | Whether a step may be staged automatically.
@@ -128,7 +129,8 @@ manifestUpgradeSteps =
     step 10 MakeSeedOwnershipExplicit "explicit seed instance ownership",
     step 11 AddUnknownRecipeInputs "recipe inputs",
     step 12 AddUnknownRecipeChain "recipe inheritance provenance",
-    step 13 IntroduceConditionalRemoval "conditional removal policies and recorded root retirement"
+    step 13 IntroduceConditionalRemoval "conditional removal policies and recorded root retirement",
+    step 14 AddEmptyJudgements "active judgements"
   ]
   where
     step from stepAction =
@@ -145,6 +147,7 @@ upgradeStepKind AddEmptySeedReceipts = LosslessUpgrade
 upgradeStepKind AddEmptyCheckoutOutputs = LosslessUpgrade
 upgradeStepKind AddEmptyCheckoutCommands = LosslessUpgrade
 upgradeStepKind MakeSeedOwnershipExplicit = LosslessUpgrade
+upgradeStepKind AddEmptyJudgements = LosslessUpgrade
 
 -- | The contiguous steps from @source@ to @target@. Planning from a version
 -- to itself is an empty path.
@@ -219,6 +222,12 @@ applyLosslessUpgradeStep upgradeStep document = do
       Aeson.Object fields -> Right (Aeson.Object (KeyMap.insert "applications" (addInputs (fromMaybe (Aeson.Array mempty) (KeyMap.lookup "applications" fields))) fields))
       _ -> Right document
     StampVersion -> Right document
+    AddEmptyJudgements -> case document of
+      Aeson.Object fields -> case KeyMap.lookup "judgements" fields of
+        Nothing -> Right (Aeson.Object (KeyMap.insert "judgements" (Aeson.toJSON ([] :: [Aeson.Value])) fields))
+        Just (Aeson.Array xs) | null xs -> Right document
+        _ -> Left (MalformedDocument actual "schema 14 cannot contain judgements")
+      _ -> Left (MalformedDocument actual "manifest must be an object")
     MakeSeedOwnershipExplicit -> first (MalformedDocument actual) (makeSeedOwnershipExplicit document)
     AddEmptyCheckoutCommands -> case document of
       Aeson.Object fields -> do
