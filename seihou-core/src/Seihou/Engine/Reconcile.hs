@@ -34,7 +34,7 @@ import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime)
 import Seihou.Core.Checkout (pathsOverlap)
-import Seihou.Core.Path (pathsHaveConflictingSpelling, validateProjectRelativePath)
+import Seihou.Core.Path (PathOperand (..), controlPathReason, pathsHaveConflictingSpelling, validateProjectRelativePath)
 import Seihou.Core.Seed (seedApplicationIds)
 import Seihou.Core.Types hiding (KeepCurrent)
 import Seihou.Effect.BaselineStore (BaselineError, BaselineStore, readBaseline)
@@ -390,8 +390,8 @@ validateInputs ::
 validateInputs selected operations ownerMap manifest = do
   let grouped = groupFileOperations operations
       directories = Set.fromList [path | CreateDirOp path <- operations]
-  traverse_ validateManagedPath (Map.keys grouped)
-  traverse_ validateManagedPath (Set.toList directories)
+  traverse_ (validateManagedPath FileTarget) (Map.keys grouped)
+  traverse_ (validateManagedPath DirectoryOperand) (Set.toList directories)
   traverse_ (validateOwner selected ownerMap manifest) (Map.toList grouped)
   pure (grouped, directories)
 
@@ -427,25 +427,20 @@ validateOwner selected ownerMap manifest (path, pathOperations) = case Map.looku
           | record ^. #sharedWriteMode == SharedWriteAdditiveOnly && all isAdditiveOperation pathOperations -> Right ()
           | otherwise -> Left (SharedPathRequiresApplications path (record ^. #applicationIds))
 
-validateManagedPath :: FilePath -> Either ReconciliationError ()
-validateManagedPath rawPath = case validateProjectRelativePath (T.pack rawPath) of
+-- | Refuse paths that leave the project or name Seihou's or Git's control data.
+-- A module's own directory under @.seihou/@ is an ordinary managed location;
+-- the @.seihou@ directory itself may be created but never written as a file.
+validateManagedPath :: PathOperand -> FilePath -> Either ReconciliationError ()
+validateManagedPath operand rawPath = case validateProjectRelativePath (T.pack rawPath) of
   Left err -> Left (InvalidReconciliationPath rawPath err)
   Right safePath
     | safePath /= rawPath ->
         Left (InvalidReconciliationPath rawPath "path must not contain surrounding whitespace")
     | safePath == "." ->
         Left (InvalidReconciliationPath rawPath "path must name a project file or directory")
-    | targetsControlPath safePath ->
-        Left (InvalidReconciliationPath rawPath "path targets Seihou or Git control data")
+    | Just reason <- controlPathReason operand safePath ->
+        Left (InvalidReconciliationPath rawPath reason)
     | otherwise -> Right ()
-
-targetsControlPath :: FilePath -> Bool
-targetsControlPath path = case pathSegments path of
-  firstSegment : _ -> firstSegment == ".seihou" || firstSegment == ".git"
-  [] -> False
-
-pathSegments :: FilePath -> [Text]
-pathSegments = filter (not . T.null) . T.split (\character -> character == '/' || character == '\\') . T.pack
 
 groupFileOperations :: [Operation] -> Map FilePath [Operation]
 groupFileOperations = foldl' addOperation Map.empty

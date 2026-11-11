@@ -1,6 +1,7 @@
 module Seihou.Engine.ReconcileSpec (tests) where
 
 import Control.Lens ((^.))
+import Control.Monad (forM_)
 import Data.Functor.Identity (Identity (..))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
@@ -245,6 +246,43 @@ spec = do
               (owners ".seihou/manifest.json" [appA])
               cleanMerge
       result `shouldSatisfy` isInvalidPath
+
+    it "rejects Seihou's own state, the .seihou directory as a file, and Git data" $
+      forM_ [".seihou/baselines/x", ".SEIHOU/manifest.json", ".seihou", ".git/config"] $ \path ->
+        planWith Map.empty Map.empty Map.empty empty [appA] [WriteFileOp path "bad" Template] (owners path [appA]) cleanMerge
+          `shouldSatisfy` isInvalidPath
+
+    it "rejects a directory operand inside Seihou's own state" $
+      planWith Map.empty Map.empty Map.empty empty [appA] [CreateDirOp ".seihou/baselines"] Map.empty cleanMerge
+        `shouldSatisfy` isInvalidPath
+
+    it "plans a write into a module's own .seihou directory with its parent directories" $ do
+      let path = ".seihou/demo/helper.txt"
+          operations = [CreateDirOp ".seihou", CreateDirOp ".seihou/demo", WriteFileOp path "top\nmiddle v1\nbottom\n" Template]
+      case planWith Map.empty Map.empty Map.empty empty [appA] operations (owners path [appA]) cleanMerge of
+        Right reconciliation -> Map.member path (reconciliation ^. #files) `shouldBe` True
+        Left err -> expectationFailure (show err)
+
+    it "merges a user edit in a module's own .seihou directory like any managed file" $ do
+      let path = ".seihou/demo/helper.txt"
+          base = "top\nmiddle v1\nbottom\n"
+          ref = baselineRefForContent base
+          manifest = withFile path (record base (Just ref) [appA]) empty
+          result =
+            planWith
+              (Map.singleton path "top edited by user\nmiddle v1\nbottom\n")
+              Map.empty
+              (Map.singleton ref base)
+              manifest
+              [appA]
+              [CreateDirOp ".seihou", CreateDirOp ".seihou/demo", WriteFileOp path "top\nmiddle v2\nbottom\n" Template]
+              (owners path [appA])
+              (\_ _ _ -> MergeClean "top edited by user\nmiddle v2\nbottom\n")
+      case result of
+        Right reconciliation -> case (reconciliation ^. #files) Map.! path of
+          FileAutoMerge _ state _ _ -> (state ^. #appliedContent) `shouldBe` "top edited by user\nmiddle v2\nbottom\n"
+          other -> expectationFailure ("expected automatic merge, got " <> show other)
+        Left err -> expectationFailure (show err)
 
   describe "classification and resolution" $ do
     it "preserves a user-only edit without advancing its applied hash" $ do

@@ -19,7 +19,7 @@ import Data.Ord (Down (..))
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.CLI.Update.Types
-import Seihou.Core.Path (validateProjectRelativePath)
+import Seihou.Core.Path (isControlFileTarget, validateProjectRelativePath)
 import Seihou.Core.Types
 import Seihou.Engine.Migrate (ExecutedMigrationPlan (..), MigrationOpInstance (..))
 import Seihou.Engine.UpdateTransaction (UpdateTransaction (..))
@@ -215,7 +215,9 @@ resolveTarget projectRoot _ ProjectDirectory target =
   case validateProjectRelativePath (T.pack target) of
     Left reason -> ioError (userError ("unsafe project backup path: " <> T.unpack reason))
     Right safe
-      | safe == "." || targetsControlPath safe -> ioError (userError "unsafe project backup target")
+      -- Restoring removes the target first, so even the .seihou directory
+      -- itself is refused here, not only Seihou's and Git's control data.
+      | safe == "." || isControlFileTarget safe -> ioError (userError "unsafe project backup target")
       | otherwise -> pure (projectRoot </> safe)
 resolveTarget _ installedRoot InstalledArtifact target
   | takeFileName target == target && target /= "." && target /= ".." = pure (installedRoot </> target)
@@ -225,11 +227,6 @@ validateBackupName :: FilePath -> IO ()
 validateBackupName name
   | takeFileName name == name && name /= "." && name /= ".." = pure ()
   | otherwise = ioError (userError "unsafe service backup name")
-
-targetsControlPath :: FilePath -> Bool
-targetsControlPath path = case splitDirectories path of
-  first : _ -> first == ".seihou" || first == ".git"
-  [] -> False
 
 migrationDirectories :: PlannedUpdateMigration -> [FilePath]
 migrationDirectories migration = concatMap directories (migration ^. #stagedPlan . #ops)

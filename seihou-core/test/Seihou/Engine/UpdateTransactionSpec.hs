@@ -302,6 +302,57 @@ spec = do
         readProject projectRoot "file.txt" `shouldReturn` "user\n"
         Directory.doesDirectoryExist (transaction ^. #transactionDirectory) `shouldReturn` False
 
+  describe "module state under .seihou" $ do
+    it "merges and commits a file in a module's own .seihou directory" $
+      withSystemTempDirectory "seihou-update-module-state" $ \projectRoot -> do
+        let path = ".seihou/demo/helper.txt"
+            base = "top\nmiddle v1\nbottom\n"
+            userEdit = "top edited by user\nmiddle v1\nbottom\n"
+            generated = "top\nmiddle v2\nbottom\n"
+            merged = "top edited by user\nmiddle v2\nbottom\n"
+            oldRecord = fileRecord base (Just (baselineRefForContent base)) [appA]
+            manifest = manifestWithFiles (Map.singleton path oldRecord)
+            desired = desiredFile path generated [appA]
+            plan =
+              ReconciliationPlan
+                (Set.singleton appA)
+                (Map.singleton path (FileAutoMerge desired (plannedState generated merged True) (observed userEdit) (Just oldRecord)))
+                (Set.fromList [".seihou", ".seihou/demo"])
+        writeProject projectRoot path userEdit
+        transaction <- expectRight =<< beginUpdateTransaction projectRoot (Set.singleton path)
+        candidate <- expectRight =<< applyReconciliation transaction plan manifest
+        readProject projectRoot path `shouldReturn` merged
+        (((candidate ^. #files) Map.! path) ^. #hash) `shouldBe` hashContent merged
+        completeUpdateTransaction transaction `shouldReturn` Right ()
+        readProject projectRoot path `shouldReturn` merged
+
+    it "refuses Seihou's own state as a transaction target" $
+      withSystemTempDirectory "seihou-update-control-target" $ \projectRoot -> do
+        result <- beginUpdateTransaction projectRoot (Set.singleton ".seihou/manifest.json")
+        case result of
+          Left (InvalidTransactionPath path reason) -> do
+            path `shouldBe` ".seihou/manifest.json"
+            reason `shouldBe` "path targets Seihou's own state at .seihou/manifest.json"
+          Left other -> expectationFailure ("expected an invalid path, got " <> show other)
+          Right _ -> expectationFailure "expected .seihou/manifest.json to be refused"
+        Directory.doesDirectoryExist (projectRoot </> ".seihou" </> "transactions") `shouldReturn` False
+
+    it "refuses a required directory inside Seihou's own state before writing" $
+      withSystemTempDirectory "seihou-update-control-directory" $ \projectRoot -> do
+        writeProject projectRoot "file.txt" "old\n"
+        let desired = desiredFile "file.txt" "new\n" [appA]
+            plan =
+              ReconciliationPlan
+                (Set.singleton appA)
+                (Map.singleton "file.txt" (FileUpdate desired (plannedState "new\n" "new\n" True) (observed "old\n") Nothing))
+                (Set.singleton ".seihou/baselines")
+        transaction <- expectRight =<< beginUpdateTransaction projectRoot (Set.singleton "file.txt")
+        result <- applyReconciliation transaction plan (manifestWithFiles Map.empty)
+        case result of
+          Left (InvalidTransactionPath ".seihou/baselines" _) -> pure ()
+          other -> expectationFailure ("expected .seihou/baselines to be refused, got " <> show other)
+        readProject projectRoot "file.txt" `shouldReturn` "old\n"
+
   describe "partial update of a co-owned path" $ do
     -- A targeted update plans only the applications it selected, so for a
     -- co-owned path the reconciliation result describes a subset of the

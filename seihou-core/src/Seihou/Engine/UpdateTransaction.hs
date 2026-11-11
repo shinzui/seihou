@@ -32,7 +32,7 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime, getCurrentTime)
-import Seihou.Core.Path (validateProjectRelativePath)
+import Seihou.Core.Path (PathOperand (..), controlPathReason, validateProjectRelativePath)
 import Seihou.Core.Seed (renderSeedOwnershipError, replaceSelectedSeedClaims)
 import Seihou.Core.Types
 import Seihou.Effect.BaselineStore (putBaseline)
@@ -191,7 +191,8 @@ initializeJournal transaction seedPaths safeTargets = do
         pure (JournalEntry relativePath (Just backupName) Nothing)
       EntryMissing -> pure (JournalEntry relativePath Nothing Nothing)
       EntryDirectory -> ioError (userError ("transaction target is a directory: " <> relativePath))
-  -- The manifest is never a target (validateTransactionPath rejects .seihou/),
+  -- The manifest is never a target (validateTransactionPath rejects Seihou's
+  -- own state under .seihou/),
   -- but an orchestrator may publish it before the transaction commits. A byte
   -- copy lets rollback and crash recovery return it to this exact state.
   verifySafeParents (transaction ^. #projectRoot) manifestRelativePath
@@ -343,7 +344,7 @@ applyReconciliationWithHook afterMutation transaction plan manifest = do
                 Right () -> pure (Right candidate)
 
 transactionPreflight :: UpdateTransaction -> ReconciliationPlan -> IO (Either TransactionError ())
-transactionPreflight transaction plan = case traverse validateTransactionPath (Set.toAscList (plan ^. #requiredDirectories)) of
+transactionPreflight transaction plan = case traverse validateTransactionDirectory (Set.toAscList (plan ^. #requiredDirectories)) of
   Left err -> pure (Left err)
   Right _
     | not (Set.null unjournaled) -> pure (Left (TransactionUnjournaledPaths unjournaled))
@@ -872,7 +873,7 @@ validateJournal metadata = do
   traverse_ validateBackupName [name | JournalEntry _ (Just name) _ <- metadata ^. #entries]
   traverse_ validateBackupName (metadata ^. #manifestBackup)
   traverse_ validateBaselineName (metadata ^. #setAsideBaselines)
-  traverse_ (first renderTransactionPathError . validateTransactionPath) (metadata ^. #newDirectories)
+  traverse_ (first renderTransactionPathError . validateTransactionDirectory) (metadata ^. #newDirectories)
   pure metadata
   where
     validateObjectId oid
@@ -900,23 +901,25 @@ writeJournal transactionDirectory metadata = do
 journalPath :: FilePath -> FilePath
 journalPath transactionDirectory = transactionDirectory </> "journal.json"
 
+-- | Validate a file the transaction journals, writes, or restores.
 validateTransactionPath :: FilePath -> Either TransactionError FilePath
-validateTransactionPath rawPath = case validateProjectRelativePath (T.pack rawPath) of
+validateTransactionPath = validateTransactionOperand FileTarget
+
+-- | Validate a directory the transaction creates and may remove on rollback.
+-- The @.seihou@ directory itself is allowed: it always exists while a
+-- transaction does, so it is never recorded as newly created.
+validateTransactionDirectory :: FilePath -> Either TransactionError FilePath
+validateTransactionDirectory = validateTransactionOperand DirectoryOperand
+
+validateTransactionOperand :: PathOperand -> FilePath -> Either TransactionError FilePath
+validateTransactionOperand operand rawPath = case validateProjectRelativePath (T.pack rawPath) of
   Left err -> Left (InvalidTransactionPath rawPath err)
   Right safePath
     | safePath /= rawPath -> Left (InvalidTransactionPath rawPath "path must not contain surrounding whitespace")
     | safePath == "." -> Left (InvalidTransactionPath rawPath "path must name a project file")
-    | targetsControlPath safePath ->
-        Left (InvalidTransactionPath rawPath "path targets Seihou or Git control data")
+    | Just reason <- controlPathReason operand safePath ->
+        Left (InvalidTransactionPath rawPath reason)
     | otherwise -> Right safePath
-
-targetsControlPath :: FilePath -> Bool
-targetsControlPath path = case pathSegments path of
-  firstSegment : _ -> firstSegment == ".seihou" || firstSegment == ".git"
-  [] -> False
-
-pathSegments :: FilePath -> [Text]
-pathSegments = filter (not . T.null) . T.split (\character -> character == '/' || character == '\\') . T.pack
 
 atomicWriteText :: FilePath -> Text -> IO ()
 atomicWriteText path content = do

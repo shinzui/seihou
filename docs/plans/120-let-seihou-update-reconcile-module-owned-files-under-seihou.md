@@ -72,9 +72,11 @@ succeeds and the file contains both the user's edit and the new release's change
   distinguishes ordinary project paths, a module's state directory, and Seihou or Git control
   paths, with unit tests in `seihou-core/test/Seihou/Core/PathSpec.hs` passing. (2026-11-11:
   16 cases pass under `-p "/project path classification/"`.)
-- [ ] Milestone 2: reconciliation, the update transaction, and update recovery accept
+- [x] Milestone 2: reconciliation, the update transaction, and update recovery accept
   `.seihou/<module>/` paths and still refuse control paths; new `ReconcileSpec` and
-  `UpdateTransactionSpec` cases pass alongside the existing suite.
+  `UpdateTransactionSpec` cases pass alongside the existing suite. (2026-11-11: all 1423 core
+  tests pass; the stray-copy grep prints nothing; the reserved-list grep prints only reserved
+  entries. Recovery has no direct unit test; Milestone 4's end-to-end update covers it.)
 - [ ] Milestone 3: generation enforces the same rule — load-time refusal of control paths,
   plan-time refusal of `.seihou/` paths outside the module's own directory, a
   `validate-module` check, and control-path refusal for migration and removal paths.
@@ -171,6 +173,14 @@ Findings made while writing this plan, recorded here because they shaped its des
   `validateInputs` validates those directories. Creating an existing directory is a no-op, and the
   transaction records only directories it actually created, so rollback can never remove
   `.seihou`. Changing `parentDirs` instead would special-case one path in generic code.
+  Date: 2026-11-11
+
+- Decision: Update recovery's `resolveTarget` refuses the `.seihou` directory itself, not only
+  control paths (the file-target predicate, not the directory predicate the plan first named).
+  Migration and removal paths use the same strict predicate.
+  Rationale: Recovery restores a directory backup by first deleting the target with
+  `removePathForcibly`, and migrations can move or delete whole directories; a `.seihou` target
+  there would erase every piece of Seihou state. Creating `.seihou` is harmless, deleting it is not.
   Date: 2026-11-11
 
 - Decision: Command `workDir` values are not restricted by this plan.
