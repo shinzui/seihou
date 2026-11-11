@@ -165,6 +165,16 @@ Every command has a full reference under [`docs/cli/`](docs/cli/) and built-in
 | [`validate-recipe`](docs/cli/validate-recipe.md) | Check a recipe descriptor without prompts, installed members, or composition effects. |
 | [`registry`](docs/cli/registry.md) | Author `seihou-registry.dhall` files (`sync-versions`, `validate`). |
 
+**Judgements**
+
+| Command | Description |
+|---------|-------------|
+| [`check`](docs/cli/check.md) | Run the project's active judgements on the staged changes (exit 0 pass, 10 blocked, 11 needs review, 1 error); the pre-commit hook runs it. |
+| [`new-judgement`](docs/cli/new-judgement.md) · [`validate-judgement`](docs/cli/validate-judgement.md) | Scaffold and validate a judgement and its labelled examples. |
+| [`judgement eval`](docs/cli/judgement.md#eval) · [`judgement configure`](docs/cli/judgement.md#configure) | Score a judgement on its examples; choose its route, data policy, enforcement and thresholds. |
+
+`seihou run security-review` adopts the built-in judgement that blocks commits adding credentials or confidential information. [Judgements guide](docs/user/judgements.md).
+
 **Configuration**
 
 | Command | Description |

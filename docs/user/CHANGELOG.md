@@ -6,6 +6,11 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 ## [Unreleased]
 
+### Added
+
+- **Judgements: check staged changes before each commit.** `seihou run security-review` adopts a built-in judgement that blocks commits adding working credentials or confidential information: gitleaks catches recognisable credentials locally before anything is sent, and a configured model reviews the rest. Write your own with `seihou new-judgement`, check it with `seihou validate-judgement` and `seihou judgement eval`, and adopt it with `seihou run NAME`. `seihou check` runs every active judgement and exits 0, 10 (blocked), 11 (needs review) or 1 (error); adoption installs a pre-commit hook that runs it, keeping any existing hook. Each check is a yes/no question with its own thresholds on the model-reported probability of the concern, and its own enforcement. Set the review route and consent with `seihou config set judgement.provider`, `judgement.model` and `judgement.dataPolicy approved-remote`. See the [judgements guide](judgements.md).
+- Manifest schema 15 records active judgements. Ordinary adoption stages the lossless 14-to-15 step; older executables reject schema 15, so update Seihou before adopting a judgement.
+
 ### Fixed
 
 - **SSH and HTTPS spellings of one GitHub repository agree everywhere.** A project whose manifest records `git@github.com:OWNER/REPO.git` while your installed copy records `https://github.com/OWNER/REPO.git` (or the reverse) gets no origin warning in `seihou status`, generates with `seihou run` without an origin refusal, reinstalls without `--force`, and keeps its completed blueprint migrations. Nothing to repair or reinstall; seihou never rewrites either URL. On other Git servers, a different scheme, SSH user, port or path form still counts as a different source, and a different owner or repository is still reported everywhere.
