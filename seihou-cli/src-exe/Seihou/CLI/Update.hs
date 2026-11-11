@@ -15,7 +15,7 @@ import Seihou.CLI.CommandExecution (CommandPolicy (..))
 import Seihou.CLI.Commands (UpdateOpts (..))
 import Seihou.CLI.CommitMessage (generateCommitMessage)
 import Seihou.CLI.Git (gitAdd, gitCheckIgnore, gitCommit, gitDiffCached, isGitRepo)
-import Seihou.CLI.Judgement.CommitGate (gatedCommit, renderBlocked)
+import Seihou.CLI.Judgement.CommitGate (CommitBlocked (..), gatedCommit, renderBlocked)
 import Seihou.CLI.Style (useColor)
 import Seihou.CLI.Update.Interaction
   ( InteractionError (..),
@@ -34,7 +34,7 @@ import Seihou.Core.Types (ModuleName (..))
 import Seihou.Effect.ProcessInterp (runProcessIO)
 import Seihou.Prelude
 import System.Directory (getCurrentDirectory)
-import System.Exit (ExitCode (..), exitFailure)
+import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.FilePath (isAbsolute)
 import System.IO (hFlush, hIsTerminalDevice, isEOF, stderr, stdin)
 import "seihou-cli" Seihou.CLI.Update qualified as Service
@@ -117,8 +117,16 @@ handlePlanned terminal opts (Right originalPlan) = do
                   when (opts ^. #commit || isJust (opts ^. #commitMessage)) $ do
                     committed <- commitUpdate opts result
                     case committed of
-                      Left err -> do
+                      Left (Left err) -> do
                         TIO.hPutStrLn stderr ("Update succeeded, but git commit failed: " <> err)
+                        exitFailure
+                      Left (Right blocked@(CommitBlocked code _)) -> do
+                        -- Same exit codes as seihou check, run and migrate;
+                        -- with --json the report stays off stdout.
+                        (if opts ^. #json then TIO.hPutStr stderr else TIO.putStr) (renderBlocked blocked)
+                        exitWith (ExitFailure code)
+                      Left (Right failed) -> do
+                        TIO.hPutStrLn stderr ("Update succeeded, but " <> T.stripEnd (renderBlocked failed))
                         exitFailure
                       Right () -> pure ()
 
@@ -150,7 +158,9 @@ confirmApply True = loop
               TIO.hPutStrLn stderr "Please answer yes or no."
               loop
 
-commitUpdate :: UpdateOpts -> Service.UpdateResult -> IO (Either Text ())
+-- | 'Left' 'Left' is a staging failure; 'Left' 'Right' is the gate's or the
+-- commit's own outcome.
+commitUpdate :: UpdateOpts -> Service.UpdateResult -> IO (Either (Either Text CommitBlocked) ())
 commitUpdate opts result = do
   let candidates = filter (not . isAbsolute) (Set.toAscList (result ^. #touchedPaths))
   inRepo <- runEff $ runProcessIO isGitRepo
@@ -164,7 +174,7 @@ commitUpdate opts result = do
         else do
           (addExit, _, addErr) <- runEff $ runProcessIO $ gitAdd staged
           case addExit of
-            ExitFailure _ -> pure (Left (T.strip addErr))
+            ExitFailure _ -> pure (Left (Left (T.strip addErr)))
             ExitSuccess -> do
               root <- getCurrentDirectory
               let mkMessage = case opts ^. #commitMessage of
@@ -178,7 +188,7 @@ commitUpdate opts result = do
                     pure $ case commitExit of
                       ExitSuccess -> Right ()
                       ExitFailure _ -> Left (T.strip commitErr)
-              first (T.stripEnd . renderBlocked) <$> gatedCommit root mkMessage commitWith
+              first Right <$> gatedCommit root mkMessage commitWith
 
 failInteraction :: UpdateOpts -> InteractionError -> IO a
 failInteraction opts err = case err of

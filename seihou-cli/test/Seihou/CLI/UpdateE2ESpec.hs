@@ -1,13 +1,17 @@
 module Seihou.CLI.UpdateE2ESpec (tests) where
 
 import Control.Lens ((&), (.~), (^.))
+import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
 import Data.Char (isHexDigit)
 import Data.Generics.Labels ()
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
+import Seihou.CLI.Judgement.Scanner (findScanner)
 import Seihou.CLI.SeihouBinary (seihouBinary)
 import Seihou.CLI.UpdateSpec
   ( CoOwnerWriteMode (..),
@@ -19,7 +23,9 @@ import Seihou.CLI.UpdateSpec
     prepareUpdateFixture,
     publishBetaReleases,
   )
-import Seihou.Core.Types (ManifestSchemaVersion (..), SharedWriteMode (..))
+import Seihou.Core.Judgement
+import Seihou.Core.Types (ActiveJudgement (..), JudgementOwner (..), JudgementSource (..), ManifestSchemaVersion (..), SharedWriteMode (..))
+import Seihou.Manifest.Judgement (definitionDigest)
 import Seihou.Manifest.Types (manifestFromJSON, manifestToJSON)
 import System.Directory (doesFileExist, renameDirectory)
 import System.Environment (getEnvironment)
@@ -124,6 +130,40 @@ spec = do
       subject `shouldBe` "chore(seihou): update demo"
       worktree <- T.strip . T.pack <$> readProcess "git" ["-C", fixture ^. #projectRoot, "status", "--porcelain"] ""
       worktree `shouldBe` ""
+
+  it "exits with the judgement's code and keeps stdout JSON when the commit gate blocks" $
+    withSystemTempDirectory "seihou-update-commit-gate" $ \root -> do
+      scanner <- findScanner
+      case scanner of
+        Nothing -> pendingWith "gitleaks is not on PATH"
+        Just _ -> do
+          fixture <- prepareUpdateFixture root
+          binary <- seihouBinary
+          let project = fixture ^. #projectRoot
+              token = "ghp_" <> T.replicate 4 "Z" <> "1aB2cD3eF4gH5iJ6kL7mN8oP9qR0sT1u"
+          -- Activate a judgement that declares the secret scan.
+          Right manifest <- manifestFromJSON <$> LBS.readFile (fixture ^. #manifestPath)
+          let guard =
+                JudgementDefinition "guard" (Just "1.0.0") Nothing "Review." (EvidenceDeclaration [StagedChangesScope] [] []) defaultCoverageLimits [SecretScan] (JudgementCheck "concern" "Is the concern present?" Yes Nothing Nothing [] Enforced High (Thresholds 0.7 0.3) (Thresholds 0.9 0.05) True :| [])
+              record = ActiveJudgement BundledJudgement guard (definitionDigest guard) (defaultPolicy ApprovedRemote False guard) [DirectAdoption]
+          LBS.writeFile (fixture ^. #manifestPath) (manifestToJSON (manifest & #version .~ ManifestSchemaVersion 15 & #judgements .~ [record]))
+          callProcess "git" ["-C", project, "init", "-q"]
+          callProcess "git" ["-C", project, "config", "user.name", "Seihou Test"]
+          callProcess "git" ["-C", project, "config", "user.email", "test@example.com"]
+          callProcess "git" ["-C", project, "add", "."]
+          callProcess "git" ["-C", project, "commit", "-qm", "test: record v1 fixture"]
+          -- An unrelated pre-staged file is part of what the commit would contain.
+          TIO.writeFile (project </> "env.sh") ("export GH_TOKEN=" <> token <> "\n")
+          callProcess "git" ["-C", project, "add", "env.sh"]
+          (exitCode, stdoutText, stderrText) <- runSeihou binary fixture ["update", "demo", "--json", "--commit-message", "chore(seihou): update demo"]
+          exitCode `shouldBe` ExitFailure 10
+          (Aeson.eitherDecodeStrict (TE.encodeUtf8 stdoutText) :: Either String Aeson.Value) `shouldSatisfy` either (const False) (const True)
+          stderrText `shouldSatisfy` T.isInfixOf "Changes applied; commit blocked"
+          (stdoutText <> stderrText) `shouldNotSatisfy` T.isInfixOf token
+          subject <- T.strip . T.pack <$> readProcess "git" ["-C", project, "log", "-1", "--pretty=%s"] ""
+          subject `shouldBe` "test: record v1 fixture"
+          staged <- lines <$> readProcess "git" ["-C", project, "diff", "--cached", "--name-only"] ""
+          staged `shouldContain` ["env.sh"]
 
   it "retains an edited orphan under --force" $
     withSystemTempDirectory "seihou-update-executable-orphan" $ \root -> do

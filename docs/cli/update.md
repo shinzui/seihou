@@ -388,6 +388,13 @@ or apply completed as reported. Invalid options, missing input, unsafe partial
 selection, unresolved non-interactive conflicts, stale state, apply failure, or
 requested Git commit failure exit non-zero.
 
+With `--commit` or `--commit-message`, active [judgements](../user/judgements.md) run on
+everything staged before a commit message is produced. When one stops the commit, the
+update stays applied and staged, the command prints "Changes applied; commit blocked",
+and it exits as [`seihou check`](check.md) would: 10 for a block, 11 for needs review,
+1 for an error. With `--json` that report goes to stderr, so stdout remains the JSON
+update result.
+
 ## Checkout declarations
 
 Update reconciles prior declarations, candidate declarations and disk through the shared checkout planner. Link-only and ownership-only changes are real updates. Unchanged specifications do not repair unrelated drift; use [sync](sync.md). A retarget accepts an absent path, the expected old link, or the already-correct new link; a third local target refuses. Last-owner retirement removes only the expected literal old link, even if its source is gone. Edited links and real objects survive with a warning. Surviving owners must agree. Managed-to-seed release and explicit reverse adoption use the ordinary update workflow described above. Checkout transitions that conflict with managed or seed claims refuse. Recovery journals read versions 1–4: version 2 added literal links, version 3 added Git-index adoption, and version 4 adds anchored exclusive seed creation evidence. Recovery never snapshots/restores metadata-only seed paths or follows link targets.
