@@ -3,7 +3,7 @@
 Run the project's active judgements over the staged changes and report a decision.
 
 ```sh
-seihou check [NAME] [--staged] [--dry-run] [--json]
+seihou check [NAME] [--staged | --range BASE..HEAD] [--policy-ref REF] [--dry-run] [--json]
 ```
 
 `seihou check` reads the judgements recorded in `.seihou/manifest.json`, captures the
@@ -11,6 +11,15 @@ staged index exactly as Git will commit it, and runs every active judgement. It 
 read-only: it never stages or unstages files, writes the manifest, or changes hook
 setup. The pre-commit hook that `seihou run JUDGEMENT` installs runs
 `seihou check --staged`.
+
+`--range BASE..HEAD` checks every commit in the range instead of the staged changes;
+each commit is compared with its first parent, so a file added and later removed inside
+the range is still reviewed, and earlier versions are cited as `path@<commit>`. Both ends
+are resolved to commits first, and a shallow clone missing the history is refused.
+`--policy-ref REF` reads the judgements recorded at `REF` from Git objects instead of the
+working tree's manifest; use the base branch in CI so a change cannot weaken its own
+check. A judgement that does not declare the selected evidence scope is listed as not
+checked.
 
 `NAME` runs one active judgement, for diagnosis. It is not a substitute for running
 all of them. `--staged` states the default scope explicitly. `--dry-run` prints each

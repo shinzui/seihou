@@ -161,6 +161,29 @@ commit uses and reports missed unsafe cases, false blocks, undecided cases and
 errors per check, with a threshold sweep computed from the same results. Then
 `seihou run` adopts the judgement exactly like the built-in one.
 
+## Seihou's own commits and CI
+
+`seihou run`, `seihou update` and `seihou migrate` with `--commit` run every active
+judgement on the staged changes, including unrelated files you staged earlier, before
+producing a commit message. A generated message is therefore never sent to an AI before
+the changes are reviewed. Immediately before `git commit` the index is compared with the
+one that was reviewed and reviewed again if it changed. A block leaves the changes
+applied and staged and exits nonzero with "Changes applied; commit blocked"; nothing is
+rolled back.
+
+In CI, check every commit a change introduces against the policy of its base:
+
+```sh
+seihou check --range origin/main..HEAD --policy-ref origin/main --json
+```
+
+`--range` inspects each commit, not the net diff, so a secret added and removed inside
+the range is still found, and earlier versions of a file are cited as
+`path@<commit>`. `--policy-ref` reads the judgements recorded at that ref from Git
+objects, so a change cannot weaken the policy it is checked against. Fetch the base
+history first (`fetch-depth: 0`); a shallow clone without it is refused. A base with no
+adopted judgements has no trusted policy, and first adoption needs explicit review.
+
 ## Change policy
 
 A project's thresholds and enforcement are recorded in the manifest when a judgement
@@ -190,13 +213,10 @@ and a hand-edited snapshot is refused.
 
 ## Limits in this release
 
-- Only staged changes are checked. Commit ranges for CI, and a trusted base policy,
-  are not available yet.
 - The judgment-only gate is not available, so the generative review decides every
   check.
-- `seihou run`, `update` and `migrate` do not yet run judgements before their own
-  `--commit`.
 - `git commit --no-verify` skips the hook. Local hooks cover cooperative development,
-  not a process deliberately bypassing them.
+  not a process deliberately bypassing them; enforce in CI with
+  `seihou check --range origin/main..HEAD --policy-ref origin/main`.
 - Judgements cannot yet be referenced from modules or recipes; adopt each with
   `seihou run NAME`.
