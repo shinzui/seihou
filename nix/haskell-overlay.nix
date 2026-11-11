@@ -50,6 +50,12 @@ in
     "1rfdma5r71f2rn7j9r5k4sd54v4w85d9a2r2wqjjfp1gmy7g6bsx");
   baikai-kit = dontCheck (hackagePackage "baikai-kit" "0.4.0.3"
     "0pnjn93pg4pw3pwvxz8cc517id329nlr43cdmi8gmnln27mmady4");
+  # mori://shinzui/shikumi/packages/shikumi 0.5.1.0 bounds baikai-effectful
+  # below 0.5, so 0.5.0.0 is excluded.
+  baikai-effectful = dontCheck (hackagePackage "baikai-effectful" "0.4.0.5"
+    "11bcq4xs3m1vzs6v5x2fbl8pbya8samalvnqpfyl1fsb6pva37as");
+  shikumi = dontCheck (hackagePackage "shikumi" "0.5.1.0"
+    "0bys08dmq4p9jnw9lapxlg39bwd4i7934g8sh06vlnb9c2g1a17v");
 
   # effectful-core 2.7.x: the ghc9124 package set still carries 2.6.1.0, which
   # is below the `>=2.7.1.1` bound seihou-core/seihou-cli declare (2.7.0.0 has a
