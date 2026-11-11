@@ -14,7 +14,7 @@ import Seihou.CLI.Judgement.Evidence
 import Seihou.CLI.Judgement.Runtime (JudgementBackend (..))
 import Seihou.CLI.Judgement.Scanner (findScanner)
 import Seihou.Core.Judgement
-import Seihou.Core.Types (ActiveJudgement (..), JudgementSource (..))
+import Seihou.Core.Types (ActiveJudgement (..), ApplicationId (..), JudgementOwner (..), JudgementSource (..))
 import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.ManifestStore (writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
@@ -54,7 +54,7 @@ secretReview =
   JudgementDefinition "security-review" (Just "1.0.0") Nothing "Review." defaultEvidenceDeclaration defaultCoverageLimits [SecretScan] (JudgementCheck "c" "Is the concern present?" Yes Nothing Nothing [] Enforced High (Thresholds 0.5 0.1) (Thresholds 0.9 0.05) True :| [])
 
 active :: JudgementDefinition -> ActiveJudgement
-active d = ActiveJudgement BundledJudgement d (definitionDigest d) (defaultPolicy ApprovedRemote False d)
+active d = ActiveJudgement BundledJudgement d (definitionDigest d) (defaultPolicy ApprovedRemote False d) [DirectAdoption]
 
 countingServices :: FilePath -> IO (CheckServices, IO Int)
 countingServices dir = do

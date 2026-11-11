@@ -11,6 +11,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.CheckoutSync (checkoutAdoptionNotices)
 import Seihou.CLI.Commands (StatusOpts (..))
+import Seihou.CLI.Judgement.Adopt (judgementHookState)
 import Seihou.CLI.ManifestGuard (ArtifactCheck, checkAppliedArtifacts, checkAppliedBlueprint)
 import Seihou.CLI.Outdated (checkInstalledModulesForUpdates)
 import Seihou.CLI.PendingMigrations (detectPendingMigrations)
@@ -74,6 +75,8 @@ handleStatus opts = do
             | opts ^. #statusFullPrompt = PromptFull
             | otherwise = PromptTruncated
       TIO.putStr (formatStatusWith promptDisplay colorEnabled manifest tracked mEntries pendings)
+      statusRoot <- getCurrentDirectory
+      judgementHookState statusRoot True >>= either TIO.putStrLn (mapM_ TIO.putStrLn)
       -- Report, never fail: a stale or mismatched module makes 'seihou run'
       -- refuse, and this is where a developer finds out before that happens.
       -- Any IO failure while checking is swallowed for the same reason.

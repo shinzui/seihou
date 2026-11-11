@@ -47,6 +47,7 @@ module Seihou.Core.Types
     recipeNameToModuleName,
     ActiveJudgement (..),
     JudgementSource (..),
+    JudgementOwner (..),
     Operation (..),
     isAdditiveOperation,
     ModuleLoadError (..),
@@ -640,9 +641,20 @@ data ActiveJudgement = ActiveJudgement
   { source :: !JudgementSource,
     definition :: !JudgementDefinition,
     digest :: !SHA256,
-    policy :: !JudgementPolicy
+    policy :: !JudgementPolicy,
+    -- | Who keeps the judgement active. The last owner's retirement removes
+    -- the record.
+    owners :: ![JudgementOwner]
   }
   deriving stock (Eq, Show, Generic)
+
+-- | One reason a judgement is active.
+data JudgementOwner
+  = -- | Adopted directly with @seihou run NAME@.
+    DirectAdoption
+  | -- | Referenced by a recorded application's module or recipe.
+    ApplicationOwner !ApplicationId
+  deriving stock (Eq, Ord, Show, Generic)
 
 -- | The numeric schema of @.seihou/manifest.json@. Every semantic change to
 -- the serialized manifest advances it (see

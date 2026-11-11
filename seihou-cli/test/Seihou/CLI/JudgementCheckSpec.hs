@@ -17,7 +17,7 @@ import Seihou.CLI.Judgement.Hooks
 import Seihou.CLI.Judgement.Runtime (JudgementBackend (..), JudgementRoute (..))
 import Seihou.CLI.Judgement.Scanner (findScanner)
 import Seihou.Core.Judgement
-import Seihou.Core.Types (ActiveJudgement (..), JudgementSource (..), ManifestSchemaVersion (..))
+import Seihou.Core.Types (ActiveJudgement (..), ApplicationId (..), JudgementOwner (..), JudgementSource (..), ManifestSchemaVersion (..))
 import Seihou.Dhall.Eval (evalJudgementFromFile)
 import Seihou.Manifest.Judgement (definitionDigest)
 import Seihou.Manifest.Types (manifestFromJSON)
@@ -62,7 +62,7 @@ docsJudgement =
     }
 
 active :: JudgementDefinition -> ActiveJudgement
-active def = ActiveJudgement BundledJudgement def (definitionDigest def) (defaultPolicy ApprovedRemote False def)
+active def = ActiveJudgement BundledJudgement def (definitionDigest def) (defaultPolicy ApprovedRemote False def) [DirectAdoption]
 
 -- | A backend that answers each check with a fixed probability of yes and
 -- counts requests.
@@ -174,9 +174,9 @@ tests = testSpec "judgement check, adoption and hooks" $ do
     let route = Just (JudgementRoute AgentProviderClaudeCli "claude-sonnet-5")
     it "names the configuration to set when no route or consent is given" $ withRepo $ \dir -> do
       sc <- findScanner
-      Left noRoute <- planAdoption dir (AdoptionInputs Nothing Nothing sc) (Just ApprovedRemote) BundledJudgement docsJudgement
+      Left noRoute <- planAdoption dir (AdoptionInputs Nothing Nothing sc) (Just ApprovedRemote) DirectAdoption BundledJudgement docsJudgement
       noRoute `shouldSatisfy` T.isInfixOf "seihou config set judgement.provider"
-      Left noConsent <- planAdoption dir (AdoptionInputs route Nothing sc) Nothing BundledJudgement docsJudgement
+      Left noConsent <- planAdoption dir (AdoptionInputs route Nothing sc) Nothing DirectAdoption BundledJudgement docsJudgement
       noConsent `shouldSatisfy` T.isInfixOf "judgement.dataPolicy approved-remote"
       doesFileExist (dir </> ".seihou" </> "manifest.json") `shouldReturn` False
     it "records the snapshot at schema 15 and installs the hook, idempotently" $ withRepo $ \dir -> do
@@ -184,13 +184,13 @@ tests = testSpec "judgement check, adoption and hooks" $ do
       case sc of
         Nothing -> pendingWith "gitleaks is not on PATH"
         Just _ -> do
-          Right plan <- planAdoption dir (AdoptionInputs route (Just ApprovedRemote) sc) (Just ApprovedRemote) BundledJudgement docsJudgement
+          Right plan <- planAdoption dir (AdoptionInputs route (Just ApprovedRemote) sc) (Just ApprovedRemote) DirectAdoption BundledJudgement docsJudgement
           applyAdoption plan `shouldReturn` Right ()
           Right m <- manifestFromJSON . LBS.fromStrict <$> BS.readFile (dir </> ".seihou" </> "manifest.json")
           m ^. #version `shouldBe` ManifestSchemaVersion 15
           map (^. #definition . #name) (m ^. #judgements) `shouldBe` ["docs-review"]
           TIO.readFile (dir </> ".git" </> "hooks" </> "pre-commit") >>= (`shouldSatisfy` T.isInfixOf hookMarker)
-          Right again <- planAdoption dir (AdoptionInputs route (Just ApprovedRemote) sc) (Just ApprovedRemote) BundledJudgement docsJudgement
+          Right again <- planAdoption dir (AdoptionInputs route (Just ApprovedRemote) sc) (Just ApprovedRemote) DirectAdoption BundledJudgement docsJudgement
           renderAdoptionPlan again `shouldSatisfy` T.isInfixOf "nothing changes"
           applyAdoption again `shouldReturn` Right ()
           Right m' <- manifestFromJSON . LBS.fromStrict <$> BS.readFile (dir </> ".seihou" </> "manifest.json")

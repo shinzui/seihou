@@ -25,7 +25,7 @@ import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.Expr (evalExpr, parseExpr)
 import Seihou.Core.Judgement (DataPolicy (..), JudgementDefinition, JudgementRef)
 import Seihou.Core.Module (discoverRunnable)
-import Seihou.Core.Types (JudgementSource (..), ModuleLoadError (..), ModuleName (..), Runnable (..), VarName, VarValue)
+import Seihou.Core.Types (JudgementOwner (..), JudgementSource (..), ModuleLoadError (..), ModuleName (..), Runnable (..), VarName, VarValue)
 import Seihou.Dhall.Eval (evalJudgementFromText, evalJudgementRefsFromFile)
 import Seihou.Prelude
 import System.Directory (getCurrentDirectory)
@@ -49,7 +49,7 @@ runJudgementAdoption opts source def = do
   let configured = inputs ^. #configuredPolicy
   if opts ^. #dryRun
     then do
-      plan <- planAdoption root inputs (Just (fromMaybe ApprovedRemote configured)) source def >>= either abort pure
+      plan <- planAdoption root inputs (Just (fromMaybe ApprovedRemote configured)) DirectAdoption source def >>= either abort pure
       TIO.putStr (renderAdoptionPlan plan)
       when (configured /= Just ApprovedRemote) $
         TIO.putStrLn "Adoption will ask you to permit sending staged changes to that route, or needs seihou config set judgement.dataPolicy approved-remote when not interactive."
@@ -60,14 +60,14 @@ runJudgementAdoption opts source def = do
         Just p -> pure (Just p)
         Nothing
           | interactive -> do
-              preview <- planAdoption root inputs (Just ApprovedRemote) source def >>= either abort pure
+              preview <- planAdoption root inputs (Just ApprovedRemote) DirectAdoption source def >>= either abort pure
               TIO.putStr (renderAdoptionPlan preview)
               TIO.putStr ("Activate it and permit sending staged changes to " <> preview ^. #routeLabel <> "? [y/N] ")
               hFlush stdout
               answer <- T.toLower . T.strip <$> TIO.getLine
               if answer `elem` ["y", "yes"] then pure (Just ApprovedRemote) else abort "Nothing was activated."
           | otherwise -> pure Nothing
-      plan <- planAdoption root inputs consent source def >>= either abort pure
+      plan <- planAdoption root inputs consent DirectAdoption source def >>= either abort pure
       when (configured == Just ApprovedRemote || not interactive) $ TIO.putStr (renderAdoptionPlan plan)
       applyAdoption plan >>= either abort pure
       TIO.putStrLn ("Judgement '" <> plan ^. #active . #definition . #name <> "' is active. seihou check runs it on every commit.")
@@ -110,15 +110,15 @@ resolveReferencedJudgements root searchPaths sources = do
 
 -- | Plan the adoption of referenced judgements before anything is written,
 -- collecting consent once for all of them.
-planReferencedJudgements :: RunOpts -> [(JudgementSource, JudgementDefinition)] -> IO (Either Text [AdoptionPlan])
-planReferencedJudgements opts refs = do
+planReferencedJudgements :: RunOpts -> JudgementOwner -> [(JudgementSource, JudgementDefinition)] -> IO (Either Text [AdoptionPlan])
+planReferencedJudgements opts owner refs = do
   root <- getCurrentDirectory
   gatherAdoptionInputs >>= \case
     Left err -> pure (Left err)
     Right inputs -> do
       interactive <- hIsTerminalDevice stdin
       let configured = inputs ^. #configuredPolicy
-          planAll consent = sequence <$> mapM (\(src, def) -> planAdoption root inputs consent src def) refs
+          planAll consent = sequence <$> mapM (\(src, def) -> planAdoption root inputs consent owner src def) refs
       if opts ^. #dryRun || configured == Just ApprovedRemote
         then planAll (Just (fromMaybe ApprovedRemote configured))
         else

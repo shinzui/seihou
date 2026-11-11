@@ -18,7 +18,7 @@ import Seihou.CLI.Judgement.Validate
 import Seihou.Core.Judgement
 import Seihou.Core.JudgementExamples
 import Seihou.Core.Scaffold (judgementDhall, judgementExamplesJson)
-import Seihou.Core.Types (ActiveJudgement (..), JudgementSource (..))
+import Seihou.Core.Types (ActiveJudgement (..), ApplicationId (..), JudgementOwner (..), JudgementSource (..))
 import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.ManifestStore (writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
@@ -129,7 +129,7 @@ tests = testSpec "judgement authoring, evaluation and configuration" $ do
   describe "configure" $ do
     let request = ConfigureRequest "demo" Nothing Nothing Nothing Nothing Nothing False Nothing (CheckOverride Nothing Nothing Nothing Nothing Nothing) False False
         withActive act = withSystemTempDirectory "judgement-configure" $ \root -> do
-          let j = ActiveJudgement BundledJudgement def2 (definitionDigest def2) (defaultPolicy ApprovedRemote False def2)
+          let j = ActiveJudgement BundledJudgement def2 (definitionDigest def2) (defaultPolicy ApprovedRemote False def2) [DirectAdoption]
           createDirectoryIfMissing True (root </> ".seihou")
           runEff (runFilesystem (runManifestStore (root </> ".seihou" </> "manifest.json") (writeManifest (emptyManifest (UTCTime (fromGregorian 2026 11 11) 0) & #judgements .~ [j]))))
           act root

@@ -1010,8 +1010,13 @@ activeJudgementToJSON j =
         ArtifactJudgement origin -> Aeson.object ["kind" .= ("artifact" :: Text), "origin" .= origin],
       "definition" .= definitionToJSON (j ^. #definition),
       "digest" .= (j ^. #digest . #unSHA256),
-      "policy" .= policyToJSON (j ^. #policy)
+      "policy" .= policyToJSON (j ^. #policy),
+      "owners" .= map ownerToJSON (j ^. #owners)
     ]
+  where
+    ownerToJSON = \case
+      DirectAdoption -> Aeson.object ["kind" .= ("direct" :: Text)]
+      ApplicationOwner a -> Aeson.object ["kind" .= ("application" :: Text), "applicationId" .= (a ^. #unApplicationId)]
 
 -- | A recorded snapshot whose digest no longer matches its definition was
 -- edited by hand; refuse it rather than check against unreviewed policy.
@@ -1033,4 +1038,12 @@ parseActiveJudgement = Aeson.withObject "ActiveJudgement" $ \o -> do
   unless (T.toLower recorded == actual ^. #unSHA256) $
     fail ("judgement '" <> T.unpack (definition ^. #name) <> "' does not match its recorded digest; re-apply it with 'seihou run " <> T.unpack (definition ^. #name) <> "'")
   policy <- parsePolicy definition =<< o .: "policy"
-  pure (ActiveJudgement source definition actual policy)
+  owners <- mapM parseOwner =<< o .: "owners"
+  when (null owners) $ fail ("judgement '" <> T.unpack (definition ^. #name) <> "' has no owners; remove it from the manifest or re-apply it")
+  pure (ActiveJudgement source definition actual policy owners)
+  where
+    parseOwner = Aeson.withObject "JudgementOwner" $ \w ->
+      (w .: "kind" :: Aeson.Parser Text) >>= \case
+        "direct" -> pure DirectAdoption
+        "application" -> ApplicationOwner . ApplicationId <$> w .: "applicationId"
+        other -> fail ("unknown judgement owner kind: " <> T.unpack other)

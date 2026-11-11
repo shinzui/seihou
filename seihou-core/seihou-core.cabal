@@ -55,6 +55,7 @@ library
     Seihou.Core.Install
     Seihou.Core.Judgement
     Seihou.Core.JudgementExamples
+    Seihou.Core.JudgementState
     Seihou.Core.Migration
     Seihou.Core.Module
     Seihou.Core.Path

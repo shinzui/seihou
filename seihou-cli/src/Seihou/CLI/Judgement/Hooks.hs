@@ -1,3 +1,5 @@
+{-# LANGUAGE MultiWayIf #-}
+
 -- | Git pre-commit integration for judgements.
 --
 -- Seihou owns at most one hook file, recognised by 'hookMarker'. It never
@@ -24,6 +26,7 @@ module Seihou.CLI.Judgement.Hooks
     planHook,
     applyHook,
     renderHookPlan,
+    retireOwnedHook,
   )
 where
 
@@ -35,7 +38,7 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Seihou.CLI.Judgement.Evidence (GitRunner)
 import Seihou.Prelude
-import System.Directory (canonicalizePath, doesPathExist, getPermissions, pathIsSymbolicLink, renamePath, setOwnerExecutable, setPermissions)
+import System.Directory (canonicalizePath, doesPathExist, getPermissions, pathIsSymbolicLink, removeFile, renamePath, setOwnerExecutable, setPermissions)
 import System.FilePath (isAbsolute, normalise, splitDirectories)
 
 -- | The first comment line of every hook file Seihou owns.
@@ -151,3 +154,41 @@ applyHook plan =
       BS.writeFile p (TE.encodeUtf8 ownedHookScript)
       perms <- getPermissions p
       setPermissions p (setOwnerExecutable True perms)
+
+-- | Remove Seihou's hook once no judgement is active. Only a byte-identical
+-- owned hook is removed; a preserved original is restored in its place. An
+-- edited hook is left alone and reported.
+retireOwnedHook :: FilePath -> GitRunner -> IO (Either Text [Text])
+retireOwnedHook root git =
+  git ["rev-parse", "--git-path", "hooks"] >>= \case
+    Left err -> pure (Left ("cannot locate the Git hook directory: " <> err))
+    Right raw -> do
+      let rel = T.unpack (T.strip (TE.decodeUtf8 raw))
+          dir = normalise (if isAbsolute rel then rel else root </> rel)
+          hook = dir </> "pre-commit"
+          legacy = dir </> "pre-commit.legacy"
+          original = dir </> "pre-commit.seihou-original"
+      outcome <-
+        try $ do
+          legacyMsg <- retireFile legacy Nothing
+          hookMsg <- retireFile hook (Just original)
+          pure (legacyMsg <> hookMsg)
+      pure $ case outcome of
+        Left (e :: IOException) -> Left ("could not retire the pre-commit hook: " <> T.pack (show e))
+        Right msgs -> Right msgs
+  where
+    retireFile path restore = do
+      present <- doesPathExist path
+      link <- if present then pathIsSymbolicLink path else pure False
+      if not present || link
+        then pure []
+        else do
+          body <- TE.decodeUtf8With (\_ _ -> Just '?') <$> BS.readFile path
+          if
+            | body == ownedHookScript -> do
+                restored <- maybe (pure False) doesPathExist restore
+                case restore of
+                  Just orig | restored -> renamePath orig path >> pure ["restored the original pre-commit hook"]
+                  _ -> removeFile path >> pure ["removed " <> T.pack path]
+            | hookMarker `T.isInfixOf` body -> pure ["left " <> T.pack path <> " in place because it was edited; remove its seihou check line yourself"]
+            | otherwise -> pure []

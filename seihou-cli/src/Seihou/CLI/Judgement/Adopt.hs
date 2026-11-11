@@ -18,6 +18,9 @@ module Seihou.CLI.Judgement.Adopt
     renderAdoptionPlan,
     applyAdoption,
     dataPolicyFromText,
+    retireHookIfUnused,
+    judgementHookState,
+    removeDirectAdoption,
   )
 where
 
@@ -37,7 +40,8 @@ import Seihou.CLI.Judgement.Scanner (findScanner)
 import Seihou.CLI.ManifestCapabilityUpgrade (prepareJudgementState)
 import Seihou.CLI.Shared (formatConfigError)
 import Seihou.Core.Judgement
-import Seihou.Core.Types (ActiveJudgement (..), ArtifactOrigin (..), JudgementSource (..), Manifest)
+import Seihou.Core.JudgementState (AdoptionChange (..), adoptWithOwner, retireOwner)
+import Seihou.Core.Types (ActiveJudgement (..), ArtifactOrigin (..), JudgementOwner (..), JudgementSource (..), Manifest)
 import Seihou.Effect.ConfigReader (readGlobalConfig, readLocalConfig)
 import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
@@ -85,8 +89,10 @@ gatherAdoptionInputs = do
 data AdoptionPlan = AdoptionPlan
   { root :: !FilePath,
     active :: !ActiveJudgement,
-    -- | The record this replaces, when the judgement is already active.
-    previous :: !(Maybe ActiveJudgement),
+    -- | Who this adoption adds as an owner.
+    owner :: !JudgementOwner,
+    -- | What adoption changes in the recorded judgements.
+    change :: !AdoptionChange,
     hook :: !HookPlan,
     routeLabel :: !Text,
     scanner :: !FilePath
@@ -95,8 +101,8 @@ data AdoptionPlan = AdoptionPlan
 
 -- | Validate, resolve the policy and plan the hook. 'Left' names exactly
 -- what to configure; nothing has been written.
-planAdoption :: FilePath -> AdoptionInputs -> Maybe DataPolicy -> JudgementSource -> JudgementDefinition -> IO (Either Text AdoptionPlan)
-planAdoption root inputs consent source def = case validateDefinition def of
+planAdoption :: FilePath -> AdoptionInputs -> Maybe DataPolicy -> JudgementOwner -> JudgementSource -> JudgementDefinition -> IO (Either Text AdoptionPlan)
+planAdoption root inputs consent owner source def = case validateDefinition def of
   Left err -> pure (Left ("judgement '" <> def ^. #name <> "' is invalid: " <> err ^. #message))
   Right () -> case inputs ^. #route of
     Nothing ->
@@ -127,11 +133,9 @@ planAdoption root inputs consent source def = case validateDefinition def of
           pure $ do
             manifest <- existing
             hp <- hookPlan
-            let record = ActiveJudgement source def (definitionDigest def) (defaultPolicy ApprovedRemote False def)
-                prior = case [j | j <- manifest ^. #judgements, j ^. #definition . #name == def ^. #name] of
-                  (j : _) -> Just j
-                  [] -> Nothing
-            pure (AdoptionPlan root record prior hp (label r) sc)
+            let record = ActiveJudgement source def (definitionDigest def) (defaultPolicy ApprovedRemote False def) [owner]
+            (_, change) <- adoptWithOwner owner record (manifest ^. #judgements)
+            pure (AdoptionPlan root record owner change hp (label r) sc)
   where
     label r = providerToText (r ^. #provider) <> " " <> r ^. #model
 
@@ -162,11 +166,10 @@ renderAdoptionPlan p =
   where
     def = p ^. #active . #definition
     num = T.pack . show
-    status = case p ^. #previous of
-      Nothing -> "new: becomes active for every commit in this checkout"
-      Just prev
-        | prev == p ^. #active -> "already active with this definition and policy; nothing changes"
-        | otherwise -> "replaces the active definition " <> T.take 16 (prev ^. #digest . #unSHA256)
+    status = case p ^. #change of
+      AdoptedNew -> "new: becomes active for every commit in this checkout"
+      AdoptedUnchanged -> "already active with this definition; nothing changes and its recorded policy is kept"
+      AdoptedReplacing prev -> "replaces the active definition " <> T.take 16 (prev ^. #digest . #unSHA256) <> "; its policy returns to the authored defaults"
     sourceText = \case
       BundledJudgement -> "the catalogue built into seihou"
       ArtifactJudgement (RemoteOrigin url _ _) -> url
@@ -184,8 +187,52 @@ applyAdoption p =
         Right manifest -> case prepareJudgementState manifest of
           Left err -> pure (Left ("Cannot stage the judgement manifest schema: " <> err))
           Right prepared -> do
-            let others = [j | j <- prepared ^. #judgements, j ^. #definition . #name /= p ^. #active . #definition . #name]
-                updated = prepared & #judgements .~ (others <> [p ^. #active])
-            try (runEff (runFilesystem (runManifestStore (manifestPathFor (p ^. #root)) (writeManifest updated)))) <&> \case
-              Left (err :: SomeException) -> Left ("Cannot write .seihou/manifest.json: " <> T.pack (displayException err))
-              Right () -> Right ()
+            case adoptWithOwner (p ^. #owner) (p ^. #active) (prepared ^. #judgements) of
+              Left err -> pure (Left err)
+              Right (judgements, _) ->
+                try (runEff (runFilesystem (runManifestStore (manifestPathFor (p ^. #root)) (writeManifest (prepared & #judgements .~ judgements))))) <&> \case
+                  Left (err :: SomeException) -> Left ("Cannot write .seihou/manifest.json: " <> T.pack (displayException err))
+                  Right () -> Right ()
+
+-- | Retire Seihou's hook when the written manifest has no active judgement.
+retireHookIfUnused :: FilePath -> Manifest -> IO [Text]
+retireHookIfUnused root m
+  | not (null (m ^. #judgements)) = pure []
+  | otherwise = either (\e -> ["pre-commit hook: " <> e]) id <$> retireOwnedHook root (gitBytes root)
+
+-- | @seihou remove NAME@ for a directly adopted judgement: drop the direct
+-- owner, and the record when no application still references it.
+removeDirectAdoption :: Text -> Manifest -> Either Text (Manifest, Text)
+removeDirectAdoption name m = case [j | j <- m ^. #judgements, j ^. #definition . #name == name] of
+  [] -> Left ("Judgement '" <> name <> "' is not active.")
+  (j : _)
+    | DirectAdoption `notElem` (j ^. #owners) ->
+        Left ("Judgement '" <> name <> "' was not adopted directly; it is active because a recorded application references it. Remove that application instead.")
+    | otherwise ->
+        let (remaining, retired) = retireOwner DirectAdoption (m ^. #judgements)
+            msg =
+              if name `elem` retired
+                then "Judgement '" <> name <> "' is no longer active."
+                else "Judgement '" <> name <> "' stays active because a recorded application still references it."
+         in Right (m & #judgements .~ remaining, msg)
+
+-- | Check, and unless dry-running repair, the hook that active judgements
+-- need. Used by @seihou sync@ (repairing) and @seihou status@ (dry-run).
+-- A missing hook is reinstalled from the recorded intent; a hook another
+-- manager replaced is reported, never overwritten.
+judgementHookState :: FilePath -> Bool -> IO (Either Text [Text])
+judgementHookState root dryRun =
+  readExisting root >>= \case
+    Left err -> pure (Left err)
+    Right m
+      | null (m ^. #judgements) -> pure (Right [])
+      | otherwise ->
+          planHook root (gitBytes root) >>= \case
+            Left err -> pure (Left ("Judgement hook: misconfigured: " <> err))
+            Right (HookAlreadyInstalled p) -> pure (Right ["Judgement hook: operational (" <> T.pack p <> ")"])
+            Right plan
+              | dryRun -> pure (Right ["Judgement hook: missing; seihou sync would " <> renderHookPlan plan])
+              | otherwise ->
+                  applyHook plan <&> \case
+                    Left err -> Left ("Judgement hook: " <> err)
+                    Right () -> Right ["Judgement hook: repaired; " <> renderHookPlan plan]

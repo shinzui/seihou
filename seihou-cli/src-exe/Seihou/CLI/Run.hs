@@ -458,7 +458,7 @@ handleRun runOpts = do
   judgementPlans <-
     if null referencedJudgements
       then pure []
-      else planReferencedJudgements runOpts referencedJudgements >>= either (exitError level) pure
+      else planReferencedJudgements runOpts (ApplicationOwner currentApplicationId) referencedJudgements >>= either (exitError level) pure
 
   -- 6. Handle --dry-run: show plan view and exit
   if runOpts ^. #dryRun

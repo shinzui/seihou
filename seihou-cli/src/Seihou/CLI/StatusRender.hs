@@ -32,9 +32,11 @@ import Seihou.CLI.VersionCompare
 import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl)
 import Seihou.Core.ArtifactRef (ArtifactRefError (..))
 import Seihou.Core.Checkout (CheckoutPlan)
+import Seihou.Core.Judgement (DataPolicy (..))
 import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Types
-  ( AppliedBlueprint (..),
+  ( ApplicationId (..),
+    AppliedBlueprint (..),
     AppliedBlueprintMigration (..),
     AppliedComposition (..),
     AppliedInstanceState (..),
@@ -42,6 +44,7 @@ import Seihou.Core.Types
     AppliedRecipe (..),
     AppliedTarget (..),
     ArtifactOrigin (..),
+    JudgementOwner (..),
     Manifest (..),
     MigrationOutcome (..),
     ModuleName (..),
@@ -101,6 +104,7 @@ formatStatusWith display color manifest tracked mEntries pendings =
       ++ recipeSection manifest
       ++ blueprintSection display manifest
       ++ formatBlueprintMigrations (manifest ^. #blueprintMigrations)
+      ++ judgementSection manifest
       ++ appliedSection color manifest mEntries pendings
       ++ trackedSection color tracked
       ++ seedSection manifest
@@ -158,6 +162,32 @@ blueprintSection display manifest = case manifest ^. #blueprint of
 
 -- | Render durable agent-guided migration receipts. An empty ledger adds no
 -- output; each populated row includes the artifact, exact edge, and timestamp.
+-- | Declared judgements. Whether the hook is operational is reported
+-- separately by the status command, which can inspect Git.
+judgementSection :: Manifest -> [Text]
+judgementSection manifest = case manifest ^. #judgements of
+  [] -> []
+  js ->
+    "Judgements:"
+      : [ "  "
+            <> j ^. #definition . #name
+            <> maybe "" (" " <>) (j ^. #definition . #version)
+            <> " ("
+            <> T.take 12 (j ^. #digest . #unSHA256)
+            <> "): "
+            <> T.pack (show (length (j ^. #definition . #checks)))
+            <> " check(s), "
+            <> (case j ^. #policy . #dataPolicy of ApprovedRemote -> "approved-remote"; LocalOnly -> "local-only")
+            <> ", owned by "
+            <> T.intercalate ", " (map owner (j ^. #owners))
+        | j <- js
+        ]
+        <> [""]
+  where
+    owner = \case
+      DirectAdoption -> "seihou run"
+      ApplicationOwner (ApplicationId i) -> "application " <> T.take 12 i
+
 formatBlueprintMigrations :: [AppliedBlueprintMigration] -> [Text]
 formatBlueprintMigrations [] = []
 formatBlueprintMigrations receipts =

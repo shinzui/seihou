@@ -12,7 +12,8 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Time (UTCTime (..), fromGregorian)
 import Seihou.Core.Judgement
-import Seihou.Core.Types (ActiveJudgement (..), JudgementSource (..), Manifest, ManifestSchemaVersion (..))
+import Seihou.Core.JudgementState (AdoptionChange (..), adoptWithOwner, pruneJudgementOwners, retireOwner)
+import Seihou.Core.Types (ActiveJudgement (..), ApplicationId (..), JudgementOwner (..), JudgementSource (..), Manifest, ManifestSchemaVersion (..))
 import Seihou.Dhall.Eval (evalJudgementFromFile, evalJudgementRefsFromFile)
 import Seihou.Manifest.Judgement (definitionDigest)
 import Seihou.Manifest.Types (emptyManifest, manifestFromJSON, manifestToJSON)
@@ -81,7 +82,7 @@ tests :: IO TestTree
 tests = testSpec "judgement policy" $ do
   describe "manifest state" $ do
     let def = definition (mkCheck "a" Yes strictBand :| [mkCheck "b" No lenientBand])
-        active = ActiveJudgement BundledJudgement def (definitionDigest def) (defaultPolicy ApprovedRemote False def & #checks . ix "b" . #enforcement .~ Advisory)
+        active = ActiveJudgement BundledJudgement def (definitionDigest def) (defaultPolicy ApprovedRemote False def & #checks . ix "b" . #enforcement .~ Advisory) [DirectAdoption, ApplicationOwner (ApplicationId "app-1")]
         manifest = emptyManifest (UTCTime (fromGregorian 2026 11 11) 0) & #judgements .~ [active]
         reencode :: (Aeson.Value -> Aeson.Value) -> Either String Manifest
         reencode f = manifestFromJSON . Aeson.encode . f =<< Aeson.eitherDecode (manifestToJSON manifest)
@@ -100,6 +101,29 @@ tests = testSpec "judgement policy" $ do
     it "encodes nothing provider-specific and no absolute paths" $ do
       let bytes = LBS.toStrict (manifestToJSON manifest)
       T.isInfixOf "/" (TE.decodeUtf8 bytes) `shouldBe` False
+  describe "judgement owners" $ do
+    let def = definition (mkCheck "a" Yes strictBand :| [])
+        def' = def & #instructions .~ "Changed."
+        record d = ActiveJudgement BundledJudgement d (definitionDigest d) (defaultPolicy ApprovedRemote False d) [DirectAdoption]
+        app = ApplicationOwner (ApplicationId "app-1")
+    it "shares one record between agreeing owners and keeps the recorded policy" $ do
+      let tuned = record def & #policy . #checks . ix "a" . #review .~ Thresholds 0.9 0.2
+      case adoptWithOwner app (record def) [tuned] of
+        Right ([j], AdoptedUnchanged) -> do
+          j ^. #owners `shouldBe` [DirectAdoption, app]
+          j ^? #policy . #checks . ix "a" . #review `shouldBe` Just (Thresholds 0.9 0.2)
+        other -> expectationFailure (show other)
+    it "refuses a changed definition that another owner still holds, and replaces one only this owner holds" $ do
+      fmap snd (adoptWithOwner app (record def') [record def]) `shouldSatisfy` isLeft
+      fmap snd (adoptWithOwner DirectAdoption (record def') [record def]) `shouldBe` Right (AdoptedReplacing (record def))
+    it "retires a judgement only with its last owner" $ do
+      let shared = record def & #owners .~ [DirectAdoption, app]
+      retireOwner DirectAdoption [shared] `shouldBe` ([shared & #owners .~ [app]], [])
+      retireOwner app [shared & #owners .~ [app]] `shouldBe` ([], ["demo"])
+    it "drops application owners whose application is no longer recorded" $ do
+      let m = emptyManifest (UTCTime (fromGregorian 2026 11 11) 0) & #judgements .~ [record def & #owners .~ [app]]
+      pruneJudgementOwners m `shouldBe` (m & #judgements .~ [], ["demo"])
+
   describe "judgement references" $ do
     let refsOf file body = withSystemTempDirectory "seihou-judgement-refs" $ \dir -> do
           cwd <- getCurrentDirectory

@@ -13,10 +13,12 @@ import Data.Text.IO qualified as TIO
 import Data.Time.Clock (getCurrentTime)
 import Seihou.CLI.CheckoutSync (renderCheckoutPlan)
 import Seihou.CLI.Commands (RemoveOpts (..))
+import Seihou.CLI.Judgement.Adopt (removeDirectAdoption, retireHookIfUnused)
 import Seihou.CLI.ManifestCapabilityUpgrade (prepareRecordedSeedOwnership, prepareRemovalPolicies)
 import Seihou.CLI.Style (bold, dim, green, useColor, yellow)
 import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Core.Checkout
+import Seihou.Core.JudgementState (pruneJudgementOwners)
 import Seihou.Core.Module (defaultSearchPaths)
 import Seihou.Core.Types
 import Seihou.Effect.FilesystemInterp (runFilesystem)
@@ -48,6 +50,16 @@ handleRemove opts = do
 
   root <- getCurrentDirectory
   paths <- defaultSearchPaths
+  let isJudgement = any ((== modName ^. #unModuleName) . (^. #definition . #name)) (originalManifest ^. #judgements)
+      isApplicationMember = any (\app -> any (\st -> st ^. #name == modName) (app ^. #instances)) (originalManifest ^. #applications)
+  when (isJudgement && not isApplicationMember) $ do
+    case removeDirectAdoption (modName ^. #unModuleName) originalManifest of
+      Left err -> TIO.putStrLn err >> exitFailure
+      Right (updated, msg) -> do
+        runEff $ runFilesystem $ runManifestStore manifestPath $ writeManifest updated
+        TIO.putStrLn msg
+        retireHookIfUnused root updated >>= mapM_ TIO.putStrLn
+        exitWith ExitSuccess
   let matchingApps = Set.fromList [app ^. #applicationId | app <- originalManifest ^. #applications, maybe True (== app ^. #applicationId) (opts ^. #application), state <- app ^. #instances, modName == state ^. #name || modName == qualifiedName (ModuleInstance (state ^. #name) (state ^. #parentVars))]
       legacyPaths = Set.fromList [path | (path, receipt) <- Map.toAscList (originalManifest ^. #seeds), LegacySeedOwners apps <- [receipt ^. #ownership], not (Set.null (apps `Set.intersection` matchingApps))]
   prepared <- prepareRecordedSeedOwnership root paths legacyPaths originalManifest
@@ -138,8 +150,11 @@ handleRemove opts = do
         now <- getCurrentTime
         updatedManifest <- runEff $ runFilesystem $ executeRemovalOps manifest plan keepSet now
 
-        -- Write updated manifest
-        runEff $ runFilesystem $ runManifestStore manifestPath $ writeManifest updatedManifest
+        -- Write updated manifest, retiring judgement claims of removed applications
+        let (settledManifest, retiredJudgements) = pruneJudgementOwners updatedManifest
+        runEff $ runFilesystem $ runManifestStore manifestPath $ writeManifest settledManifest
+        mapM_ (\n -> TIO.putStrLn ("Judgement '" <> n <> "' is no longer active.")) retiredJudgements
+        retireHookIfUnused root settledManifest >>= mapM_ TIO.putStrLn
 
         -- Report
         let deleted = length [() | DeleteFileOp _ s <- plan ^. #ops, s /= RFGone, not (Set.member "" keepSet)]
@@ -275,7 +290,7 @@ handleCheckoutRemoval opts manifest selected = do
     Nothing -> pure ()
   result <- try @IOException $ do
     _ <- runEff $ runFilesystem $ executeRemovalOps manifest ordinary Set.empty now
-    runEff $ runFilesystem $ runManifestStore ".seihou/manifest.json" $ writeManifest (candidate & #genAt .~ now)
+    runEff $ runFilesystem $ runManifestStore ".seihou/manifest.json" $ writeManifest (fst (pruneJudgementOwners candidate) & #genAt .~ now)
   case result of
     Left err -> do
       _ <- runEff $ runFilesystem $ rollbackCheckout root (applied ^. #undo)
