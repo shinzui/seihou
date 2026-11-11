@@ -128,7 +128,8 @@ in
         '' else ""
       );
       # Integration tests use git remotes and Python-owned provider processes.
-      testToolDepends = (drv.testToolDepends or [ ]) ++ [ pkgs.git pkgs.python3 ];
+      # Judgement tests run the packaged Gitleaks scanner.
+      testToolDepends = (drv.testToolDepends or [ ]) ++ [ pkgs.git pkgs.python3 pkgs.gitleaks ];
     })
     (dontHaddock (doJailbreak (final.callCabal2nix "seihou-cli" ../seihou-cli { })));
 

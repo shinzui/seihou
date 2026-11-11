@@ -44,8 +44,9 @@
       packages.default = seihou-bundle;
 
       # Extra dev-shell tooling (reads the option declared in ./nix/haskell.nix).
-      # `xz` (liblzma) is needed by the build/test toolchain.
-      haskellProject.extraDevPackages = [ pkgs.xz ];
+      # `xz` (liblzma) is needed by the build/test toolchain. `gitleaks` is the
+      # deterministic scanner and transmission safeguard for judgements.
+      haskellProject.extraDevPackages = [ pkgs.xz pkgs.gitleaks ];
 
       # Pin fourmolu and cabal-gild to the ghc9124 package set so they match the
       # project's compiler (the managed ./nix/treefmt.nix enables them but leaves

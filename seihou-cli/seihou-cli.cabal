@@ -89,7 +89,10 @@ library seihou-cli-internal
     Seihou.CLI.InstallHistory
     Seihou.CLI.InstallShared
     Seihou.CLI.InstalledRunnables
+    Seihou.CLI.Judgement.Evidence
+    Seihou.CLI.Judgement.Execute
     Seihou.CLI.Judgement.Runtime
+    Seihou.CLI.Judgement.Scanner
     Seihou.CLI.KitConfig
     Seihou.CLI.List
     Seihou.CLI.Manifest
@@ -287,6 +290,7 @@ test-suite seihou-cli-test
     Seihou.CLI.InstallHistorySpec
     Seihou.CLI.InstallSourceSpec
     Seihou.CLI.InstalledRunnablesSpec
+    Seihou.CLI.JudgementExecuteSpec
     Seihou.CLI.JudgementRuntimeSpec
     Seihou.CLI.ListSpec
     Seihou.CLI.ManifestCapabilityUpgradeSpec
