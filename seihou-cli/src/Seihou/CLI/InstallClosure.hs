@@ -58,9 +58,27 @@ data ClosureArtifact = ClosureArtifact
 
 data Repo = Repo FilePath Text RepoContents
 
-data ExpectedArtifact = AnyArtifact | ModuleArtifact | RecipeArtifact RecipeReference
+data ExpectedArtifact = AnyArtifact | ModuleArtifact | RecipeArtifact RecipeReference | JudgementArtifact
 
-data Requirement = Requirement Text (Maybe Text) ExpectedArtifact
+-- | A required edge, or an optional one: a judgement reference without a
+-- @source@ may name the catalogue built into seihou, so it is installed only
+-- when its own repository provides it.
+data Requirement = Requirement Text (Maybe Text) ExpectedArtifact | OptionalJudgement Text
+
+-- | The judgements a module or recipe references. Every reference is
+-- acquired, whatever its @when@, because install evaluates declarations
+-- independently of generation bindings.
+judgementRequirements :: FilePath -> IO [Requirement]
+judgementRequirements file =
+  evalJudgementRefsFromFile file >>= \case
+    Left err -> throwIO (userError ("cannot read judgement references: " <> show err))
+    Right refs ->
+      pure
+        [ case ref ^. #source of
+            Just src -> Requirement (ref ^. #name) (Just src) JudgementArtifact
+            Nothing -> OptionalJudgement (ref ^. #name)
+        | ref <- refs
+        ]
 
 moduleRequirements :: [Dependency] -> [Requirement]
 moduleRequirements = map (\dep -> Requirement (dep ^. #module_ . #unModuleName) (dep ^. #source) ModuleArtifact)
@@ -121,14 +139,17 @@ stageClosuresInto report cache force groups = withSystemTempDirectory "seihou-cl
           Nothing -> do
             modifyIORef' nodes (Map.insert name (fst key, origin, context))
             -- Evaluate every declaration independently of generation bindings.
-            forM_ deps $ \(Requirement depName source expected) -> do
-              depRepo <- case source of
-                Nothing -> pure repo
-                Just src -> do
-                  when (T.null (T.strip src) || "${" `T.isInfixOf` src) $ failWith (context <> ": invalid dependency source")
-                  getRepo src `withContext` context
-              depDir <- locate depRepo depName expected `withContext` context
-              visit (key : active) (context <> " -> ") depRepo depName depDir expected
+            forM_ deps $ \case
+              Requirement depName source expected -> do
+                depRepo <- case source of
+                  Nothing -> pure repo
+                  Just src -> do
+                    when (T.null (T.strip src) || "${" `T.isInfixOf` src) $ failWith (context <> ": invalid dependency source")
+                    getRepo src `withContext` context
+                depDir <- locate depRepo depName expected `withContext` context
+                visit (key : active) (context <> " -> ") depRepo depName depDir expected
+              OptionalJudgement depName ->
+                provides repo depName >>= mapM_ (\depDir -> visit (key : active) (context <> " -> ") repo depName depDir JudgementArtifact)
             let tags = case repo of
                   Repo _ _ (MultiModule reg) -> maybe [] (^. #tags) (find ((== name) . (^. #name . #unModuleName)) (entries reg))
                   _ -> []
@@ -242,6 +263,17 @@ safeName name = not (T.null name) && name /= "." && name /= ".." && T.all (\c ->
 entries :: Registry -> [RegistryEntry]
 entries reg = reg ^. #modules ++ reg ^. #recipes ++ reg ^. #blueprints ++ reg ^. #prompts ++ reg ^. #judgements
 
+-- | Where this repository provides a judgement of that name, if it does.
+provides :: Repo -> Text -> IO (Maybe FilePath)
+provides (Repo dir _ contents) name = case contents of
+  MultiModule reg -> case find ((== name) . (^. #name . #unModuleName)) (reg ^. #judgements) of
+    Just entry -> let candidate = dir </> (entry ^. #path) in Just candidate <$ checkTree dir candidate
+    Nothing -> pure Nothing
+  SingleJudgement _ -> do
+    j <- evalJudgementFromFile (dir </> "judgement.dhall") >>= decoded
+    pure (if j ^. #name == name then Just dir else Nothing)
+  _ -> pure Nothing
+
 locate :: Repo -> Text -> ExpectedArtifact -> IO FilePath
 locate (Repo dir origin contents) name expected = case contents of
   MultiModule reg -> case find ((== name) . (^. #name . #unModuleName)) (allowedEntries reg) of
@@ -256,15 +288,20 @@ locate (Repo dir origin contents) name expected = case contents of
   SingleRecipe _ -> do
     r <- evalRecipeFromFile (dir </> "recipe.dhall") >>= decoded
     if r ^. #name . #unRecipeName == name && isRecipe then pure dir else missing
+  SingleJudgement _ -> do
+    j <- evalJudgementFromFile (dir </> "judgement.dhall") >>= decoded
+    if j ^. #name == name && isJudgement then pure dir else missing
   _ -> missing
   where
     allowedEntries reg = case expected of
       AnyArtifact -> entries reg
       ModuleArtifact -> reg ^. #modules
       RecipeArtifact _ -> reg ^. #recipes
-    isModule = case expected of RecipeArtifact _ -> False; _ -> True
-    isRecipe = case expected of ModuleArtifact -> False; _ -> True
-    kind = case expected of RecipeArtifact _ -> "recipe"; ModuleArtifact -> "module"; AnyArtifact -> "artifact"
+      JudgementArtifact -> reg ^. #judgements
+    isModule = case expected of ModuleArtifact -> True; AnyArtifact -> True; _ -> False
+    isRecipe = case expected of RecipeArtifact _ -> True; AnyArtifact -> True; _ -> False
+    isJudgement = case expected of JudgementArtifact -> True; AnyArtifact -> True; _ -> False
+    kind = case expected of RecipeArtifact _ -> "recipe"; ModuleArtifact -> "module"; JudgementArtifact -> "judgement"; AnyArtifact -> "artifact"
     missing = throwIO (userError (T.unpack (name <> " not found as a " <> kind <> " in " <> origin)))
 
 -- Reject escapes and symlinks rather than copying files from outside the clone.
@@ -294,16 +331,20 @@ inspect dir expected = do
     throwIO (userError (T.unpack (renderAmbiguousArtifact (ModuleName (T.pack (takeFileName dir))) dir files)))
   hasModule <- doesFileExist (dir </> "module.dhall")
   hasRecipe <- doesFileExist (dir </> "recipe.dhall")
+  hasJudgement <- doesFileExist (dir </> "judgement.dhall")
   case expected of
     ModuleArtifact | not hasModule -> wrong "module"
     RecipeArtifact _ | not hasRecipe -> wrong "recipe"
+    JudgementArtifact | not hasJudgement -> wrong "judgement"
     _ -> pure ()
   case expected of
     RecipeArtifact ref -> recipe (Just ref)
+    JudgementArtifact -> judgement
     _ | hasModule -> do
       m <- evalModuleFromFile (dir </> "module.dhall") >>= decoded
       _ <- validateModule dir m >>= decoded
-      pure ("module.dhall", moduleRequirements (m ^. #dependencies), m ^. #version)
+      refs <- judgementRequirements (dir </> "module.dhall")
+      pure ("module.dhall", moduleRequirements (m ^. #dependencies) <> refs, m ^. #version)
     _ | hasRecipe -> recipe Nothing
     _ -> do
       blueprint <- doesFileExist (dir </> "blueprint.dhall")
@@ -314,24 +355,25 @@ inspect dir expected = do
           pure ("blueprint.dhall", moduleRequirements (b ^. #baseModules), b ^. #version)
         else do
           prompt <- doesFileExist (dir </> "prompt.dhall")
-          judgement <- doesFileExist (dir </> "judgement.dhall")
-          if prompt || not judgement
+          if prompt || not hasJudgement
             then do
               p <- evalAgentPromptFromFile (dir </> "prompt.dhall") >>= decoded
               _ <- validateAgentPrompt dir p >>= decoded
               pure ("prompt.dhall", [], p ^. #version)
-            else do
-              j <- evalJudgementFromFile (dir </> "judgement.dhall") >>= decoded
-              _ <- either (\e -> throwIO (userError (T.unpack (e ^. #code <> ": " <> e ^. #message)))) pure (validateDefinition j)
-              pure ("judgement.dhall", [], j ^. #version)
+            else judgement
   where
     wrong kind = throwIO (userError ("Expected " <> kind <> " at " <> dir))
+    judgement = do
+      j <- evalJudgementFromFile (dir </> "judgement.dhall") >>= decoded
+      _ <- either (\e -> throwIO (userError (T.unpack (e ^. #code <> ": " <> e ^. #message)))) pure (validateDefinition j)
+      pure ("judgement.dhall", [], j ^. #version)
     recipe requirement = do
       r <- evalRecipeFromFile (dir </> "recipe.dhall") >>= decoded
       _ <- decoded (validateRecipe r)
       forM_ requirement $ \ref -> decoded (validateRecipeVersion ref r)
       let base = [Requirement (ref ^. #recipe . #unRecipeName) (ref ^. #source) (RecipeArtifact ref) | ref <- maybeToList (r ^. #extends)]
-      pure ("recipe.dhall", base <> moduleRequirements (r ^. #modules), r ^. #version)
+      refs <- judgementRequirements (dir </> "recipe.dhall")
+      pure ("recipe.dhall", base <> moduleRequirements (r ^. #modules) <> refs, r ^. #version)
 
 -- A malformed registry must not silently fall back to a stray root module.
 readContents :: FilePath -> IO RepoContents

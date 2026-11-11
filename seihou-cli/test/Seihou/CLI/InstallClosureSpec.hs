@@ -30,6 +30,35 @@ tests = testSpec "Seihou.CLI.InstallClosure" $ do
       installClosureInto cache False repo source [("child", repo </> "child")] `shouldReturn` Right ()
       doesFileExist (cache </> "base/recipe.dhall") `shouldReturn` True
 
+  it "acquires the judgements a module references, by source, and the same registry's own" $
+    withSystemTempDirectory "closure-judgements" $ \tmp -> do
+      let repo = tmp </> "repo"
+          cache = tmp </> "cache"
+          source = "https://example.com/registry.git"
+      judgementDir repo "guard"
+      judgementDir repo "local-guard"
+      -- One reference with a source, one without that this registry provides,
+      -- and one without that only the bundled catalogue provides; a false
+      -- when does not stop acquisition.
+      moduleWithJudgements repo "member" ["{ name = \"guard\", source = Some " <> show source <> ", when = Some \"false\" }", "{ name = \"local-guard\", source = None Text, when = None Text }", "{ name = \"security-review\", source = None Text, when = None Text }"]
+      registryWith repo ["member"] ["guard", "local-guard"]
+      installClosureInto cache False repo source [("member", repo </> "member")] `shouldReturn` Right ()
+      doesFileExist (cache </> "guard/judgement.dhall") `shouldReturn` True
+      doesFileExist (cache </> "local-guard/judgement.dhall") `shouldReturn` True
+      doesDirectoryExist (cache </> "security-review") `shouldReturn` False
+
+  it "refuses a referenced judgement its source does not provide, before publishing" $
+    withSystemTempDirectory "closure-judgement-missing" $ \tmp -> do
+      let repo = tmp </> "repo"
+          cache = tmp </> "cache"
+          source = "https://example.com/registry.git"
+      moduleWithJudgements repo "member" ["{ name = \"guard\", source = Some " <> show source <> ", when = None Text }"]
+      moduleDir repo "guard"
+      registryWith repo ["member", "guard"] []
+      result <- installClosureInto cache False repo source [("member", repo </> "member")]
+      either (T.isInfixOf "guard not found as a judgement") (const False) result `shouldBe` True
+      doesDirectoryExist cache `shouldReturn` False
+
   it "normalizes read-only descriptors and payload imports without changing source permissions" $
     withSystemTempDirectory "closure-read-only" $ \tmp -> do
       let repo = tmp </> "repo"
@@ -148,6 +177,29 @@ moduleDir root name = do
   let dir = root </> name
   createDirectoryIfMissing True dir
   writeFile (dir </> "module.dhall") ("let Module = " <> schema <> " in Module::{ name = \"" <> name <> "\", version = Some \"1.0.0\" }")
+
+moduleWithJudgements :: FilePath -> String -> [String] -> IO ()
+moduleWithJudgements root name refs = do
+  schema <- canonicalizePath "../schema/Module.dhall"
+  let dir = root </> name
+  createDirectoryIfMissing True dir
+  writeFile (dir </> "module.dhall") ("let Module = " <> schema <> " in Module::{ name = \"" <> name <> "\", version = Some \"1.0.0\", judgements = [" <> concat (zipWith (\i r -> (if i == (0 :: Int) then "" else ",") <> r) [0 ..] refs) <> "] }")
+
+judgementDir :: FilePath -> String -> IO ()
+judgementDir root name = do
+  schema <- canonicalizePath "../schema/package.dhall"
+  let dir = root </> name
+  createDirectoryIfMissing True dir
+  writeFile (dir </> "judgement.dhall") ("let S = " <> schema <> " in S.Judgement::{ name = \"" <> name <> "\", checks = [ S.Check::{ name = \"concern\", question = \"Is the concern present?\" } ] }")
+
+-- | A registry with modules and judgements.
+registryWith :: FilePath -> [String] -> [String] -> IO ()
+registryWith root modules judgements =
+  writeFile (root </> "seihou-registry.dhall") $
+    "{repoName = \"fixture\", repoDescription = None Text, modules = " <> entries modules <> ", judgements = " <> entries judgements <> "}"
+  where
+    entries [] = "[] : List {name : Text, path : Text, version : Optional Text, description : Optional Text, tags : List Text}"
+    entries names = "[" <> concat (zipWith (\i name -> (if i == (0 :: Int) then "" else ",") <> "{name = " <> show name <> ", path = " <> show name <> ", version = None Text, description = None Text, tags = [] : List Text}") [0 ..] names) <> "]"
 
 recipeDir :: FilePath -> String -> String -> String -> IO ()
 recipeDir root name members extension = do

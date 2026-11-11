@@ -50,8 +50,11 @@ seihou install https://github.com/your-team/recipes.git --module project
 seihou run project
 ```
 
-Install follows inherited recipe bases, recipe members, module dependencies, and blueprint base modules,
-including transitive dependencies in other Git registries. It installs only the
+Install follows inherited recipe bases, recipe members, module dependencies, blueprint base modules,
+and the judgements modules and recipes reference, including transitive dependencies in other Git
+registries. A judgement reference with a `source` must be found there. One without a `source` is
+installed when the same registry provides it, and is otherwise left to resolve at run time, for
+example to a judgement built into seihou. It installs only the
 selected entries and their required modules. Repeating the same install repairs
 an older installation missing members. Install never runs generation steps or
 asks for generation variables.

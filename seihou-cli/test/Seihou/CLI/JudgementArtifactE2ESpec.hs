@@ -88,6 +88,36 @@ tests = testSpec "JudgementArtifactE2E" $ do
       (out <> err) `shouldSatisfy` T.isInfixOf "ambiguous artifact"
       doesDirectoryExist (root </> "config" </> "seihou" </> "installed" </> "mixed") `shouldReturn` False
 
+  it "installs a judgement a module names only by its reference source" $
+    withSystemTempDirectory "judgement-closure" $ \root -> do
+      run <- fixture root
+      let producer = root </> "producers" </> "registry"
+          consumer = root </> "producers" </> "modules"
+          cache = root </> "config" </> "seihou" </> "installed"
+      writeProducer producer "0.1.0"
+      callProcess "git" ["-C", producer, "init", "-q"]
+      commit producer
+      writeConsumerRegistry consumer
+      callProcess "git" ["-C", consumer, "init", "-q"]
+      commit consumer
+      (out, _) <- expectExit ExitSuccess =<< run ["install", "https://example.invalid/modules.git", "--module", "uses-guard"]
+      out `shouldSatisfy` T.isInfixOf "Installed guard from https://example.invalid/registry.git (required)"
+      doesFileExist (cache </> "guard" </> "judgement.dhall") `shouldReturn` True
+      doesFileExist (cache </> "uses-guard" </> "module.dhall") `shouldReturn` True
+
+-- | A registry whose module @uses-guard@ references the judgement @guard@ in
+-- another repository by its @source@.
+writeConsumerRegistry :: FilePath -> IO ()
+writeConsumerRegistry dir = do
+  schema <- canonicalizePath "../schema/Module.dhall"
+  createDirectoryIfMissing True (dir </> "uses-guard")
+  TIO.writeFile (dir </> "uses-guard" </> "module.dhall") $
+    "let Module = "
+      <> T.pack schema
+      <> " in Module::{ name = \"uses-guard\", version = Some \"1.0.0\", judgements = [ { name = \"guard\", source = Some \"https://example.invalid/registry.git\", when = None Text } ] }"
+  TIO.writeFile (dir </> "seihou-registry.dhall") $
+    "{ repoName = \"modules\", repoDescription = None Text, modules = [ { name = \"uses-guard\", version = None Text, path = \"uses-guard\", description = None Text, tags = [] : List Text } ] }"
+
 -- | A registry with a module @helper@, a judgement @guard@, and a judgement
 -- entry @mixed@ whose directory also holds a module definition.
 writeProducer :: FilePath -> Text -> IO ()
@@ -160,7 +190,15 @@ fixture root = do
   binary <- seihouBinary
   let project = root </> "project"
   mapM_ (createDirectoryIfMissing True) [project </> ".seihou", root </> "home", root </> "config", root </> "cache", root </> "producers" </> "registry"]
-  writeFile (root </> "fixture-gitconfig") ("[url \"file://" <> root </> "producers" </> "registry\"]\n    insteadOf = https://example.invalid/registry.git\n")
+  writeFile (root </> "fixture-gitconfig") $
+    "[url \"file://"
+      <> root
+      </> "producers"
+      </> "registry\"]\n    insteadOf = https://example.invalid/registry.git\n"
+        <> "[url \"file://"
+        <> root
+      </> "producers"
+      </> "modules\"]\n    insteadOf = https://example.invalid/modules.git\n"
   callProcess "git" ["-C", project, "init", "-q"]
   inherited <- getEnvironment
   let overrides =

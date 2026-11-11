@@ -208,6 +208,14 @@ the built-in catalogue. The adoption is previewed with the generation plan and n
 the same consent as `seihou run NAME`; it is applied after the files are generated and
 before any `--commit`.
 
+Give a reference a `source` when the judgement lives in another registry:
+`S.JudgementRef::{ name = "guard", source = Some "https://github.com/acme/judgements.git" }`.
+`seihou install` then acquires it with the module or recipe that references it, as it
+acquires a module dependency, whatever the reference's `when`. A reference without a
+`source` is installed when the same registry provides it. Otherwise it is left for
+`seihou run` to resolve through the search paths and the built-in catalogue, which is
+how `security-review` is normally referenced.
+
 ## Change policy
 
 A project's thresholds and enforcement are recorded in the manifest when a judgement
@@ -270,5 +278,3 @@ been qualified on a live gate.
 - `git commit --no-verify` skips the hook. Local hooks cover cooperative development,
   not a process deliberately bypassing them; enforce in CI with
   `seihou check --range origin/main..HEAD --policy-ref origin/main`.
-- `seihou install` does not yet fetch a judgement named only by a module's reference
-  `source`; install it explicitly first.
