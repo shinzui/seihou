@@ -29,11 +29,13 @@ import Seihou.CLI.Extension (ExtensionRunOpts (..), handleExtensionRun)
 import Seihou.CLI.Help (handleHelpCommand)
 import Seihou.CLI.Init (handleInit)
 import Seihou.CLI.Install (handleInstall)
+import Seihou.CLI.Judgement (handleJudgement)
 import Seihou.CLI.Kit (runKit)
 import Seihou.CLI.List (DescriptionMode (..), ListFilter (..), handleList)
 import Seihou.CLI.Manifest (handleManifest)
 import Seihou.CLI.Migrate (handleMigrate)
 import Seihou.CLI.NewBlueprint (handleNewBlueprint)
+import Seihou.CLI.NewJudgement (handleNewJudgement)
 import Seihou.CLI.NewModule (handleNewModule)
 import Seihou.CLI.NewPrompt (handleNewPrompt)
 import Seihou.CLI.NewRecipe (handleNewRecipe)
@@ -50,6 +52,7 @@ import Seihou.CLI.Update (handleUpdate)
 import Seihou.CLI.Upgrade (handleUpgrade)
 import Seihou.CLI.Validate (handleValidateModule)
 import Seihou.CLI.ValidateBlueprint (handleValidateBlueprint)
+import Seihou.CLI.ValidateJudgement (handleValidateJudgement)
 import Seihou.CLI.ValidatePrompt (handleValidatePrompt)
 import Seihou.CLI.ValidateRecipe (handleValidateRecipe)
 import Seihou.CLI.Vars (handleVars)
@@ -100,6 +103,8 @@ dispatch cmd =
       handleSync syncOpts
     Check checkOpts ->
       handleCheck checkOpts
+    JudgementCmd judgementCommand ->
+      handleJudgement judgementCommand
     Status statusOpts ->
       handleStatus statusOpts
     Diff ->
@@ -120,6 +125,10 @@ dispatch cmd =
       handleNewBlueprint newBpOpts
     NewPrompt newPromptOpts ->
       handleNewPrompt newPromptOpts
+    NewJudgement opts ->
+      handleNewJudgement opts
+    ValidateJudgement opts ->
+      handleValidateJudgement opts
     ValidateModule validateOpts ->
       handleValidateModule validateOpts
     ValidateBlueprint validateBpOpts ->

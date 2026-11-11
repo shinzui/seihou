@@ -93,12 +93,15 @@ library seihou-cli-internal
     Seihou.CLI.Judgement.Adopt
     Seihou.CLI.Judgement.Check
     Seihou.CLI.Judgement.Config
+    Seihou.CLI.Judgement.Configure
+    Seihou.CLI.Judgement.Evaluate
     Seihou.CLI.Judgement.Evidence
     Seihou.CLI.Judgement.Execute
     Seihou.CLI.Judgement.Hooks
     Seihou.CLI.Judgement.Report
     Seihou.CLI.Judgement.Runtime
     Seihou.CLI.Judgement.Scanner
+    Seihou.CLI.Judgement.Validate
     Seihou.CLI.KitConfig
     Seihou.CLI.List
     Seihou.CLI.Manifest
@@ -206,8 +209,10 @@ executable seihou
     Seihou.CLI.Context
     Seihou.CLI.Help
     Seihou.CLI.Install
+    Seihou.CLI.Judgement
     Seihou.CLI.Kit
     Seihou.CLI.NewBlueprint
+    Seihou.CLI.NewJudgement
     Seihou.CLI.NewModule
     Seihou.CLI.NewPrompt
     Seihou.CLI.NewRecipe
@@ -224,6 +229,7 @@ executable seihou
     Seihou.CLI.Upgrade
     Seihou.CLI.Validate
     Seihou.CLI.ValidateBlueprint
+    Seihou.CLI.ValidateJudgement
     Seihou.CLI.ValidatePrompt
     Seihou.CLI.ValidateRecipe
     Seihou.CLI.Vars
@@ -298,6 +304,7 @@ test-suite seihou-cli-test
     Seihou.CLI.InstallHistorySpec
     Seihou.CLI.InstallSourceSpec
     Seihou.CLI.InstalledRunnablesSpec
+    Seihou.CLI.JudgementAuthoringSpec
     Seihou.CLI.JudgementCheckSpec
     Seihou.CLI.JudgementExecuteSpec
     Seihou.CLI.JudgementRuntimeSpec

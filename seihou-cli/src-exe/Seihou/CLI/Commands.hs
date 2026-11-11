@@ -9,6 +9,8 @@ module Seihou.CLI.Commands
     NewRecipeOpts (..),
     NewBlueprintOpts (..),
     NewPromptOpts (..),
+    NewJudgementOpts (..),
+    ValidateJudgementOpts (..),
     ValidateOpts (..),
     ValidateBlueprintOpts (..),
     ValidatePromptOpts (..),
@@ -20,6 +22,9 @@ module Seihou.CLI.Commands
     StatusOpts (..),
     SyncOpts (..),
     CheckOpts (..),
+    JudgementCommand (..),
+    JudgementEvalOpts (..),
+    JudgementConfigureOpts (..),
     BrowseOpts (..),
     OutdatedOpts (..),
     UpgradeOpts (..),
@@ -64,6 +69,7 @@ import Seihou.CLI.Registry (RegistryCommand (..))
 import Seihou.CLI.Registry.Sync (SyncVersionsOpts (..))
 import Seihou.CLI.Registry.Validate (ValidateRegistryOpts (..))
 import Seihou.CLI.Version (seihouVersionWithGit)
+import Seihou.Core.Judgement (DataPolicy (..), Enforcement (..))
 import Seihou.Core.Types (ApplicationId (..), ManifestSchemaVersion (..), ModuleName (..))
 import Seihou.Prelude
 
@@ -77,6 +83,7 @@ data Command
   | Status StatusOpts
   | Sync SyncOpts
   | Check CheckOpts
+  | JudgementCmd JudgementCommand
   | Diff
   | List ListOpts
   | NewModule NewModuleOpts
@@ -86,6 +93,8 @@ data Command
   | ValidateModule ValidateOpts
   | ValidateBlueprint ValidateBlueprintOpts
   | ValidatePrompt ValidatePromptOpts
+  | NewJudgement NewJudgementOpts
+  | ValidateJudgement ValidateJudgementOpts
   | ValidateRecipe ValidateRecipeOpts
   | Config ConfigOpts
   | Context ContextAction
@@ -266,6 +275,17 @@ data ValidateBlueprintOpts = ValidateBlueprintOpts
   }
   deriving stock (Eq, Show, Generic)
 
+data NewJudgementOpts = NewJudgementOpts
+  { name :: !Text,
+    path :: !(Maybe FilePath)
+  }
+  deriving stock (Eq, Show, Generic)
+
+newtype ValidateJudgementOpts = ValidateJudgementOpts
+  { target :: Maybe Text
+  }
+  deriving stock (Eq, Show, Generic)
+
 data ValidatePromptOpts = ValidatePromptOpts
   { path :: !(Maybe FilePath),
     lint :: !Bool
@@ -319,6 +339,36 @@ data BrowseOpts = BrowseOpts
   deriving stock (Eq, Show, Generic)
 
 data SyncOpts = SyncOpts {dryRun :: !Bool, json :: !Bool}
+  deriving stock (Eq, Show, Generic)
+
+data JudgementCommand
+  = JudgementEval JudgementEvalOpts
+  | JudgementConfigure JudgementConfigureOpts
+  deriving stock (Eq, Show, Generic)
+
+data JudgementEvalOpts = JudgementEvalOpts
+  { name :: !Text,
+    offline :: !Bool
+  }
+  deriving stock (Eq, Show, Generic)
+
+data JudgementConfigureOpts = JudgementConfigureOpts
+  { name :: !Text,
+    provider :: !(Maybe Text),
+    model :: !(Maybe Text),
+    dataPolicy :: !(Maybe DataPolicy),
+    gateProvider :: !(Maybe Text),
+    gateModel :: !(Maybe Text),
+    noGate :: !Bool,
+    check :: !(Maybe Text),
+    enforcement :: !(Maybe Enforcement),
+    blockAt :: !(Maybe Double),
+    passAt :: !(Maybe Double),
+    gateBlockAt :: !(Maybe Double),
+    gatePassAt :: !(Maybe Double),
+    global :: !Bool,
+    dryRun :: !Bool
+  }
   deriving stock (Eq, Show, Generic)
 
 -- | @seihou check [NAME] [--staged] [--dry-run] [--json]@.
@@ -516,6 +566,7 @@ commandParser =
         <> command "status" statusInfo
         <> command "sync" syncInfo
         <> command "check" checkInfo
+        <> command "judgement" judgementInfo
         <> command "diff" diffInfo
         <> command "manifest" manifestInfo
     )
@@ -534,9 +585,11 @@ commandParser =
           <> command "new-recipe" newRecipeInfo
           <> command "new-blueprint" newBlueprintInfo
           <> command "new-prompt" newPromptInfo
+          <> command "new-judgement" newJudgementInfo
           <> command "validate-module" validateInfo
           <> command "validate-blueprint" validateBlueprintInfo
           <> command "validate-prompt" validatePromptInfo
+          <> command "validate-judgement" validateJudgementInfo
           <> command "validate-recipe" validateRecipeInfo
           <> command "vars" varsInfo
           <> command "schema-upgrade" schemaUpgradeInfo
@@ -1106,6 +1159,32 @@ newBlueprintParser =
     NewBlueprintOpts
       <$> argument (T.pack <$> str) (metavar "NAME")
       <*> optional (option str (long "path" <> metavar "DIR" <> help "Output directory (default: ./<name>/)"))
+
+newJudgementInfo :: ParserInfo Command
+newJudgementInfo =
+  info
+    (parser <**> helper)
+    ( fullDesc
+        <> progDesc "Scaffold a new judgement"
+        <> footer "Creates .seihou/modules/NAME/judgement.dhall and a synthetic examples.json (or under --path DIR for a registry). Refuses an existing directory. Edit the instructions field and the examples, then run seihou validate-judgement NAME and seihou run NAME."
+    )
+  where
+    parser =
+      fmap NewJudgement $
+        NewJudgementOpts
+          <$> argument (T.pack <$> str) (metavar "NAME")
+          <*> optional (option str (long "path" <> metavar "DIR" <> help "Output directory (default: .seihou/modules/NAME)"))
+
+validateJudgementInfo :: ParserInfo Command
+validateJudgementInfo =
+  info
+    (parser <**> helper)
+    ( fullDesc
+        <> progDesc "Validate a judgement and its examples without any model request"
+        <> footer "TARGET is a judgement directory, its judgement.dhall, or a judgement name found in .seihou/modules, the user modules directory or the install cache (default: the current directory). Checks the definition, the thresholds and every example, and scans the examples for credentials when gitleaks is available."
+    )
+  where
+    parser = ValidateJudgement . ValidateJudgementOpts <$> optional (argument (T.pack <$> str) (metavar "TARGET"))
 
 newPromptInfo :: ParserInfo Command
 newPromptInfo =
@@ -2439,6 +2518,60 @@ traceOption =
           <> metavar "SETTING"
           <> help "Record model calls: off, file, stdout, or stderr (file path: agent.tracePath)"
       )
+
+judgementInfo :: ParserInfo Command
+judgementInfo =
+  info
+    (JudgementCmd <$> hsubparser (command "eval" evalInfo <> command "configure" configureInfo) <**> helper)
+    (fullDesc <> progDesc "Evaluate and configure judgements")
+  where
+    evalInfo =
+      info
+        ( JudgementEval
+            <$> ( JudgementEvalOpts
+                    <$> argument (T.pack <$> str) (metavar "NAME")
+                    <*> switch (long "offline" <> help "Validate the corpus, scanner and policy only; no model request")
+                )
+              <**> helper
+        )
+        ( fullDesc
+            <> progDesc "Run a judgement's labelled examples and report how they are decided"
+            <> footer "Sends every synthetic example in examples.json to the configured review route, one request per check per example, which may cost money. Reports missed unsafe cases, false blocks, undecided cases, errors and latency, plus a threshold sweep computed without further calls. Writes nothing. --offline makes no request and measures no model accuracy."
+        )
+    configureInfo =
+      info
+        ( JudgementConfigure
+            <$> ( JudgementConfigureOpts
+                    <$> argument (T.pack <$> str) (metavar "NAME")
+                    <*> optional (option (T.pack <$> str) (long "provider" <> metavar "PROVIDER" <> help "Review provider: claude-cli, codex-cli, anthropic or openai"))
+                    <*> optional (option (T.pack <$> str) (long "model" <> metavar "MODEL" <> help "Review model"))
+                    <*> optional (option (eitherReader dataPolicyReader) (long "data-policy" <> metavar "POLICY" <> help "local-only or approved-remote"))
+                    <*> optional (option (T.pack <$> str) (long "gate-provider" <> metavar "PROVIDER" <> help "Judgment-only gate provider"))
+                    <*> optional (option (T.pack <$> str) (long "gate-model" <> metavar "MODEL" <> help "Judgment-only gate model"))
+                    <*> switch (long "no-gate" <> help "Do not use a judgment-only gate")
+                    <*> optional (option (T.pack <$> str) (long "check" <> metavar "CHECK" <> help "The check the following overrides apply to"))
+                    <*> optional (option (eitherReader enforcementReader) (long "enforcement" <> metavar "MODE" <> help "enforced or advisory"))
+                    <*> optional (option auto (long "block-at" <> metavar "P" <> help "Review block threshold"))
+                    <*> optional (option auto (long "pass-at" <> metavar "P" <> help "Review pass threshold"))
+                    <*> optional (option auto (long "gate-block-at" <> metavar "P" <> help "Gate block threshold"))
+                    <*> optional (option auto (long "gate-pass-at" <> metavar "P" <> help "Gate pass threshold"))
+                    <*> switch (long "global" <> help "Write the route to the global configuration instead of this project")
+                    <*> switch (long "dry-run" <> help "Show the change without writing it")
+                )
+              <**> helper
+        )
+        ( fullDesc
+            <> progDesc "Choose the review route and data policy, or change an active judgement's policy"
+            <> footer "--provider, --model and --data-policy are written to configuration (project-local unless --global); credentials stay in the provider's own environment or credential store. --enforcement and the threshold flags change the recorded policy of an active judgement; name one check with --check. Thresholds apply to the probability of the concern."
+        )
+    dataPolicyReader = \case
+      "local-only" -> Right LocalOnly
+      "approved-remote" -> Right ApprovedRemote
+      other -> Left ("unknown data policy '" <> other <> "'; expected local-only or approved-remote")
+    enforcementReader = \case
+      "enforced" -> Right Enforced
+      "advisory" -> Right Advisory
+      other -> Left ("unknown enforcement '" <> other <> "'; expected enforced or advisory")
 
 checkInfo :: ParserInfo Command
 checkInfo =

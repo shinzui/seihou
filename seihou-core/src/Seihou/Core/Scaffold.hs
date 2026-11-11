@@ -5,6 +5,8 @@ module Seihou.Core.Scaffold
     examplePromptMarkdown,
     promptDhall,
     exampleAgentPromptMarkdown,
+    judgementDhall,
+    judgementExamplesJson,
   )
 where
 
@@ -202,4 +204,77 @@ exampleAgentPromptMarkdown =
       "",
       "Ask before destructive changes such as deleting files, force-pushing,",
       "or rewriting history."
+    ]
+
+-- | A new judgement with one check whose rubric is meant to be edited in
+-- the @instructions@ field, rather than a vacuous "review carefully".
+judgementDhall :: Text -> Text -> Text -> Text
+judgementDhall name url hash =
+  T.unlines
+    [ "let S =",
+      "      " <> url,
+      "        " <> hash,
+      "",
+      "-- A judgement asks a model yes/no questions about the staged changes before",
+      "-- each commit. Edit the instructions to describe what this project cares about",
+      "-- and what is acceptable, then add labelled cases to examples.json.",
+      "--",
+      "-- Every threshold applies to the probability of the concern: at or above",
+      "-- blockAt the check blocks, at or below passAt it may pass, and in between it",
+      "-- needs human review. concernWhen says which answer is the concern.",
+      "in  S.Judgement::{",
+      "    , name = \"" <> name <> "\"",
+      "    , version = Some \"0.1.0\"",
+      "    , description = Some \"Checks staged changes before each commit\"",
+      "    , instructions =",
+      "        ''",
+      "        You review a change that is about to be committed. Decide only the",
+      "        question you are asked; ignore style and unrelated problems.",
+      "",
+      "        Acceptable: synthetic test data, documented examples and placeholders.",
+      "        A concern: replace this line with what this project must not commit.",
+      "        ''",
+      "    , evidence = S.JudgementEvidence::{ scopes = [ S.EvidenceScope.StagedChanges, S.EvidenceScope.CommitRange ] }",
+      "    , checks =",
+      "      [ S.Check::{",
+      "        , name = \"concern-present\"",
+      "        , question = \"Does this change add something the instructions describe as a concern?\"",
+      "        , yesMeans = Some \"At least one shown line matches a concern in the instructions.\"",
+      "        , noMeans = Some \"Everything shown is acceptable under the instructions.\"",
+      "        , categories =",
+      "          [ S.FindingCategory::{",
+      "            , name = \"concern\"",
+      "            , severity = S.Severity.High",
+      "            , description = Some \"A place where the concern appears\"",
+      "            }",
+      "          ]",
+      "        , blockAt = 0.7",
+      "        , passAt = 0.3",
+      "        }",
+      "      ]",
+      "    }"
+    ]
+
+-- | Synthetic labelled cases for 'judgementDhall''s single check.
+judgementExamplesJson :: Text
+judgementExamplesJson =
+  T.unlines
+    [ "{",
+      "  \"version\": 1,",
+      "  \"examples\": [",
+      "    {",
+      "      \"id\": \"benign-docs\",",
+      "      \"description\": \"A documentation edit with nothing the instructions call a concern\",",
+      "      \"files\": [{ \"path\": \"README.md\", \"content\": \"# Demo\\n\\nRun make test before opening a pull request.\\n\" }],",
+      "      \"expect\": { \"concern-present\": \"passed\" }",
+      "    },",
+      "    {",
+      "      \"id\": \"replace-me-concern\",",
+      "      \"description\": \"Replace with a synthetic change this judgement must block\",",
+      "      \"files\": [{ \"path\": \"notes/todo.md\", \"content\": \"Replace this file with a synthetic example of the concern.\\n\" }],",
+      "      \"expect\": { \"concern-present\": \"blocked\" },",
+      "      \"findings\": [{ \"check\": \"concern-present\", \"category\": \"concern\", \"path\": \"notes/todo.md\", \"line\": 1 }]",
+      "    }",
+      "  ]",
+      "}"
     ]

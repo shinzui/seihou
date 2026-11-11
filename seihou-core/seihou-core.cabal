@@ -53,6 +53,7 @@ library
     Seihou.Core.Expr
     Seihou.Core.Install
     Seihou.Core.Judgement
+    Seihou.Core.JudgementExamples
     Seihou.Core.Migration
     Seihou.Core.Module
     Seihou.Core.Path
