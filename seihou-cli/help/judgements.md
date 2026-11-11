@@ -108,8 +108,9 @@ LIMITS IN THIS RELEASE
 
   The optional judgment-only gate (judgement.gateProvider typesafe,
   judgement.gateModel jev-latest, TYPESAFE_API_KEY) clears checks it is
-  confident about and escalates the rest to the review; the bundled
-  security-review gate thresholds are not yet qualified on a live gate.
+  confident about and escalates the rest to the review. The bundled
+  security-review does not use it (useGate = False) until a live gate is
+  qualified on its corpus.
   git commit --no-verify skips the hook; run seihou check --range with
   --policy-ref in CI to enforce judgements independently of local hooks.
 

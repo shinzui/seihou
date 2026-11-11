@@ -171,7 +171,7 @@ renderAdoptionPlan p =
       "  definition digest: " <> T.take 16 (p ^. #active . #digest . #unSHA256),
       "  " <> status,
       "  data policy: approved-remote; review route: " <> p ^. #routeLabel <> " (staged file contents are sent there)",
-      "  gate: " <> maybe "none; the review decides every check" (<> " (judgment-only; staged file contents are also sent there, and a check it clears needs no review call)") (p ^. #gateLabel),
+      "  gate: " <> maybe "none; the review decides every check" gateLine (p ^. #gateLabel),
       "  deterministic checks: " <> if null (def ^. #deterministicChecks) then "none" else T.intercalate ", " (map renderDeterministicCheck (def ^. #deterministicChecks)),
       "  transmission safeguard: " <> T.pack (p ^. #scanner),
       "  " <> renderHookPlan (p ^. #hook)
@@ -192,6 +192,9 @@ renderAdoptionPlan p =
   where
     def = p ^. #active . #definition
     num = renderProbability
+    gateLine g
+      | any (^. #useGate) (toList (def ^. #checks)) = g <> " (judgment-only; staged file contents are also sent there, and a check it clears needs no review call)"
+      | otherwise = g <> " is configured, but no check of this judgement uses a gate; the review decides every check"
     status = case p ^. #change of
       AdoptedNew -> "new: becomes active for every commit in this checkout"
       AdoptedUnchanged -> "already active with this definition; nothing changes and its recorded policy is kept"

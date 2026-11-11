@@ -3,6 +3,7 @@ module Seihou.CLI.JudgementCheckSpec (tests) where
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.Either (isLeft)
+import Data.Foldable (toList)
 import Data.Generics.Labels ()
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
 import Data.List.NonEmpty (NonEmpty (..))
@@ -205,6 +206,12 @@ tests = testSpec "judgement check, adoption and hooks" $ do
           Right gated <- planAdoption dir (AdoptionInputs route (Just ApprovedRemote) sc (Just (GateRoute "jev-latest"))) (Just ApprovedRemote) DirectAdoption BundledJudgement docsJudgement
           gated ^. #active . #policy . #gatePermitted `shouldBe` True
           renderAdoptionPlan gated `shouldSatisfy` T.isInfixOf "gate: typesafe jev-latest (judgment-only"
+          let noGate = docsJudgement & #checks %~ fmap (#useGate .~ False)
+          Right unused <- planAdoption dir (AdoptionInputs route (Just ApprovedRemote) sc (Just (GateRoute "jev-latest"))) (Just ApprovedRemote) DirectAdoption BundledJudgement noGate
+          renderAdoptionPlan unused `shouldSatisfy` T.isInfixOf "no check of this judgement uses a gate"
+    it "ships the bundled security-review with the unqualified gate off" $ do
+      Right d <- evalJudgementFromFile "data/judgements/security-review/judgement.dhall"
+      map (^. #useGate) (toList (d ^. #checks)) `shouldBe` [False, False]
     it "records the snapshot at schema 15 and installs the hook, idempotently" $ withRepo $ \dir -> do
       sc <- findScanner
       case sc of

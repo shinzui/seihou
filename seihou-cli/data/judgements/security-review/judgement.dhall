@@ -34,7 +34,7 @@
     , passAt = 0.2
     , question =
         "Does this change add a working credential, such as an API key, access token, password or private key?"
-    , useGate = True
+    , useGate = False
     , yesMeans = Some
         "At least one shown value would grant access to a system if someone copied it."
     }
@@ -69,7 +69,7 @@
     , passAt = 0.3
     , question =
         "Does this change add confidential information, such as personal data about real people, customer records, internal hostnames or non-public business data?"
-    , useGate = True
+    , useGate = False
     , yesMeans = Some
         "At least one shown value identifies a real person or customer, or exposes non-public internal information."
     }

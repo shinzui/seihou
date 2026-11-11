@@ -268,13 +268,17 @@ Adopting a judgement while a gate route is configured names the gate in the prev
 as a second destination and records that the policy permits it. Gate probabilities
 are not comparable with the review's, which is why each check has its own gate
 thresholds. Qualify a gate with `seihou judgement eval` before relying on it: it
-must clear no unsafe case. The bundled `security-review` gate thresholds have not
-been qualified on a live gate.
+must clear no unsafe case. A check with `useGate = False` never goes to the gate.
+
+The bundled `security-review` sets `useGate = False` on both its checks. Its gate
+thresholds have not been qualified on a live gate, so a configured gate is not used
+for it. A project that has qualified a gate on its own corpus can adopt its own copy
+of the definition with `useGate = True`.
 
 ## Limits in this release
 
-- The bundled `security-review` gate thresholds are unqualified: no live gate run has
-  been evaluated against its corpus.
+- The bundled `security-review` does not use the gate (`useGate = False`), because no
+  live gate run has been evaluated against its corpus.
 - `git commit --no-verify` skips the hook. Local hooks cover cooperative development,
   not a process deliberately bypassing them; enforce in CI with
   `seihou check --range origin/main..HEAD --policy-ref origin/main`.
