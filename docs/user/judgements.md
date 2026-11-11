@@ -113,7 +113,7 @@ in  S.Judgement::{
     }
 ```
 
-The scaffold fills in the real schema URL and hash. A one-check judgement needs only
+This example, with its labelled cases, is in [`docs/examples/judgements/customer-data-review`](../examples/judgements/customer-data-review/); copy that directory to `.seihou/modules/` to try it. The scaffold fills in the real schema URL and hash. A one-check judgement needs only
 `name` and `checks`; each check needs only `name` and `question`. The other fields:
 
 | Field | Default | Meaning |

@@ -1,0 +1,15 @@
+{ "version": 1,
+  "examples": [
+    { "id": "synthetic-fixture",
+      "files": [{ "path": "fixtures/users.csv", "content": "id,name,email\n1,Jane Doe,jane@example.com\n2,Alice Example,alice@example.com\n" }],
+      "expect": { "real-customer-data": "passed" } },
+    { "id": "prod-export",
+      "files": [{ "path": "fixtures/accounts.csv", "content": "customer_id,full_name,email,notes\n88123,Margaret Okonkwo-Hale,m.okonkwohale@gmail.com,exported from prod CRM 2026-11-02\n" }],
+      "expect": { "real-customer-data": "blocked" },
+      "findings": [{ "check": "real-customer-data", "category": "customer-record", "path": "fixtures/accounts.csv", "line": 2 }] },
+    { "id": "export-with-notes",
+      "files": [
+        { "path": "src/export.py", "content": "def export_orders(conn):\n    return conn.execute('select id, total from orders').fetchall()\n" },
+        { "path": "docs/privacy.md", "content": "# Privacy\n\nThe export_orders job sends order ids and totals to the finance warehouse.\n" } ],
+      "expect": { "real-customer-data": "passed", "undocumented-export": "passed" } }
+  ] }
