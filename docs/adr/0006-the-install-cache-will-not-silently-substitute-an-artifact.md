@@ -127,6 +127,17 @@ not distinguish from a complete install. Reporting everything before exiting is
 deliberate: a user installing twenty entries should see all twenty verdicts, not
 stop at the first.
 
+Amended 2026-11-11 by
+[ExecPlan 121](../plans/121-refresh-installed-blueprints-and-prompts-in-seihou-upgrade.md):
+`seihou upgrade` now applies the same rule. It refreshes installed blueprints
+and prompts as well as modules and recipes, each blueprint together with its
+`baseModules` closure, and checks every entry in that closure before writing.
+A refusal is a `failed` row that leaves the cache byte-identical, a named
+blueprint or prompt with no provenance is refused rather than guessed at, and
+the command exits non-zero when any row failed, for every artifact kind. An
+unreachable source is still reported with exit zero, because a network outage
+says nothing about the cache's integrity.
+
 An artifact installed by hand, with no `.seihou-origin.json`, can no longer be
 replaced by `seihou install` without `--force`. That is a real if minor
 regression in convenience for a workflow seihou never officially supported, and

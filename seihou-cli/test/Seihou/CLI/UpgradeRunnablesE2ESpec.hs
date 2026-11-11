@@ -38,9 +38,11 @@ tests = testSpec "UpgradeRunnablesE2E" $ do
       commit producer
       _ <- expectExit ExitSuccess =<< run ["install", "https://example.invalid/bp.git"]
 
-      -- 2-3. A newer version is published; a named upgrade picks it up and
-      -- reports old and new versions in a clean JSON document.
+      -- 2-3. A newer version is published. Outdated sees it; a named upgrade
+      -- picks it up and reports old and new versions in a clean JSON document.
       bump "0.1.1"
+      (outdated, _) <- expectExit ExitSuccess =<< run ["outdated"]
+      outdated `shouldSatisfy` hasRow "bp" "outdated"
       upgraded <- expectExit ExitSuccess =<< run ["upgrade", "bp", "--json"]
       case Aeson.eitherDecode (LBS.fromStrict (TE.encodeUtf8 (fst upgraded))) of
         Right (Aeson.Array entries) ->

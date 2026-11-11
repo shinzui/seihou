@@ -1,15 +1,17 @@
 module Seihou.CLI.RemoteVersion
   ( FetchError (..),
     fetchTrueModuleVersion,
+    fetchTrueRunnableVersion,
     renderFetchError,
   )
 where
 
 import Data.Generics.Labels ()
 import Data.Text qualified as T
+import Seihou.Core.Module (RunnableKind (..))
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents)
-import Seihou.Core.Types (Module (..), ModuleName (..))
-import Seihou.Dhall.Eval (evalModuleFromFile, evalRegistryFromFile)
+import Seihou.Core.Types (AgentPrompt (..), Blueprint (..), Module (..), ModuleName (..))
+import Seihou.Dhall.Eval (evalAgentPromptFromFile, evalBlueprintFromFile, evalModuleFromFile, evalRegistryFromFile)
 import Seihou.Prelude
 import System.Directory (doesFileExist)
 
@@ -28,6 +30,10 @@ data FetchError
     --   not contain a @module.dhall@ file. Carries the absolute path that
     --   was checked.
     ModuleDhallNotFound FilePath
+  | -- | The path the registry pointed at (or the single-artifact root) does
+    --   not contain the blueprint's or prompt's descriptor file. Carries the
+    --   absolute path that was checked.
+    DefinitionNotFound FilePath
   | -- | Either @seihou-registry.dhall@ or @module.dhall@ failed to evaluate
     --   or decode. Carries a human-readable description of the failure.
     ParseFailed Text
@@ -72,6 +78,41 @@ fetchTrueModuleVersion clonedRepoPath name = do
         (entry : _) -> Just entry
         [] -> Nothing
 
+-- | Read the truthful @version@ of any installable artifact kind in a cloned
+-- repository, from its own descriptor rather than the registry's index.
+--
+-- A blueprint is found through the registry's @blueprints@ entry of that name,
+-- or at the root of a single-blueprint repository; a prompt likewise through
+-- @prompts@ or a single-prompt root. Recipes are not version-checked by
+-- @seihou outdated@ and report 'RegistryNotFound'.
+fetchTrueRunnableVersion :: FilePath -> RunnableKind -> Text -> IO (Either FetchError (Maybe Text))
+fetchTrueRunnableVersion clonedRepoPath kind name = case kind of
+  KindModule -> fetchTrueModuleVersion clonedRepoPath (ModuleName name)
+  KindRecipe -> pure (Left (RegistryNotFound clonedRepoPath))
+  KindBlueprint -> located (^. #blueprints) singleBlueprint "blueprint.dhall" $ \path ->
+    fmap (^. #version) <$> evalBlueprintFromFile path
+  KindPrompt -> located (^. #prompts) singlePrompt "prompt.dhall" $ \path ->
+    fmap (^. #version) <$> evalAgentPromptFromFile path
+  where
+    singleBlueprint = \case SingleBlueprint root -> Just root; _ -> Nothing
+    singlePrompt = \case SinglePrompt root -> Just root; _ -> Nothing
+    located :: (Show e) => (Registry -> [RegistryEntry]) -> (RepoContents -> Maybe FilePath) -> FilePath -> (FilePath -> IO (Either e (Maybe Text))) -> IO (Either FetchError (Maybe Text))
+    located entriesOf single file readVersion = do
+      contents <- discoverRepoContents evalRegistryFromFile clonedRepoPath
+      let directory = case contents of
+            MultiModule registry -> case filter (\e -> e ^. #name == ModuleName name) (entriesOf registry) of
+              (entry : _) -> Right (clonedRepoPath </> entry ^. #path)
+              [] -> Left (EntryNotFound (ModuleName name))
+            other -> maybe (Left (RegistryNotFound clonedRepoPath)) Right (single other)
+      case directory of
+        Left err -> pure (Left err)
+        Right dir -> do
+          let path = dir </> file
+          exists <- doesFileExist path
+          if not exists
+            then pure (Left (DefinitionNotFound path))
+            else either (Left . ParseFailed . T.pack . show) Right <$> readVersion path
+
 -- | Read a @module.dhall@ at the given path and return its @version@ field.
 readModuleDhallVersion :: FilePath -> IO (Either FetchError (Maybe Text))
 readModuleDhallVersion path = do
@@ -94,5 +135,7 @@ renderFetchError = \case
     "module '" <> n <> "' not listed in remote registry"
   ModuleDhallNotFound path ->
     "module.dhall not found at " <> T.pack path
+  DefinitionNotFound path ->
+    "descriptor not found at " <> T.pack path
   ParseFailed msg ->
     "could not parse remote module: " <> msg

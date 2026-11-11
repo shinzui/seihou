@@ -1313,13 +1313,13 @@ outdatedInfo =
   info
     (outdatedParser <**> helper)
     ( fullDesc
-        <> progDesc "Check installed modules for newer versions"
+        <> progDesc "Check installed modules, blueprints, and prompts for newer versions"
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Checks each installed module's source registry for a newer version." :: String),
-                  pretty ("Modules without version information are shown as 'unversioned'." :: String),
-                  pretty ("Only modules installed via 'seihou install' are checked." :: String),
+                [ pretty ("Checks each installed module's, blueprint's, and prompt's source for a" :: String),
+                  pretty ("newer declared version. Artifacts without version information are shown" :: String),
+                  pretty ("as 'unversioned'. Only artifacts installed via 'seihou install' are checked." :: String),
                   line,
                   pretty ("Example:" :: String),
                   indent 2 $ pretty ("seihou outdated" :: String),

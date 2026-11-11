@@ -77,9 +77,12 @@ After this change:
   new end-to-end `UpgradeRunnablesE2ESpec`, including `seihou agent --debug run` printing the new
   version. (2026-11-11: the E2E scenario passes all seven steps, `Version: 0.1.1` included; the
   `RecipeExtension`, `agent path artifact guard`, and upgrade-related groups pass, 113 tests.)
-- [ ] Milestone 3: `seihou outdated` reports blueprints and prompts. `docs/cli/upgrade.md`,
+- [x] Milestone 3: `seihou outdated` reports blueprints and prompts. `docs/cli/upgrade.md`,
   `docs/cli/outdated.md`, and both commands' `--help` text mention them. The full test suite and
-  `nix flake check` pass.
+  `nix flake check` pass. (2026-11-11: `UpgradeRunnablesE2ESpec` now also asserts that
+  `seihou outdated` lists `bp` as `outdated` after the producer bump; two new `RemoteVersionSpec`
+  cases cover `fetchTrueRunnableVersion`; `cabal test all` passes 54 + 1435 + 889 tests;
+  `just audit-cli-docs` and `nix flake check` pass.)
 
 
 ## Surprises & Discoveries
@@ -155,7 +158,26 @@ After this change:
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Completed 2026-11-11. `seihou upgrade` now refreshes installed blueprints and prompts from the
+source each one records, a blueprint together with its `baseModules` closure, by content
+comparison. With no names it includes every provenanced blueprint and prompt. A named one
+reports old and new versions in text and `--json` and exits 0. `seihou agent --debug run` then
+shows the new version, which is the IR-17 scenario proven end to end. An ADR 0006 refusal inside a
+closure is a failed row that names both URLs and leaves the cache byte-identical. A named entry
+with no provenance is a failed row, and the command exits 1 when any row failed. `seihou
+outdated` lists blueprints and prompts under the renamed `Artifact` header.
+
+All three milestones went as planned, and no test needed a fallback. The Decision Log records
+two small deviations: refusal rows carry the one-line summary rather than
+`publishStagedClosure`'s block, and `--json` with nothing to report prints `[]`. Durable context
+went into an amendment to
+[ADR 0006](../adr/0006-the-install-cache-will-not-silently-substitute-an-artifact.md). No friction
+was recorded under this plan.
+
+Left out of scope, as the plan said: blueprint rows in `seihou status` update hints, a
+`seihou agent migrate` advisory after a blueprint upgrade, a `kind` field in upgrade JSON, and
+the progress lines `seihou outdated --json` and the post-upgrade migration advisory still print
+to stdout.
 
 
 ## Context and Orientation

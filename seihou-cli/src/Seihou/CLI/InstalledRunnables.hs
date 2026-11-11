@@ -14,21 +14,26 @@ module Seihou.CLI.InstalledRunnables
     installKey,
     matchesRequest,
     refreshInstalledRunnables,
+    checkInstalledRunnablesForUpdates,
   )
 where
 
 import Control.Exception (SomeException, displayException, try)
-import Control.Monad (forM)
+import Control.Monad (forM, when)
 import Data.Generics.Labels ()
 import Data.List (find)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
+import Data.Text.IO qualified as TIO
 import Seihou.CLI.InstallClosure (ClosureArtifact (..), publishStagedClosure, readContents, stageClosuresInto)
 import Seihou.CLI.InstallShared (InstallCollision (..), OriginInfo (..), classifyInstallCollision, cloneRepo, readOriginInfo, summarizeInstallRefusal)
+import Seihou.CLI.RemoteVersion (fetchTrueRunnableVersion)
 import Seihou.CLI.Update.Source (hashArtifactDirectory)
 import Seihou.CLI.UpgradeReport (UpgradeEntry (..), UpgradeStatus (..))
+import Seihou.CLI.VersionCompare (OutdatedEntry (..), OutdatedStatus (..), compareVersions)
 import Seihou.Core.ArtifactIdentity (normalizeOriginUrl)
+import Seihou.Core.Install (parseModuleName)
 import Seihou.Core.Module (DiscoveredRunnable (..), ModuleSource (..), RunnableKind (..))
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..))
 import Seihou.Core.Types (ModuleName (..))
@@ -161,6 +166,30 @@ compareAndPublish opts cache artifacts = do
           entry
             & #upgradeStatus
             .~ UpgradeFailed ("not published: " <> T.intercalate ", " (Map.keys refusals) <> " in the same closure was refused")
+
+-- | Compare each installed blueprint's or prompt's recorded version with the
+-- version its source's descriptor declares. Reads the source only and never
+-- stages, so unlike 'refreshInstalledRunnables' it compares declared versions,
+-- not content. Clones once per source URL; prints @Cloning@ progress lines when
+-- asked. A failed clone is 'Unreachable'; a lookup error collapses to an
+-- unknown available version, shown as unversioned.
+checkInstalledRunnablesForUpdates :: Bool -> [(DiscoveredRunnable, OriginInfo)] -> IO [OutdatedEntry]
+checkInstalledRunnablesForUpdates progress inputs = do
+  let groups = Map.elems (Map.fromListWith (flip (<>)) [(normalizeOriginUrl (origin ^. #sourceUrl), [(r, origin)]) | (r, origin) <- inputs])
+  concat <$> forM groups checkGroup
+  where
+    checkGroup [] = pure []
+    checkGroup members@((_, firstOrigin) : _) = do
+      let url = firstOrigin ^. #sourceUrl
+      when progress $ TIO.putStrLn ("  Cloning " <> T.pack (parseModuleName url) <> "...")
+      withSystemTempDirectory "seihou-runnable-outdated" $ \tmp -> do
+        let cloneDir = tmp </> "clone"
+        cloned <- cloneRepo url cloneDir
+        forM members $ \(r, origin) -> case cloned of
+          Left _ -> pure (OutdatedEntry (installKey r) (origin ^. #version) Nothing Unreachable)
+          Right () -> do
+            available <- either (const Nothing) id <$> fetchTrueRunnableVersion cloneDir (r ^. #kind) (installKey r)
+            pure (OutdatedEntry (installKey r) (origin ^. #version) available (compareVersions (origin ^. #version) available))
 
 -- | Find a blueprint or prompt in a cloned source, by the key it is installed
 -- under.

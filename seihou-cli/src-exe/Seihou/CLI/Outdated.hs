@@ -17,6 +17,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (OutdatedOpts (..))
 import Seihou.CLI.InstallShared (OriginInfo (..))
+import Seihou.CLI.InstalledRunnables (checkInstalledRunnablesForUpdates, selectInstalledRunnables)
 import Seihou.CLI.RemoteVersion (fetchTrueModuleVersion)
 import Seihou.CLI.Style (dim, green, red, useColor, yellow)
 import Seihou.CLI.VersionCompare
@@ -26,7 +27,7 @@ import Seihou.CLI.VersionCompare
     compareVersions,
   )
 import Seihou.Core.Install (parseModuleName)
-import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..), defaultSearchPaths, discoverAllModules)
+import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..), defaultSearchPaths, discoverAllModules, discoverAllRunnables)
 import Seihou.Core.Types (Module (..), ModuleName (..))
 import Seihou.Prelude
 import System.Directory (doesFileExist)
@@ -38,14 +39,19 @@ handleOutdated :: OutdatedOpts -> IO ()
 handleOutdated oopts = do
   searchPaths <- defaultSearchPaths
   modules <- discoverAllModules searchPaths
+  runnables <- discoverAllRunnables searchPaths
+  installedRunnables <- selectInstalledRunnables runnables
   let installed = filter (\dm -> dm ^. #source == SourceInstalled) modules
+      provenanced = [(r, origin) | (r, Just origin) <- installedRunnables]
 
-  if null installed
-    then TIO.putStrLn "No installed modules found."
+  if null installed && null installedRunnables
+    then TIO.putStrLn "No installed artifacts found."
     else do
-      (entries, _stats) <- checkInstalledModulesForUpdates installed
+      (moduleEntries, _stats) <- checkInstalledModulesForUpdates installed
+      runnableEntries <- checkInstalledRunnablesForUpdates (not (oopts ^. #outdatedJson)) provenanced
+      let entries = moduleEntries <> runnableEntries
       if null entries
-        then TIO.putStrLn "No installed modules with origin metadata found."
+        then TIO.putStrLn "No installed artifacts with origin metadata found."
         else
           if oopts ^. #outdatedJson
             then LBS.putStr (encodePretty entries)
@@ -180,14 +186,14 @@ mkUnreachable dm origin =
 renderTable :: [OutdatedEntry] -> IO ()
 renderTable entries = do
   colorEnabled <- useColor
-  let maxNameLen = max 6 (maximum (map (T.length . (^. #moduleName)) entries))
+  let maxNameLen = max 8 (maximum (map (T.length . (^. #moduleName)) entries))
       maxInstLen = max 9 (maximum (map (T.length . maybe "(none)" id . (^. #installedVersion)) entries))
       maxAvailLen = max 9 (maximum (map (T.length . maybe "(none)" id . (^. #availableVersion)) entries))
 
       padR n t = t <> T.replicate (n - T.length t + 2) " "
 
       header =
-        padR maxNameLen "Module"
+        padR maxNameLen "Artifact"
           <> padR maxInstLen "Installed"
           <> padR maxAvailLen "Available"
           <> "Status"
@@ -214,6 +220,6 @@ renderTable entries = do
   TIO.putStrLn ""
   TIO.putStrLn $
     T.pack (show total)
-      <> " module(s) checked, "
+      <> " artifact(s) checked, "
       <> T.pack (show outdated)
       <> " outdated."

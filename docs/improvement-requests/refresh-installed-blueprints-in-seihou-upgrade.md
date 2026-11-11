@@ -8,9 +8,19 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-11-10T22:29:39Z"
-timestamp: 2026-11-11T14:10:00Z
+timestamp: 2026-11-11T15:00:00Z
 requestId: IR-17
-status: accepted
+status: completed
+completedAt: "2026-11-11T15:00:00Z"
+resolution: >-
+  seihou upgrade refreshes installed blueprints and prompts from the source their
+  .seihou-origin.json records, each blueprint together with its baseModules closure,
+  restaged as seihou install would and published only where content changed. With no
+  names every provenanced blueprint and prompt is included; a named one exits 0 with old
+  and new versions in text and --json. ADR 0006 refusals and named entries without
+  provenance are failed rows that leave the cache untouched, and seihou upgrade exits 1
+  when any row failed. seihou outdated lists blueprints and prompts. ADR 0006 is amended;
+  unreleased.
 targetPlan: docs/plans/121-refresh-installed-blueprints-and-prompts-in-seihou-upgrade.md
 origin: mori://shinzui/kotei-docs
 reviews:
@@ -32,13 +42,22 @@ reviews:
 
 ## Status
 
-Accepted. Raised from `FRIC-5`
+Completed in source through
+[ExecPlan 121](../plans/121-refresh-installed-blueprints-and-prompts-in-seihou-upgrade.md) and
+recorded as an amendment to
+[ADR 0006](../adr/0006-the-install-cache-will-not-silently-substitute-an-artifact.md); it ships
+with the next release after Seihou 0.15.0.0. `UpgradeRunnablesE2ESpec` drives the real binary
+through the FRIC-5 scenario: after a producer bump, `seihou upgrade bp --json` reports
+`0.1.0 -> 0.1.1` and `seihou agent --debug run bp` prints `Version: 0.1.1`. Every acceptance
+criterion below holds. Prompts are covered as well as blueprints.
+
+Previously accepted. Raised from `FRIC-5`
 (`mori://shinzui/kotei-docs/okf/friction-log/concepts/FRIC-5`) against Seihou 0.15.0.0.
 Planned on 2026-11-11 in
 [ExecPlan 121](../plans/121-refresh-installed-blueprints-and-prompts-in-seihou-upgrade.md).
 The plan answers the scope question below by covering prompts as well as blueprints. It
 refreshes each blueprint together with its `baseModules` closure, and it extends
-`seihou outdated`. Implementation has not started.
+`seihou outdated`.
 
 ## Context
 
