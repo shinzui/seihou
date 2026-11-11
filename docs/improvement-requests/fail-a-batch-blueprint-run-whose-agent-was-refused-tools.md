@@ -53,13 +53,33 @@ exited 0.
 
 ## Problem
 
-The batch path in `runRenderedAgentPromptMode` (`seihou-cli/src-exe/Seihou/CLI/AgentRun.hs`)
-goes through `runAgentCompletionWithCliAccess`, which calls `validateMigrationOutput`.
-`seihou-cli/src/Seihou/CLI/AgentMigrationProtocol.hs` rejects a Claude result whose
-`permission_denials` array is not empty. Despite that check, both runs above exited 0
-after refusals. Either these refusals are not reported in `permission_denials`, or the
-batch run takes a path that skips the check. That is not established here, and should
-be the first step of any plan.
+The batch path never checks for refusals. `runRenderedAgentPromptMode`
+(`seihou-cli/src-exe/Seihou/CLI/AgentRun.hs`) handles `--batch` by calling
+`runAgentCompletionWithCliAccess` (`seihou-cli/src/Seihou/CLI/AgentCompletion.hs`). That
+function registers the stock Baikai `claudeCliProvider` through
+`registerAgentProvidersWithCliAccess`, adding only `--allowedTools` and `--add-dir`.
+
+`validateMigrationOutput` (`seihou-cli/src/Seihou/CLI/AgentMigrationProtocol.hs`) does
+reject a Claude result whose `permission_denials` array is not empty and names each
+refused tool and command. But it is called only from the strict adapter
+`runAgentMigrationCompletionWithCliAccess`, and only `agent migrate`
+(`seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs`) uses that adapter. Baikai's Claude CLI
+result parser reads `is_error` but not `permission_denials`
+(`mori://shinzui/baikai`, `baikai/src/Baikai/Provider/Cli/Internal.hs`; the
+artifact-level URI is pending). A session in which tools were refused still ends with
+`subtype: success` and `is_error: false`, so the batch path treats it as a normal
+completion: it prints the final message, returns success, and records the
+applied-blueprint entry in `.seihou/manifest.json`.
+
+The refusals in both runs above were therefore most likely reported in
+`permission_denials` and ignored. This was established by reading the code at
+`04d3d3b`. It has not been confirmed against the raw provider output of those runs, and
+that confirmation, for the allow-list refusals and for the provider-guard refusals of the
+second run, should be the first step of any plan.
+
+The strict adapter cannot be reused unchanged for `agent run --batch`: it also passes
+`--permission-mode acceptEdits` and adds the read-only `mori registry` grants of
+`migrationAllowedTools` to the blueprint's tools.
 
 The result is costly. A batch run is how a blueprint is qualified, and an exit 0 after
 refusals looks like a pass. Nothing at authoring time warns that a blueprint whose
