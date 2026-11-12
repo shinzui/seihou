@@ -49,6 +49,7 @@ minimalPlan reconciliation =
   UpdatePlan
     { applications = [],
       versionChanges = [],
+      rebindings = [],
       inputChanges = InputChangeSummary 0 0 0 0 [],
       migrations = [],
       reconciliation,

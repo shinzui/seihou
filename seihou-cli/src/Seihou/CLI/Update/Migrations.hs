@@ -9,7 +9,6 @@ where
 
 import Control.Monad (guard)
 import Data.Generics.Labels ()
-import Data.List (find)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Set qualified as Set
@@ -63,11 +62,11 @@ planAndStageMigrations ::
   FilePath ->
   Manifest ->
   CandidateCatalog ->
-  [(Maybe AppliedComposition, [(ModuleInstance, Module, FilePath)])] ->
+  [(Map ModuleInstance AppliedInstanceState, [(ModuleInstance, Module, FilePath)])] ->
   IO (Either UpdateError StagedMigrations)
 planAndStageMigrations root manifest catalog applications = planAndStageMigrationsWithSeeds root manifest catalog applications (Map.keysSet (manifest ^. #seeds))
 
-planAndStageMigrationsWithSeeds :: FilePath -> Manifest -> CandidateCatalog -> [(Maybe AppliedComposition, [(ModuleInstance, Module, FilePath)])] -> Set FilePath -> IO (Either UpdateError StagedMigrations)
+planAndStageMigrationsWithSeeds :: FilePath -> Manifest -> CandidateCatalog -> [(Map ModuleInstance AppliedInstanceState, [(ModuleInstance, Module, FilePath)])] -> Set FilePath -> IO (Either UpdateError StagedMigrations)
 planAndStageMigrationsWithSeeds projectRoot manifest catalog applications protected = do
   let declaredTargets = either (const []) id $ do
         transitions <- collectTransitions catalog applications
@@ -123,7 +122,7 @@ stageAll manifest completed ((transition, sourcePlan) : rest) = do
 
 collectTransitions ::
   CandidateCatalog ->
-  [(Maybe AppliedComposition, [(ModuleInstance, Module, FilePath)])] ->
+  [(Map ModuleInstance AppliedInstanceState, [(ModuleInstance, Module, FilePath)])] ->
   Either UpdateError [Transition]
 collectTransitions catalog applications = do
   let raw = concatMap applicationTransitions applications
@@ -140,12 +139,11 @@ collectTransitions catalog applications = do
     (name, versions) : _ -> Left (UpdateConflictingPriorVersions name versions)
     [] -> Right raw
   where
-    applicationTransitions (Nothing, _) = []
-    applicationTransitions (Just previous, candidates) =
+    applicationTransitions (previous, candidates) =
       mapMaybe (transitionFor previous) candidates
 
     transitionFor previous (instanceId, candidateModule, sourceDirectory) = do
-      prior <- find (matches instanceId) (previous ^. #instances)
+      prior <- Map.lookup instanceId previous
       fromVersion <- (prior ^. #moduleVersion)
       toVersion <- (candidateModule ^. #version)
       guard (fromVersion /= toVersion)
@@ -159,10 +157,6 @@ collectTransitions catalog applications = do
             candidateModule,
             sourceDirectory
           }
-
-    matches instanceId state =
-      state ^. #name == instanceId ^. #module_
-        && state ^. #parentVars == (instanceId ^. #parentVars)
 
 deduplicateTransitions :: [Transition] -> [Transition]
 deduplicateTransitions = go Set.empty

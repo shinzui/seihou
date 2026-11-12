@@ -14,12 +14,13 @@ import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap (..), EvidenceSour
 import Seihou.CLI.Update (UpdateError (..), UpdateWarning (..))
 import Seihou.CLI.Update.Render
   ( encodeUpdateOutput,
+    errorCode,
     errorOutput,
     errorOutputFor,
     planOutput,
     renderUpdateHuman,
   )
-import Seihou.CLI.Update.Types (ApplicationRef (..), ManifestPreparation (..))
+import Seihou.CLI.Update.Types (ApplicationRef (..), InstanceRebinding (..), ManifestPreparation (..), UnpairedInstances (..))
 import Seihou.CLI.UpdateFixture (conflictPlan, planWithWarnings)
 import Seihou.Core.Types
   ( ApplicationId (..),
@@ -29,6 +30,7 @@ import Seihou.Core.Types
     ParentVars (..),
     RecipeName (..),
     SharedWriteMode (..),
+    VarError (..),
     VarName (..),
     emptyParentVars,
   )
@@ -41,6 +43,27 @@ tests = testSpec "Seihou.CLI.Update.Render" spec
 
 spec :: Spec
 spec = do
+  it "renders rebinding evidence and both errors without constructor syntax" $ do
+    let changed = InstanceRebinding (ApplicationId "app") "child" emptyParentVars (ParentVars (Map.singleton "child.extra" "x"))
+        plan = conflictPlan & #rebindings .~ [changed]
+        rendered = renderUpdateHuman False (planOutput plan)
+    rendered `shouldSatisfy` T.isInfixOf "Rebinding:   child (no bindings) -> [child.extra=x]; saved inputs kept"
+    show (encodeUpdateOutput (planOutput plan)) `shouldSatisfy` isInfixOf "rebindings"
+    let variableError = UpdateRebindingVariableErrors [changed] [MissingRequiredVar "project.name"]
+        ambiguous = UpdateInstanceRebindingAmbiguous (moduleRef "parent") [UnpairedInstances (ApplicationId "app") "child" [emptyParentVars] [changed ^. #toParentVars]]
+    errorCode variableError `shouldBe` "variable_errors"
+    errorCode ambiguous `shouldBe` "ambiguous_instance_rebinding"
+    mapM_
+      ( \err -> do
+          let message = renderUpdateHuman False (errorOutput err)
+          message `shouldSatisfy` T.isInfixOf "child"
+          message `shouldSatisfy` T.isInfixOf "[child.extra=x]"
+          message `shouldNotSatisfy` T.isInfixOf "UpdateRebindingVariableErrors"
+          message `shouldNotSatisfy` T.isInfixOf "UnpairedInstances"
+      )
+      [variableError, ambiguous]
+    renderUpdateHuman False (errorOutput ambiguous) `shouldSatisfy` T.isInfixOf "seihou update parent --reconfigure"
+
   it "groups a human plan and names unresolved paths" $ do
     let rendered = renderUpdateHuman False (planOutput conflictPlan)
     rendered `shouldSatisfy` T.isInfixOf "Files:"

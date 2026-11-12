@@ -19,6 +19,10 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 ### Fixed
 
+- `seihou update` keeps saved inputs and prior versions when a release changes
+  a dependency's bindings. The preview shows changed edges; ambiguous matches
+  refuse with guidance to reconfigure rather than moving inputs between invocations.
+
 - **SSH and HTTPS spellings of one GitHub repository agree everywhere.** A project whose manifest records `git@github.com:OWNER/REPO.git` while your installed copy records `https://github.com/OWNER/REPO.git` (or the reverse) gets no origin warning in `seihou status`, generates with `seihou run` without an origin refusal, reinstalls without `--force`, and keeps its completed blueprint migrations. Nothing to repair or reinstall; seihou never rewrites either URL. On other Git servers, a different scheme, SSH user, port or path form still counts as a different source, and a different owner or repository is still reported everywhere.
 
 - **Update projects that use modules keeping files in `.seihou/<module>/`.** `seihou update` no longer stops with `reconciliation_failed ... path targets Seihou or Git control data` for a module that keeps helper scripts or configuration in its own `.seihou/<module-name>/` directory, such as `docs-mori-bootstrap`. Those files now merge on update like any other managed file, keeping your edits. Run the ordinary update; no `--force` re-run is needed.

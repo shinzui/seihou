@@ -22,7 +22,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isNothing)
 import Data.Set qualified as Set
 import Data.Text qualified as T
-import Seihou.CLI.ApplicationDisplay (applicationLabel, appliedTargetName, moduleNameText)
+import Seihou.CLI.ApplicationDisplay (applicationLabel, appliedTargetName, moduleNameText, parentVarsText)
 import Seihou.CLI.CheckoutSync (CheckoutSyncResult (..), checkoutReportJSON, renderCheckoutPlan)
 import Seihou.CLI.CommandExecution
   ( CommandDisposition (..),
@@ -35,6 +35,7 @@ import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap (..), EvidenceSour
 import Seihou.CLI.ManifestGuard (blockingChecks, checkRecipeChain, formatGuardOverride)
 import Seihou.CLI.Shared (formatVarError)
 import Seihou.CLI.Update.Types
+import Seihou.Composition.Instance (ModuleInstance (..))
 import Seihou.Core.ArtifactFiles (renderAmbiguousArtifact)
 import Seihou.Core.ArtifactRef (renderArtifactRefError)
 import Seihou.Core.Checkout (CheckoutAction (..), CheckoutEntry (..), CheckoutError (..), CheckoutPlan (..))
@@ -43,6 +44,7 @@ import Seihou.Core.Migration (MigrationPlan (..), MigrationPlanError (..))
 import Seihou.Core.Types
   ( ApplicationId (..),
     AppliedComposition (..),
+    AppliedInstanceState (..),
     AppliedRecipeNode (..),
     AppliedTarget (..),
     BaselineRef (..),
@@ -52,7 +54,7 @@ import Seihou.Core.Types
     ModuleLoadError (..),
     ModuleName (..),
     Operation (..),
-    ParentVars,
+    ParentVars (..),
     Removal,
     SHA256 (..),
     VarName (..),
@@ -133,13 +135,14 @@ renderUpdateHuman _ (UpdatePlanOutput (UpdatePlanView plan)) =
       <> preparationLines (displayedPreparation plan)
       <> ["Cache:       refresh " <> T.intercalate ", " (plan ^. #cacheChanges) | not (null (plan ^. #cacheChanges))]
       <> versionLines plan
+      <> rebindingLines plan
       <> concatMap (recipeChainLines (plan ^. #request . #allowDowngrade)) (plan ^. #plannedApplications)
       <> [ renderInputs (plan ^. #inputChanges),
            "Migrations:  " <> count (length (plan ^. #migrations)) <> migrationCaveat plan,
            renderFiles (reconciliationSummary (plan ^. #reconciliation)),
            if isUpdateNoOp plan then "Commands:    0 will run (no project update)" else renderCommands (summarizeCommandPlan (plan ^. #commandPlan))
          ]
-      <> ["Removal policies changed: " <> appliedTargetName (application ^. #candidate . #target) | application <- plan ^. #plannedApplications, maybe [] instancePolicies (application ^. #previous) /= instancePolicies (application ^. #candidate)]
+      <> ["Removal policies changed: " <> appliedTargetName (application ^. #candidate . #target) | application <- plan ^. #plannedApplications, Map.fromList [((n, p), r) | (n, p, r) <- alignedPolicies application] /= Map.fromList [((n, p), r) | (n, p, r) <- instancePolicies (application ^. #candidate)]]
       <> ["Checkout declarations changed: " <> application ^. #candidate . #applicationId . #unApplicationId | application <- plan ^. #plannedApplications, maybe [] (^. #checkoutCommands) (application ^. #previous) /= application ^. #candidate . #checkoutCommands]
       <> ["  checkout " <> (if isUpdateNoOp plan then "not-run-no-update" else dispositionText (command ^. #disposition)) <> ": " <> fromMaybe "" (commandText (command ^. #operation)) | command <- plan ^. #commandPlan . #commands, isCheckoutCommand (command ^. #operation)]
       <> T.lines (renderCheckoutPlan True (plan ^. #checkoutPlan))
@@ -176,6 +179,7 @@ outputValue (UpdatePlanOutput (UpdatePlanView plan)) =
       "manifestPreparation" .= fmap preparationValue (displayedPreparation plan),
       "applications" .= map applicationIdText (plan ^. #applications),
       "versions" .= map versionValue (plan ^. #versionChanges),
+      "rebindings" .= map rebindingValue (plan ^. #rebindings),
       "cacheChanges" .= (plan ^. #cacheChanges),
       "recipeChains" .= [recipeChainValue app | app <- plan ^. #plannedApplications, chainChanged app],
       "inputs" .= inputValue (plan ^. #inputChanges),
@@ -192,6 +196,7 @@ outputValue (UpdateAppliedOutput (UpdateResultView result)) =
       "outcome" .= ("applied" :: Text),
       "applications" .= map (^. #unApplicationId) (result ^. #updatedApplications),
       "versions" .= map versionValue (result ^. #versions),
+      "rebindings" .= map rebindingValue (result ^. #rebindings),
       "files" .= summaryValue (result ^. #fileSummary),
       "commands"
         .= object
@@ -546,6 +551,8 @@ errorCode CandidateDowngrade {} = "candidate_downgrade"
 errorCode CandidateVersionInvalid {} = "candidate_version_invalid"
 errorCode UpdateConflictingPriorVersions {} = "conflicting_prior_versions"
 errorCode UpdateVariableErrors {} = "variable_errors"
+errorCode UpdateRebindingVariableErrors {} = "variable_errors"
+errorCode UpdateInstanceRebindingAmbiguous {} = "ambiguous_instance_rebinding"
 errorCode UpdateConfigurationFailed {} = "configuration_failed"
 errorCode UpdateMigrationPlanFailed {} = "migration_plan_failed"
 errorCode UpdateMigrationStageFailed {} = "migration_stage_failed"
@@ -644,6 +651,12 @@ errorMessage (UpdateConflictingPriorVersions name versions) =
     <> "), so there is no single starting point to plan its migrations from."
 errorMessage (UpdateVariableErrors errors) =
   "Variables could not be resolved: " <> T.intercalate "; " (map formatVarError errors)
+errorMessage (UpdateRebindingVariableErrors changed errors) =
+  errorMessage (UpdateVariableErrors errors) <> "; " <> T.intercalate "; " [moduleNameText (r ^. #moduleName) <> "'s dependency edge changed from " <> bindingsText (r ^. #fromParentVars) <> " to " <> bindingsText (r ^. #toParentVars) <> " in this release" | r <- changed]
+errorMessage (UpdateInstanceRebindingAmbiguous ref groups) =
+  "Run 'seihou update " <> maybe "" appliedTargetName (ref ^. #target) <> " --reconfigure' to supply inputs again: this release changed dependency bindings in " <> applicationLabel ref <> ", so seihou cannot tell which saved inputs belong to which instance. " <> T.intercalate "; " (map describe groups)
+  where
+    describe group = moduleNameText (group ^. #moduleName) <> ". Recorded: " <> T.intercalate ", " (map bindingsText (group ^. #recorded)) <> ". Candidate: " <> T.intercalate ", " (map bindingsText (group ^. #candidates))
 errorMessage (UpdateConfigurationFailed reason) =
   "Configuration could not be loaded: " <> reason
 errorMessage (UpdateMigrationPlanFailed name err) =
@@ -842,3 +855,20 @@ driftDetails (UpdateChangedAfterMigrationCommand planned actual differences) =
     "differences" .= [object ["path" .= path, "categories" .= kinds] | (path, kinds) <- Map.toAscList differences]
   ]
 driftDetails _ = []
+
+-- Compare policies under candidate identities, keeping removals visible.
+alignedPolicies :: PlannedApplication -> [(ModuleName, ParentVars, Maybe Removal)]
+alignedPolicies app =
+  [(inst ^. #module_, inst ^. #parentVars, state ^. #removalPolicy) | (inst, state) <- Map.toAscList (app ^. #priorAlignment . #priors)]
+    <> [(state ^. #name, state ^. #parentVars, state ^. #removalPolicy) | old <- maybe [] pure (app ^. #previous), state <- old ^. #instances, state `notElem` Map.elems (app ^. #priorAlignment . #priors)]
+
+bindingsText :: ParentVars -> Text
+bindingsText = fromMaybe "(no bindings)" . parentVarsText
+
+rebindingLines :: UpdatePlan -> [Text]
+rebindingLines plan =
+  ["Rebinding:   " <> moduleNameText (r ^. #moduleName) <> " " <> bindingsText (r ^. #fromParentVars) <> " -> " <> bindingsText (r ^. #toParentVars) <> if plan ^. #request . #reconfigure then "; inputs resolved again (--reconfigure)" else "; saved inputs kept" | r <- plan ^. #rebindings]
+    <> ["Rebinding:   " <> moduleNameText (group ^. #moduleName) <> " could not be paired; inputs resolved again (--reconfigure)" | app <- plan ^. #plannedApplications, group <- app ^. #priorAlignment . #unpaired]
+
+rebindingValue :: InstanceRebinding -> Value
+rebindingValue r = object ["application" .= (r ^. #applicationId . #unApplicationId), "module" .= (r ^. #moduleName . #unModuleName), "from" .= Map.mapKeys (^. #unVarName) (r ^. #fromParentVars . #unParentVars), "to" .= Map.mapKeys (^. #unVarName) (r ^. #toParentVars . #unParentVars)]

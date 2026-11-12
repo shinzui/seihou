@@ -28,9 +28,11 @@ import GHC.Generics (Generic)
 import Seihou.CLI.CommandExecution (CommandPolicy (..))
 import Seihou.CLI.Update (PromptPolicy (..), UpdateRequest (..), UpdateSelection (..), applyProjectUpdate, isUpdateNoOp, withProjectUpdate)
 import Seihou.CLI.Update.Migrations (StagedMigrations (..), planAndStageMigrations)
+import Seihou.CLI.Update.Rebinding (alignPriorInstances)
 import Seihou.CLI.Update.Selection
 import Seihou.CLI.Update.Source
 import Seihou.CLI.Update.Types
+import Seihou.CLI.Update.Types (PriorAlignment (..))
 import Seihou.CLI.UpdateFixture (minimalPlan)
 import Seihou.Composition.Instance (ModuleInstance (..))
 import Seihou.Core.Application (mkApplicationId)
@@ -377,7 +379,7 @@ spec = do
       let previous = application (AppliedModuleTarget "base") [instanceState "base"]
           policy = Removal [RemovalStep RemoveFileAction "starter" Nothing (Just (ExprLit False))] []
           candidate = previous & #instances %~ map (\state -> state & #removalPolicy .~ Just policy)
-          planned before after = PlannedApplication (Just before) after [] Map.empty [] Map.empty
+          planned before after = PlannedApplication (Just before) after (alignPriorInstances before []) [] Map.empty [] Map.empty
           plan before after = unchangedFilePlan SharedWriteAdditiveOnly True & #plannedApplications .~ [planned before after] & #applications .~ [after]
       isUpdateNoOp (plan previous candidate) `shouldBe` False
       isUpdateNoOp (plan candidate candidate) `shouldBe` True
@@ -665,7 +667,7 @@ spec = do
                 }
             catalog = CandidateCatalog (projectRoot </> "search") Map.empty Map.empty
             candidates = [(instanceOne, candidate, "/candidate/shared"), (instanceTwo, candidate, "/candidate/shared")]
-        staged <- planAndStageMigrations projectRoot manifest catalog [(Just previous, candidates)]
+        staged <- planAndStageMigrations projectRoot manifest catalog [((alignPriorInstances previous [inst | (inst, _, _) <- candidates]) ^. #priors, candidates)]
         case staged of
           Left err -> expectationFailure (show err)
           Right migrationStage -> do
@@ -673,9 +675,17 @@ spec = do
             (migrationStage ^. #plans) `shouldSatisfy` all (^. #containsCommands)
             (migrationStage ^. #warnings) `shouldBe` [MigrationCommandNotSimulated "shared" "true"]
             map (^. #moduleVersion) (migrationStage ^. #manifest . #modules) `shouldBe` [Just "2.0.0", Just "2.0.0"]
+        let rebound = ModuleInstance "shared" (ParentVars (Map.fromList [("tenant", "two"), ("extra", "new")]))
+            reboundCandidates = [(instanceOne, candidate, "/candidate/shared"), (rebound, candidate, "/candidate/shared")]
+        reboundStage <- planAndStageMigrations projectRoot manifest catalog [(alignPriorInstances previous [instanceOne, rebound] ^. #priors, reboundCandidates)]
+        case reboundStage of
+          Left err -> expectationFailure (show err)
+          Right migrationStage -> do
+            length (migrationStage ^. #plans) `shouldBe` 1
+            map (^. #moduleVersion) (migrationStage ^. #manifest . #modules) `shouldBe` [Just "2.0.0", Just "2.0.0"]
         TIO.writeFile (projectRoot </> ".gitignore") ".envrc\r\nuser-entry\n"
         let removalCandidate = candidate & #migrations .~ [Migration "1.0.0" "2.0.0" [RemoveLine ".gitignore" ".envrc"]]
-        stagedRemoval <- planAndStageMigrations projectRoot manifest catalog [(Just previous, [(instanceOne, removalCandidate, "/candidate/shared")])]
+        stagedRemoval <- planAndStageMigrations projectRoot manifest catalog [((alignPriorInstances previous [instanceOne]) ^. #priors, [(instanceOne, removalCandidate, "/candidate/shared")])]
         case stagedRemoval of
           Left err -> expectationFailure (show err)
           Right migrationStage -> do
@@ -1314,6 +1324,7 @@ breakCandidatePublication plan =
   UpdatePlan
     { applications = plan ^. #applications,
       versionChanges = plan ^. #versionChanges,
+      rebindings = plan ^. #rebindings,
       inputChanges = plan ^. #inputChanges,
       migrations = plan ^. #migrations,
       reconciliation = plan ^. #reconciliation,

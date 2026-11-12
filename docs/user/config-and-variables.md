@@ -530,6 +530,10 @@ three values. Malformed patterns fail even on absent optional inputs; they never
 disable validation. Binding names allow `[a-z][A-Za-z0-9.-]*`, including camelCase
 Git variables.
 
+When a release changes a dependency edge's bindings, ordinary `seihou update`
+keeps saved inputs for a uniquely paired invocation, with the new bindings taking
+precedence for the variables they set; ambiguous pairings require `--reconfigure`.
+
 ### Inputs inherited from a base recipe
 
 A derived recipe merges its ancestors before resolving inputs. Child literals

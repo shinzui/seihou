@@ -8,6 +8,9 @@ module Seihou.CLI.Update.Types
     CandidateArtifact (..),
     CandidateCatalog (..),
     PlannedUpdateMigration (..),
+    InstanceRebinding (..),
+    UnpairedInstances (..),
+    PriorAlignment (..),
     PlannedApplication (..),
     UpdateSnapshot (..),
     ApplicationRef (..),
@@ -138,11 +141,36 @@ data PlannedUpdateMigration = PlannedUpdateMigration
   }
   deriving stock (Eq, Generic, Show)
 
+-- | A unique invocation whose dependency bindings changed in this release.
+data InstanceRebinding = InstanceRebinding
+  { applicationId :: !ApplicationId,
+    moduleName :: !ModuleName,
+    fromParentVars :: !ParentVars,
+    toParentVars :: !ParentVars
+  }
+  deriving stock (Eq, Show, Generic)
+
+data UnpairedInstances = UnpairedInstances
+  { applicationId :: !ApplicationId,
+    moduleName :: !ModuleName,
+    recorded :: ![ParentVars],
+    candidates :: ![ParentVars]
+  }
+  deriving stock (Eq, Show, Generic)
+
+data PriorAlignment = PriorAlignment
+  { priors :: !(Map ModuleInstance AppliedInstanceState),
+    rebindings :: ![InstanceRebinding],
+    unpaired :: ![UnpairedInstances]
+  }
+  deriving stock (Eq, Show, Generic)
+
 -- | Internal, renderer-neutral material retained so apply can re-plan after
 -- migration commands without reusing parser state.
 data PlannedApplication = PlannedApplication
   { previous :: !(Maybe AppliedComposition),
     candidate :: !AppliedComposition,
+    priorAlignment :: !PriorAlignment,
     modulesInOrder :: ![(ModuleInstance, Module, FilePath)],
     resolvedValues :: !(Map ModuleInstance (Map VarName ResolvedVar)),
     operations :: ![Operation],
@@ -218,6 +246,7 @@ data UpdateWarning
 data UpdatePlan = UpdatePlan
   { applications :: ![AppliedComposition],
     versionChanges :: ![VersionChange],
+    rebindings :: ![InstanceRebinding],
     inputChanges :: !InputChangeSummary,
     migrations :: ![PlannedUpdateMigration],
     reconciliation :: !ReconciliationPlan,
@@ -246,6 +275,7 @@ data UpdateResult = UpdateResult
   { updatedApplications :: ![ApplicationId],
     manifest :: !Manifest,
     versions :: ![VersionChange],
+    rebindings :: ![InstanceRebinding],
     fileSummary :: !ReconciliationSummary,
     commandSummary :: !CommandSummary,
     touchedPaths :: !(Set FilePath),
@@ -284,6 +314,8 @@ data UpdateError
   | CandidateVersionInvalid Text Text
   | UpdateConflictingPriorVersions ModuleName [Text]
   | UpdateVariableErrors [VarError]
+  | UpdateRebindingVariableErrors [InstanceRebinding] [VarError]
+  | UpdateInstanceRebindingAmbiguous ApplicationRef [UnpairedInstances]
   | UpdateConfigurationFailed Text
   | UpdateMigrationPlanFailed ModuleName MigrationPlanError
   | UpdateMigrationStageFailed ModuleName MigrationExecError

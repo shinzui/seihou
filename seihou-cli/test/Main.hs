@@ -44,6 +44,8 @@ import Seihou.CLI.MigrateSpec qualified as MigrateSpec
 import Seihou.CLI.ModuleStateE2ESpec qualified as ModuleStateE2E
 import Seihou.CLI.PendingMigrationSpec qualified as PendingMigrationSpec
 import Seihou.CLI.PromptRenderSpec qualified as PromptRenderSpec
+import Seihou.CLI.RebindingSpec qualified
+import Seihou.CLI.RebindingUpdateE2ESpec qualified
 import Seihou.CLI.RecipeExtensionE2ESpec qualified as RecipeExtensionE2E
 import Seihou.CLI.RecipeInputsE2ESpec qualified as RecipeInputsE2E
 import Seihou.CLI.RecordedReleaseSpec qualified as RecordedReleaseSpec
@@ -74,7 +76,9 @@ main :: IO ()
 main = do
   tests <-
     sequence
-      [ RecipeExtensionE2E.tests,
+      [ Seihou.CLI.RebindingSpec.tests,
+        Seihou.CLI.RebindingUpdateE2ESpec.tests,
+        RecipeExtensionE2E.tests,
         AgentLaunchSpec.tests,
         AgentMigrateE2ESpec.tests,
         AgentGuardE2ESpec.tests,

@@ -130,6 +130,7 @@ library seihou-cli-internal
     Seihou.CLI.Update
     Seihou.CLI.Update.Interaction
     Seihou.CLI.Update.Migrations
+    Seihou.CLI.Update.Rebinding
     Seihou.CLI.Update.Recovery
     Seihou.CLI.Update.Render
     Seihou.CLI.Update.Selection
@@ -323,6 +324,8 @@ test-suite seihou-cli-test
     Seihou.CLI.ModuleStateE2ESpec
     Seihou.CLI.PendingMigrationSpec
     Seihou.CLI.PromptRenderSpec
+    Seihou.CLI.RebindingSpec
+    Seihou.CLI.RebindingUpdateE2ESpec
     Seihou.CLI.RecipeExtensionE2ESpec
     Seihou.CLI.RecipeInputsE2ESpec
     Seihou.CLI.RecordedReleaseSpec

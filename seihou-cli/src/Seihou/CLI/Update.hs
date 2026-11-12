@@ -43,6 +43,7 @@ import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap (..), Certificatio
 import Seihou.CLI.ManifestGuard (blockingChecks, checkRecipeChain, formatGuardRefusal)
 import Seihou.CLI.Shared (deriveNamespace, toVarNameMap)
 import Seihou.CLI.Update.Migrations
+import Seihou.CLI.Update.Rebinding (alignPriorInstances, carriedSavedValues)
 import Seihou.CLI.Update.Recovery
 import Seihou.CLI.Update.Selection
 import Seihou.CLI.Update.Source
@@ -159,8 +160,8 @@ planProjectUpdateIn sessionDirectory request = do
                       sourceWarnings = staged ^. #warnings
                       plannedApplications = staged ^. #plannedApplications
                       applicationInputs =
-                        [ (Just previous, planned ^. #modulesInOrder)
-                        | (previous, planned) <- zip selected plannedApplications
+                        [ (planned ^. #priorAlignment . #priors, planned ^. #modulesInOrder)
+                        | planned <- plannedApplications
                         ]
                   let claims = applicationSeedClaims plannedApplications
                       selectedIdsForSeeds = Set.fromList (map (^. #candidate . #applicationId) plannedApplications)
@@ -235,6 +236,7 @@ planProjectUpdateIn sessionDirectory request = do
                                         UpdatePlan
                                           { applications = map (^. #candidate) plannedApplications,
                                             versionChanges,
+                                            rebindings = concatMap (^. #priorAlignment . #rebindings) plannedApplications,
                                             inputChanges,
                                             migrations = migrationStage ^. #plans,
                                             reconciliation,
@@ -336,7 +338,7 @@ resolveSelection request sessionDirectory projectRoot installedDirectory manifes
           Left err -> pure (Left err)
           Right selectedStage -> do
             let previous = applicationsWithIds current ids
-                inputs = [(Just prior, planned ^. #modulesInOrder) | (prior, planned) <- zip previous (selectedStage ^. #plannedApplications)]
+                inputs = [(planned ^. #priorAlignment . #priors, planned ^. #modulesInOrder) | planned <- selectedStage ^. #plannedApplications]
             migrationsResult <- planAndStageMigrations projectRoot current (selectedStage ^. #catalog) inputs
             case migrationsResult of
               Left err -> pure (Left err)
@@ -625,69 +627,75 @@ planApplication request projectRoot catalog now previous = do
           case loaded of
             Left err -> pure (Left (CandidateLoadFailed (primary ^. #unModuleName) err))
             Right modulesInOrder -> do
-              let savedValues
-                    | (request ^. #reconfigure) = Map.empty
-                    | otherwise = savedInstanceValues previous
-                  namespace = fromMaybe (deriveNamespace primary) (previous ^. #namespace)
-                  context = fromMaybe "" (previous ^. #context)
-              resolved <- resolveApplicationValues request namespace context savedValues (artifactRecipeInputs expansion (if request ^. #reconfigure then Nothing else previous ^. #recipeInputs)) recipeOverrides modulesInOrder
-              case resolved of
-                Left err -> pure (Left err)
-                Right (recipeValues, resolvedValues) -> do
-                  compiled <-
-                    compileComposedPlan
-                      [ (instanceId, modul, directory, Map.map (^. #value) (resolvedValues Map.! instanceId))
-                      | (instanceId, modul, directory) <- modulesInOrder
-                      ]
-                  case compiled of
-                    Left errors -> pure (Left (UpdateCompositionFailed errors))
-                    Right ComposedPlan {operations, warnings = compositionWarnings, managedOwners = rawOwners, seedOwners} -> do
-                      proposedOrigin <- case reverse chain of
-                        node : _ -> pure (node ^. #origin)
-                        [] -> publishedArtifactOrigin projectRoot targetArtifact
-                      let targetOrigin = if sameArtifactIdentity proposedOrigin (previous ^. #targetOrigin) then previous ^. #targetOrigin else proposedOrigin
-                      proposedModules <- traverse (withInstanceOrigin projectRoot catalog) modulesInOrder
-                      let originedModules = [(instanceId, modul, maybe origin (\state -> if sameArtifactIdentity origin (state ^. #origin) then state ^. #origin else origin) (find (\state -> state ^. #name == instanceId ^. #module_ && state ^. #parentVars == instanceId ^. #parentVars) (previous ^. #instances))) | (instanceId, modul, origin) <- proposedModules]
-                      let candidate0 =
-                            buildAppliedComposition
-                              (previous ^. #target)
-                              targetOrigin
-                              (targetArtifact ^. #version)
-                              (previous ^. #additionalModules)
-                              (Just namespace)
-                              (previous ^. #context)
-                              originedModules
-                              resolvedValues
-                              now
-                              & #recipeChain
-                              .~ Just chain
-                              & #recipeInputs
-                              .~ recordedRecipeInputs (previous ^. #target) recipeValues
-                              & #checkoutCommands
-                              .~ checkoutCommandsFromOperations operations
-                              & #applicationId
-                              .~ (previous ^. #applicationId)
-                          candidate =
-                            setCompositionState
-                              (candidate0 ^. #instances)
-                              (previous ^. #commandReceipts)
-                              candidate0
-                          desiredOwners =
-                            Map.map
-                              (\owner -> DesiredFileOwner owner (Set.singleton (candidate ^. #applicationId)))
-                              rawOwners
-                          renderedWarnings = map compositionWarning compositionWarnings
-                      pure
-                        ( Right
-                            PlannedApplication
-                              { previous = Just previous,
-                                candidate,
-                                modulesInOrder,
-                                resolvedValues,
-                                operations = expandSeedClaims seedOwners operations,
-                                desiredOwners
-                              }
-                        )
+              let alignment = alignPriorInstances previous [inst | (inst, _, _) <- modulesInOrder]
+              if not (request ^. #reconfigure) && not (null (alignment ^. #unpaired))
+                then pure (Left (UpdateInstanceRebindingAmbiguous (applicationRef (emptyManifest now & #applications .~ [previous]) (previous ^. #applicationId)) (alignment ^. #unpaired)))
+                else do
+                  let savedValues
+                        | (request ^. #reconfigure) = Map.empty
+                        | otherwise = carriedSavedValues alignment
+                      namespace = fromMaybe (deriveNamespace primary) (previous ^. #namespace)
+                      context = fromMaybe "" (previous ^. #context)
+                  resolved <- resolveApplicationValues request namespace context savedValues (artifactRecipeInputs expansion (if request ^. #reconfigure then Nothing else previous ^. #recipeInputs)) recipeOverrides modulesInOrder
+                  case resolved of
+                    Left (UpdateVariableErrors errors) -> pure (Left (rebindingVariableError alignment modulesInOrder errors))
+                    Left err -> pure (Left err)
+                    Right (recipeValues, resolvedValues) -> do
+                      compiled <-
+                        compileComposedPlan
+                          [ (instanceId, modul, directory, Map.map (^. #value) (resolvedValues Map.! instanceId))
+                          | (instanceId, modul, directory) <- modulesInOrder
+                          ]
+                      case compiled of
+                        Left errors -> pure (Left (UpdateCompositionFailed errors))
+                        Right ComposedPlan {operations, warnings = compositionWarnings, managedOwners = rawOwners, seedOwners} -> do
+                          proposedOrigin <- case reverse chain of
+                            node : _ -> pure (node ^. #origin)
+                            [] -> publishedArtifactOrigin projectRoot targetArtifact
+                          let targetOrigin = if sameArtifactIdentity proposedOrigin (previous ^. #targetOrigin) then previous ^. #targetOrigin else proposedOrigin
+                          proposedModules <- traverse (withInstanceOrigin projectRoot catalog) modulesInOrder
+                          let originedModules = [(instanceId, modul, maybe origin (\state -> if sameArtifactIdentity origin (state ^. #origin) then state ^. #origin else origin) (Map.lookup instanceId (alignment ^. #priors))) | (instanceId, modul, origin) <- proposedModules]
+                          let candidate0 =
+                                buildAppliedComposition
+                                  (previous ^. #target)
+                                  targetOrigin
+                                  (targetArtifact ^. #version)
+                                  (previous ^. #additionalModules)
+                                  (Just namespace)
+                                  (previous ^. #context)
+                                  originedModules
+                                  resolvedValues
+                                  now
+                                  & #recipeChain
+                                  .~ Just chain
+                                  & #recipeInputs
+                                  .~ recordedRecipeInputs (previous ^. #target) recipeValues
+                                  & #checkoutCommands
+                                  .~ checkoutCommandsFromOperations operations
+                                  & #applicationId
+                                  .~ (previous ^. #applicationId)
+                              candidate =
+                                setCompositionState
+                                  (candidate0 ^. #instances)
+                                  (previous ^. #commandReceipts)
+                                  candidate0
+                              desiredOwners =
+                                Map.map
+                                  (\owner -> DesiredFileOwner owner (Set.singleton (candidate ^. #applicationId)))
+                                  rawOwners
+                              renderedWarnings = map compositionWarning compositionWarnings
+                          pure
+                            ( Right
+                                PlannedApplication
+                                  { previous = Just previous,
+                                    candidate,
+                                    priorAlignment = alignment,
+                                    modulesInOrder,
+                                    resolvedValues,
+                                    operations = expandSeedClaims seedOwners operations,
+                                    desiredOwners
+                                  }
+                            )
   where
     compositionWarning (FileOverwritten path old new) = CrossApplicationLastWriter path old new
     compositionWarning (ContentMerged path old new) = CrossApplicationLastWriter path old new
@@ -938,12 +946,22 @@ restoreLegacyVersion manifest state =
           removalPolicy = state ^. #removalPolicy
         }
 
-savedInstanceValues :: AppliedComposition -> SavedInstanceValues
-savedInstanceValues application =
-  Map.fromList
-    [ (ModuleInstance (state ^. #name) (state ^. #parentVars), state ^. #resolvedVars)
-    | state <- application ^. #instances
-    ]
+-- Attach edge context only when the failing variable belongs to that module.
+rebindingVariableError :: PriorAlignment -> [(ModuleInstance, Module, FilePath)] -> [VarError] -> UpdateError
+rebindingVariableError alignment modules errors =
+  case filter relevant (alignment ^. #rebindings) of
+    [] -> UpdateVariableErrors errors
+    changed -> UpdateRebindingVariableErrors changed errors
+  where
+    names = Set.fromList (map errorName errors)
+    errorName (MissingRequiredVar name) = name
+    errorName (TypeMismatch name _ _) = name
+    errorName (ValidationFailed name _) = name
+    errorName (CoercionFailed name _ _) = name
+    relevant rebinding = any (belongs rebinding) modules
+    belongs rebinding (inst, modul, _) =
+      inst == ModuleInstance (rebinding ^. #moduleName) (rebinding ^. #toParentVars)
+        && not (Set.null (Set.intersection names (Set.fromList (map (^. #name) (modul ^. #vars)) `Set.union` Map.keysSet (rebinding ^. #toParentVars . #unParentVars))))
 
 combineApplicationPlans ::
   [PlannedApplication] ->
@@ -1011,12 +1029,12 @@ versionEvidence allowDowngrade projectRoot catalog previousApplications plannedA
     Right (unique, warnings)
   where
     applicationEvidence previous planned = do
-      instanceEvidence <- traverse (instanceVersionEvidence previous) (planned ^. #modulesInOrder)
+      instanceEvidence <- traverse (instanceVersionEvidence planned) (planned ^. #modulesInOrder)
       targetEvidence <- targetVersionEvidence previous
       pure (targetEvidence : instanceEvidence)
 
-    instanceVersionEvidence previous (instanceId, candidateModule, _) = do
-      let prior = find (\state -> state ^. #name == instanceId ^. #module_ && state ^. #parentVars == instanceId ^. #parentVars) (previous ^. #instances)
+    instanceVersionEvidence planned (instanceId, candidateModule, _) = do
+      let prior = Map.lookup instanceId (planned ^. #priorAlignment . #priors)
       case prior of
         Nothing -> pure (Right (VersionChange (candidateModule ^. #name . #unModuleName) Nothing (candidateModule ^. #version) False))
         Just old -> compareArtifact (old ^. #name . #unModuleName) (old ^. #moduleVersion) (candidateModule ^. #version) (old ^. #origin) CandidateModule
@@ -1120,7 +1138,10 @@ summarizeInputChanges seedWarnings planned =
           ambiguousLegacy = [name | AmbiguousLegacyValue name <- seedWarnings]
         }
     summarizeApplication summary application =
-      let prior = maybe Map.empty savedInstanceValues (application ^. #previous)
+      let aligned = application ^. #priorAlignment . #priors
+          matched = Set.fromList [ModuleInstance (state ^. #name) (state ^. #parentVars) | state <- Map.elems aligned]
+          unmatched = Map.fromList [(ModuleInstance (state ^. #name) (state ^. #parentVars), state ^. #resolvedVars) | old <- maybe [] pure (application ^. #previous), state <- old ^. #instances, Set.notMember (ModuleInstance (state ^. #name) (state ^. #parentVars)) matched]
+          prior = Map.map (^. #resolvedVars) aligned <> unmatched
           candidateValues = (application ^. #resolvedValues)
           resolvedList =
             [ (instanceId, name, value)
@@ -1534,6 +1555,7 @@ finishCommitted transaction plan manifest checkoutWarnings = do
           { updatedApplications = map (^. #applicationId) (plan ^. #applications),
             manifest,
             versions = plan ^. #versionChanges,
+            rebindings = plan ^. #rebindings,
             fileSummary = reconciliationSummary (plan ^. #reconciliation),
             commandSummary =
               CommandSummary
@@ -1582,6 +1604,7 @@ noOpResult plan =
     { updatedApplications = [],
       manifest = plan ^. #snapshot . #originalManifest,
       versions = [],
+      rebindings = plan ^. #rebindings,
       fileSummary = reconciliationSummary (plan ^. #reconciliation),
       commandSummary = CommandSummary 0 0 0,
       touchedPaths = Set.empty,

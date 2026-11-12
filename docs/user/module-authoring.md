@@ -472,6 +472,21 @@ Identity is the set of parent-supplied `vars`, not any downstream override. Two 
 
 No new authoring syntax is required — the existing `dependencies = [ … ]` list already expresses this. If you want one child invocation to be shared by two parents, both parents supply the same bindings; if you want two independent invocations, supply different bindings.
 
+### Changing an edge's bindings in a release
+
+When a release adds, changes, or removes dependency bindings, `seihou update`
+pairs each changed invocation with its recorded instance when exactly one old
+and one new invocation remain after exact matches. It keeps the project's saved
+inputs, while new bindings replace saved values for the variables they set.
+Removing a binding restores normal resolution for its old value; a saved project
+override that differed from that binding is kept. The preview shows each rebinding.
+Changing a binding's value is intended to change generated output.
+
+If several edges to the same module change and cannot be paired uniquely, update
+refuses without changing project state. Review the named binding sets, then use
+`seihou update <target> --reconfigure` to resolve the application's inputs again
+(and supply required values with `--var` in noninteractive use).
+
 ### Composing modules at the command line
 
 Use `-m` to compose modules without declaring dependencies:

@@ -10,6 +10,12 @@ provenance:
     model: "claude-opus-5-5"
     harness: "claude-code"
     at: 2026-11-11T13:53:55Z
+  revisions:
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-11-12T03:33:24Z
+      mode: "implement"
+      note: "Implement instance alignment and validate the public update workflow"
 ---
 
 # Keep saved inputs when a release changes a dependency's bindings
@@ -45,29 +51,33 @@ names the module and both sets of bindings, and changes nothing.
 To see it working, apply a parent at 1.0.0 with `child.opt=custom`, release a parent 1.1.0
 that adds a binding to the `child` edge, and run `seihou update parent --json`. The command
 succeeds without `--var`, the manifest still records `child.opt=custom`, and the output
-contains a `rebindings` entry for `child` together with a version change
-`child 1.0.0 -> 1.0.0` that is not reported as newly applied.
+contains a `rebindings` entry for `child`. The unchanged child version is omitted
+from version changes; if the child also advances, its real prior version is shown.
 
 
 ## Progress
 
-- [ ] Milestone 1: the alignment of recorded and candidate instances exists as a pure,
+- [x] Milestone 1 (2026-11-11; seven alignment tests passed): the alignment of recorded and candidate instances exists as a pure,
   unit-tested library function (`Seihou.CLI.Update.Rebinding`). Its unit tests cover an
   exact match, a 1:1 rebinding, deliberate multi-instantiation, an ambiguous pair, and
   the carried-value precedence rules.
-- [ ] Milestone 2: `seihou update` uses the alignment for saved values, origins, version
+- [x] Milestone 2 (2026-11-11; E2E and migration staging coverage passed): `seihou update` uses the alignment for saved values, origins, version
   evidence, migrations, and input counting. It refuses an ambiguous match with
   `ambiguous_instance_rebinding`, and its variable errors name a changed edge. The
   reproduction end-to-end test passes, `update` no longer exits 1 and no longer loses
   `child.opt`.
-- [ ] Milestone 3: the rebinding is shown in the human preview, in plan and applied
+- [x] Milestone 3 (2026-11-11; 1,009 CLI tests, flake checks, docs audit passed): the rebinding is shown in the human preview, in plan and applied
   `--json` output, and in renderer coverage tests. User documentation, the user
   changelog, and a new ADR are written, and the full `seihou-cli-test` suite passes.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- The public-command reproduction failed against the unchanged source with
+  `variable_errors` naming the already-saved `project.name`. The same workflow
+  passes after alignment, including add/change/remove and CLI override cases.
+- Migration staging also occurs while certifying selection ownership, before the
+  final planning call. Both call sites now consume the same aligned priors.
 
 
 ## Decision Log
@@ -125,7 +135,38 @@ contains a `rebindings` entry for `child` together with a version change
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Implemented all three milestones. A source-built `seihou` 0.15.0.0 based on
+commit `dcd776c` was driven from isolated projects with empty HOME/XDG caches.
+The ordinary workflow is `seihou run demo --var project.name=demo --var
+child.opt=custom`, followed, after changing the producer's edge, by `seihou update
+demo` and confirming its preview on a terminal (`--json` applies in the
+noninteractive E2E harness). No adoption command, cache repair, manifest edit or repeated required input
+is needed. Human and JSON previews are immutable; applied JSON carries the same
+rebinding evidence. Added/changed/removed bindings preserve project choices,
+CLI overrides still win, and a repeated update preserves manifest bytes.
+Ambiguous multi-instantiation refuses before effects and succeeds with the
+advertised `--reconfigure --var project.name=demo` recovery.
+
+Validation: the reproduction failed on the unchanged implementation with the
+saved-required-input error. Seven alignment tests and three E2E scenarios then
+passed. The complete `seihou-cli-test` suite passed all 1,009 tests, including
+renderer coverage and parameterized migration staging with a rebound invocation.
+`nix flake check --no-write-lock-file` passed all four native checks. The docs
+audit passed 19 topics, 37 command help pages plus agent run, six example modules,
+and eight prompt renders. A separate real-terminal session ran `seihou run
+parent --var project.name=demo --var child.opt=custom`, accepted its initial
+preview, changed the parent edge, then ran `seihou update parent` and accepted
+`Apply? [Y/n]`. The preview showed the rebinding and two reused inputs, and the
+resulting file was `name=demo opt=custom extra=x`. Final focused checks passed
+all 11 rebinding/alignment/renderer tests, including exact plan/applied JSON
+agreement and reused-input counts. No material external-surface friction occurred; querying
+logged entries for this plan returned none.
+
+[ADR 0025](../adr/0025-a-rebound-instance-keeps-its-saved-inputs.md) distills the
+pairing, precedence, ambiguity and manifest decisions. No manifest schema change
+or dependency change was required. This completes source implementation and
+verification; publication and installation of a new release remain outside this
+plan and have not been performed.
 
 
 ## Context and Orientation
