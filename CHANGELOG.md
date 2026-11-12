@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.16.0.0] - 2026-11-11
+
 ### Added
 
 - Add `MigrationOp.RemoveLine`, legacy/extended Dhall union compatibility, exact-line staging/execution and shared-owner closure for deterministic edits. Preserve exact reconciliation equality and report path-level migration drift in human/JSON diagnostics (ExecPlan 112).
@@ -12,6 +14,7 @@ All notable changes to this project are documented in this file.
 - An optional judgment-only gate. `judgement.gateProvider typesafe` and `judgement.gateModel jev-latest` (or `judgement configure NAME --gate-provider typesafe --gate-model jev-latest`) send each check to the TypeSafe System One provider first; a check it clears needs no review call, the rest escalate to the generative review, and a gate failure is reported and escalates. A judgment-only model is refused as the review route, and a generative model as the gate. Adds the `baikai-typesafe` 0.1.0.1 and `typesafe-hs` 0.1.0.0 dependencies. `judgement eval` reports, per check, the unsafe and benign cases the gate cleared or escalated.
 - `BrowseOpts` gains `kinds :: [EntryKind]`, set by `browse --modules/--recipes/--blueprints/--prompts/--judgements`. `Seihou.CLI.Judgement.Validate` exports `discoverJudgementNames` (directories holding a `judgement.dhall` in the standard search paths, without evaluation) and `activeJudgementNames`, which back the first name completers: `check NAME`, `validate-judgement TARGET` and `judgement eval|configure NAME`.
 - `Seihou.CLI.InstallClosure` acquires judgement references as producer edges (ADR 0020). A reference with a `source` is a required edge into that repository's judgements. One without a `source` is installed when its own repository provides it, and is otherwise left to run-time resolution, which includes the bundled catalogue. As with dependencies, `when` is ignored at install.
+- `seihou upgrade` refreshes installed blueprints and prompts from the source their `.seihou-origin.json` records, restaging each root's whole install closure (a blueprint's `baseModules` included) and publishing only members whose content hash changed. A closure member whose provenance names another source, or none, is refused under ADR 0006 and the cache is untouched; a named blueprint or prompt without provenance is a failed row. `seihou outdated` checks installed blueprints and prompts against their source's declared version through the new `RemoteVersion.fetchTrueRunnableVersion`, under an Artifact header (ExecPlan 121, IR-17).
 
 ### Changed
 
@@ -24,6 +27,13 @@ All notable changes to this project are documented in this file.
 - `Seihou.Core.Path` gains one classifier for module-output rules, `classifyProjectPath`, with `ProjectPathClass`, `PathOperand`, `reservedSeihouEntries`, `isControlFileTarget`, `isControlDirectory`, `controlPathReason` and `ownStateDirectoryViolation`. It replaces the three private `targetsControlPath` copies in `Seihou.Engine.Reconcile`, `Seihou.Engine.UpdateTransaction` and `Seihou.CLI.Update.Recovery`, which refused every path whose first segment was exactly `.seihou` or `.git`. Paths under `.seihou/<area>/` now reconcile and commit unless `<area>` is on the reserved list (`manifest.json`, `manifest.json.tmp`, `baselines`, `transactions`, `transactions-quarantine`, `modules`, `context`, `config.dhall`, `trace.jsonl`, any dot-name); matching is case-insensitive and ignores empty and `.` segments. Directory operands may name `.seihou` itself; file targets, recovery restores, migrations and removals may not. Refusal reasons now name the control data (`path targets Seihou's own state at .seihou/manifest.json`). See ADR 0025.
 - Generation enforces the same rule. `checkSafeDestinations` (run at module load) refuses literal destinations in control data. `Seihou.Engine.Plan.validateRenderedDestination` now takes the `ModuleName` and refuses rendered destinations and parent `CreateDirOp`s under `.seihou/` outside `.seihou/<module-name>/` (spelled exactly); `writeFileOps` and `writeFileOpsUnchecked` take the module name too. The new exported `checkModuleStateDestinations` backs the `validate-module` check "Module state destinations"; it is deliberately not part of `validateModule`, so modules with legacy `.seihou/<file>` output still load. `validateMigrationPath` and `validateRemovalPath` refuse control paths; command `workDir`s are validated separately and remain unrestricted.
 - `seihou list` now fits an 80-column terminal however long a description is. Entries are grouped under one heading per kind (`Modules (N)`, `Recipes (N)`, …), sorted by name, and shown on two lines: name and source, then the description collapsed to one line and cut at 72 characters with `…`. Source labels no longer carry `[recipe]`, `[blueprint]`, or `[prompt]` suffixes; the section heading names the kind. The new `seihou list --full` prints every description in full, word-wrapped at the same width.
+- `seihou upgrade` exits 1 when any row failed, for every artifact kind; an unreachable source still exits 0. Under `--json`, the module path no longer prints progress lines to stdout.
+- Agent context and help corrected for this release: the shared module reference (assist/bootstrap/setup) documents the `.seihou/<module-name>/` destination rule and `JudgementRef`; the setup prompt covers judgements and blueprint/prompt upgrade; the upgrade playbook covers `ambiguous_instance_rebinding`, own-state reconciliation and a judgement-blocked commit; the modules, blueprints and prompts topics list `list --full`, `outdated` and `upgrade`.
+
+### Fixed
+
+- `seihou update` keeps saved inputs, origins, versions and migrations when a release changes a dependency's bindings. Recorded and candidate instances are aligned once (`Seihou.CLI.Update.Rebinding`); ambiguous pairings refuse with `ambiguous_instance_rebinding` and point at `--reconfigure`; previews and JSON expose `rebindings` (ExecPlan 123, ADR 0025).
+- A batch `seihou agent run` on claude-cli runs Claude through a Seihou-side adapter that reads `permission_denials`, which Baikai's stock provider drops. Any refusal fails the run, naming each refused tool and command, and records no applied blueprint; runs without refusals, including the legacy result shape, behave as before. `seihou validate-blueprint` warns, without failing, when a blueprint declares no `allowedTools` (ExecPlan 122, IR-18).
 
 ## [0.15.0.0] - 2026-11-01
 
@@ -1293,7 +1303,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.15.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.16.0.0...HEAD
+[0.16.0.0]: https://github.com/shinzui/seihou/compare/v0.15.0.0...v0.16.0.0
 [0.15.0.0]: https://github.com/shinzui/seihou/compare/v0.14.0.0...v0.15.0.0
 [0.14.0.0]: https://github.com/shinzui/seihou/compare/v0.13.0.0...v0.14.0.0
 [0.13.0.0]: https://github.com/shinzui/seihou/compare/v0.12.1.0...v0.13.0.0

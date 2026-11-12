@@ -165,6 +165,9 @@ COMMON COMMANDS
   seihou new-blueprint api-service       Scaffold a blueprint
   seihou validate-blueprint api-service  Check blueprint.dhall and files/
   seihou list                            List modules, recipes, blueprints, and prompts
+  seihou list --full                     Show every description in full
+  seihou outdated                        Check installed blueprints against their source
+  seihou upgrade api-service             Refresh an installed blueprint with its base modules
   seihou vars api-service                Show blueprint variables
   seihou agent run api-service           Run the blueprint with an agent
   seihou agent migrate my-library --from 1.0.0 --to 3.0.0

@@ -98,6 +98,8 @@ COMMON COMMANDS
   seihou prompt run review-changes --debug
                                          Print the complete provider prompt
   seihou list --prompts                  Show only prompt artifacts
+  seihou outdated                        Check installed prompts against their source
+  seihou upgrade review-changes          Refresh an installed prompt and its closure
 
 PUBLISHING
 

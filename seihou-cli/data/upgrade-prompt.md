@@ -182,6 +182,15 @@ global preferences need no cleanup when a recipe binding supplies its own value.
 Ask for required values that are not already recorded. Use
 `seihou vars {{module}} --explain` to inspect resolution sources.
 
+### ambiguous_instance_rebinding
+The new release changed a dependency's parameter bindings, and Seihou cannot
+pair recorded instances with candidate instances unambiguously, so it will not
+move saved inputs between them. The message names each module with its recorded
+and candidate bindings. Show the user those bindings, then run
+`seihou update TARGET --reconfigure` to supply the inputs again. When pairing is
+unambiguous, update keeps saved inputs and the preview shows a "Rebinding:" line;
+that needs no repair.
+
 ### migration_plan_failed, migration_stage_failed, migration_failed, changed_after_migration_command
 A module migration between the recorded and the new version failed. The update
 rolled back. Read the migration named in the message, show the user what it
@@ -203,7 +212,20 @@ prior transaction before previewing new work; then retry sync.
 ### composition_failed and reconciliation_failed
 The new release does not compose with the rest of the project, or its files
 cannot be reconciled with what is recorded. Show the user the message; this is
-usually a module bug to report, not a project repair.
+usually a module bug to report, not a project repair. Managed files under the
+module's own `.seihou/<module-name>/` reconcile normally. A destination
+elsewhere under `.seihou/` or under `.git/` is refused as control data; that
+needs a module release that moves the file into `.seihou/<module-name>/`, not a
+project edit.
+
+### Commit blocked by a judgement
+With `--commit`, `run`, `update` and `migrate` run the project's active
+judgements on the staged changes first. "Changes applied; commit blocked" with
+exit 10 (blocked) or 11 (needs review) means the update succeeded and the
+changes are staged but uncommitted. Do not bypass the hook or disable the
+judgement; show the user the findings (`seihou check` reproduces them) and let
+them decide. Exit 1 is a judgement error, such as a missing review route; see
+`seihou help judgements`.
 
 ### seed_release_blocked_by_owners
 

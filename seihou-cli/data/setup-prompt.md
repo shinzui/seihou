@@ -144,9 +144,16 @@ Suggest these commands when the user needs to run them locally:
 - `seihou manifest upgrade [--dry-run]` — explicitly convert older manifest schemas
 - `seihou manifest repair-origins [--dry-run] [--set NAME=URL]` — repair machine-local recorded origins
 - `seihou outdated` — inspect installed copies against their sources
-- `seihou upgrade [MODULE_OR_RECIPE] [--dry-run]` — deliberate installed-cache maintenance
+- `seihou upgrade [ARTIFACT] [--dry-run]` — deliberate installed-cache maintenance for modules, recipe closures, and blueprint and prompt closures; exits 1 when any row fails
 - `seihou migrate MODULE [--dry-run] [--to VERSION]` — lower-level migration control
 - See `seihou help update`, `seihou help sync`, and `seihou help manifest`.
+
+### Judgements (commit-time checks)
+- `seihou run JUDGEMENT` — adopt a judgement such as the bundled `security-review`; installs a pre-commit hook that runs `seihou check`, keeping any existing hook. Adoption records manifest schema 15, which older executables reject.
+- `seihou check [NAME] [--range BASE..HEAD --policy-ref REF]` — run active judgements on staged changes or a commit range; exits 0, 10 (blocked), 11 (needs review) or 1 (error)
+- `seihou config set judgement.provider|judgement.model|judgement.dataPolicy` — set the review route and consent; `seihou judgement configure NAME` changes per-check policy
+- `run`, `update` and `migrate` with `--commit` run active judgements first; a block leaves changes applied and staged with "Changes applied; commit blocked"
+- See `seihou help judgements`.
 
 ### Recipe choices
 

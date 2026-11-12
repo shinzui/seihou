@@ -6,6 +6,8 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 ## [Unreleased]
 
+## [0.16.0.0] - 2026-11-11
+
 ### Added
 
 - Module authors can use `RemoveLine` to retire an exact ignore entry during ordinary `seihou update`. Preview predicts the cleanup, unrelated edits and line endings survive, and failures roll back. Unexpected shell-migration changes now name the differing paths instead of reporting only equal file counts.
@@ -16,6 +18,7 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 - `seihou install` also installs the judgements a module or recipe references, including those in another registry named by the reference's `source`.
 - `seihou browse` takes the same kind filters as `seihou list` (`--modules`, `--recipes`, `--blueprints`, `--prompts`, `--judgements`). Shell completion offers judgement names for `seihou check`, `validate-judgement` and `judgement eval|configure`.
 - Manifest schema 15 records active judgements. Ordinary adoption stages the lossless 14-to-15 step; older executables reject schema 15, so update Seihou before adopting a judgement.
+- **`seihou upgrade` refreshes installed blueprints and prompts.** A blueprint is refreshed together with its base modules, and a prompt with its closure, from the source recorded when you installed it; only what changed is replaced. `seihou outdated` now lists installed blueprints and prompts with their available versions too. An artifact whose closure mixes sources is refused and left as it was.
 
 ### Fixed
 
@@ -27,10 +30,14 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 - **Update projects that use modules keeping files in `.seihou/<module>/`.** `seihou update` no longer stops with `reconciliation_failed ... path targets Seihou or Git control data` for a module that keeps helper scripts or configuration in its own `.seihou/<module-name>/` directory, such as `docs-mori-bootstrap`. Those files now merge on update like any other managed file, keeping your edits. Run the ordinary update; no `--force` re-run is needed.
 
+- **A batch `seihou agent run` fails when Claude was refused a tool.** With claude-cli, a run in which any tool call was refused (a command missing from `allowedTools`, a guarded write, a hook) used to report success; it now exits 1, names each refused tool and command, and records no applied blueprint. `seihou validate-blueprint` warns when a blueprint declares no `allowedTools`.
+
 ### Changed
 
 - **`seihou run` refuses module output that would reach Seihou's own state.** A step destination in the manifest, baselines, transactions, project-local modules or another reserved entry under `.seihou/`, or under `.git/`, is now refused before anything is written, in any letter case. Previously `run` wrote such files.
 - **A module writes under `.seihou/` only inside its own directory.** A destination elsewhere under `.seihou/` is refused when the module runs, with a message naming the allowed `.seihou/<module-name>/`, and `seihou validate-module` reports it as the new "Module state destinations" check. Known affected module: `gcp-kube-env`, which writes `.seihou/gcp-kube-env.conf`; `seihou run gcp-kube-env` fails until a release moves that file into `.seihou/gcp-kube-env/`. Existing applications of it still load for `seihou status` and `seihou remove`. See [Keeping module files under .seihou](module-authoring.md#keeping-module-files-under-seihou).
+- **`seihou list` fits an 80-column terminal.** Entries are grouped under one heading per kind (`Modules (N)`, `Recipes (N)`, …), sorted by name, with the description on a second line cut at 72 characters. `seihou list --full` prints every description in full.
+- `seihou upgrade` exits 1 when any artifact failed to refresh, so scripts notice; an unreachable source is still reported and exits 0.
 
 ## [0.15.0.0] - 2026-11-01
 
@@ -1188,7 +1195,8 @@ regeneration.
 
 ---
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.15.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.16.0.0...HEAD
+[0.16.0.0]: https://github.com/shinzui/seihou/compare/v0.15.0.0...v0.16.0.0
 [0.15.0.0]: https://github.com/shinzui/seihou/compare/v0.14.0.0...v0.15.0.0
 [0.14.0.0]: https://github.com/shinzui/seihou/compare/v0.13.0.0...v0.14.0.0
 [0.13.0.0]: https://github.com/shinzui/seihou/compare/v0.12.1.0...v0.13.0.0

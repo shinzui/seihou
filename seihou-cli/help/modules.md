@@ -79,7 +79,8 @@ SCHEMA PACKAGE
 
 COMMON COMMANDS
 
-  seihou list                          List all available modules
+  seihou list                          List available artifacts, grouped by kind
+  seihou list --full                   Show every description in full
   seihou new-module my-template        Scaffold a new module
   seihou validate-module ./my-module   Check a module is well-formed
   seihou install <git-url>             Install modules, recipes, blueprints, or prompts from git

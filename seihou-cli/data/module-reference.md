@@ -30,6 +30,12 @@ The strategy field selects processing; filename extensions are conventions.
 `when : Optional Text` gates a step. `patch : Optional Text` selects
 `append-section`, `append-file`, `prepend-file`, or
 `append-line-if-absent`. The default `lifecycle = None Text` means managed.
+Destinations never reach `.git/` or Seihou's own state. A module may keep
+managed helper files under `.seihou/<module-name>/` (its exact name) and nowhere
+else under `.seihou/`; `seihou validate-module` reports a violation under
+"Module state destinations", and run refuses it before writing. Seed and
+checkout outputs cannot live under `.seihou/`. A migration may move a legacy
+`.seihou/<module-name>.conf` into `.seihou/<module-name>/`.
 
 For ignored directory links, use `strategy = "symlink"` with
 `lifecycle = Some "checkout"` and no patch:
@@ -146,6 +152,18 @@ update. Each consumer still validates the supplied value.
 Use `seihou validate-recipe PATH` for descriptor-only checks without answers or
 installed members. CI can run `seihou validate-recipe ./my-stack </dev/null`.
 Descriptor-authored Dhall imports evaluate normally and may use the network.
+
+### Judgement references
+
+A module or recipe can activate commit-time judgements with
+`judgements = [ S.JudgementRef::{ name = "security-review" } ]`, optionally
+with `source = Some "https://host/registry.git"` and `when = Some "<condition>"`.
+`seihou run` adopts the referenced judgements of the whole composition after
+generating files, previewed and with the same consent as `seihou run NAME`;
+names resolve through the ordinary search paths, then the bundled catalogue.
+`seihou install` acquires referenced judgements (a `source` is a required edge)
+and ignores `when`. Author judgements with `seihou new-judgement NAME`; see
+`seihou help judgements`.
 
 ### Removal
 
