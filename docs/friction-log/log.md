@@ -1,5 +1,11 @@
 # Bundle Update Log
 
+## 2026-11-12
+
+* **Update**: FRIC-18 accepted: Accept the documented upstream-source fallback for this implementation.
+
+* **Addition**: FRIC-18 records detour environment friction with mori://shinzui/mori: Mori registry lookup requires unavailable PostgreSQL
+
 ## 2026-11-11
 
 * **Update**: FRIC-17 accepted: Use the established producer authoring workflow; keep the unrelated external-link exporter defect outside plan 112.

@@ -3,6 +3,7 @@ module Seihou.OKF.Docs.Model
     DocArtifact (..),
     DocEntry (..),
     ModuleRef (..),
+    JudgementDocRef (..),
     BaseRecipeRef (..),
     EntailedRef (..),
     DocModel (..),
@@ -13,25 +14,27 @@ where
 
 import Control.Lens ((%~), (&), (.~), (^.))
 import Data.Generics.Labels ()
+import Data.Map.Strict (Map)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
-import Seihou.Core.Judgement (JudgementDefinition)
+import Seihou.Core.Judgement (JudgementDefinition, JudgementRef)
 import Seihou.Core.Migration (BlueprintMigration (..))
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..))
 import Seihou.Core.Types
   ( AgentPrompt,
     Blueprint (..),
-    Dependency,
+    Dependency (..),
     Module (..),
     ModuleLoadError,
     Recipe (..),
     RecipeReference (..),
-    depModuleNames,
+    VarName,
   )
 import Seihou.Dhall.Eval
   ( evalAgentPromptFromFile,
     evalBlueprintFromFile,
     evalJudgementFromFile,
+    evalJudgementRefsFromFile,
     evalModuleFromFile,
     evalRecipeFromFile,
     evalRegistryFromFile,
@@ -39,7 +42,7 @@ import Seihou.Dhall.Eval
 import System.Directory (doesFileExist)
 import System.FilePath ((</>))
 
--- | The kinds of concept this bundle emits. The first four are registry entry
+-- | The kinds of concept this bundle emits. The first five are registry entry
 -- kinds; 'DocRegistryKind' belongs to the single overview concept describing the
 -- registry itself, and never appears as a 'DocEntry' kind.
 data DocKind
@@ -72,7 +75,8 @@ data DocEntry = DocEntry
     -- | Every edge this entry\'s migrations entail, flattened across the
     -- entry\'s migration edges in declaration order. Empty for every kind but
     -- a blueprint, which is the only artifact that can declare entailment.
-    entailedRefs :: ![EntailedRef]
+    entailedRefs :: ![EntailedRef],
+    judgementRefs :: ![JudgementDocRef]
   }
   deriving stock (Eq, Generic, Show)
 
@@ -85,6 +89,15 @@ data BaseRecipeRef = BaseRecipeRef
 
 data ModuleRef = ModuleRef
   { name :: !T.Text,
+    source :: !(Maybe T.Text),
+    vars :: !(Map VarName T.Text),
+    resolved :: !Bool
+  }
+  deriving stock (Eq, Generic, Show)
+
+-- | References are decoded separately from module/recipe executable records.
+data JudgementDocRef = JudgementDocRef
+  { reference :: !JudgementRef,
     resolved :: !Bool
   }
   deriving stock (Eq, Generic, Show)
@@ -147,7 +160,8 @@ buildDocModel registryDir Registry {repoName, repoDescription, modules, recipes,
     let moduleNames = [entry ^. #name | entry <- entries, entry ^. #kind == DocModuleKind]
         recipeNames = [entry ^. #name | entry <- entries, entry ^. #kind == DocRecipeKind]
         blueprintNames = [entry ^. #name | entry <- entries, entry ^. #kind == DocBlueprintKind]
-        resolvedEntries = map (resolveEntryRefs moduleNames recipeNames blueprintNames) entries
+        judgementNames = [entry ^. #name | entry <- entries, entry ^. #kind == DocJudgementKind]
+        resolvedEntries = map (resolveEntryRefs moduleNames recipeNames blueprintNames judgementNames) entries
     Right
       DocModel
         { repoName = repoName,
@@ -179,31 +193,39 @@ loadModuleEntry :: FilePath -> RegistryEntry -> IO (Either DocLoadError DocEntry
 loadModuleEntry registryDir entry = do
   let artifactFile = registryDir </> entry ^. #path </> "module.dhall"
   result <- evalModuleFromFile artifactFile
-  pure $ case result of
-    Left err -> Left (ArtifactLoadFailed (entry ^. #name . #unModuleName) (renderModuleLoadError err))
-    Right artifact@Module {dependencies} ->
-      Right $
-        docEntryFromRegistry
-          entry
-          DocModuleKind
-          (DocModuleArtifact artifact)
-          (moduleRefs dependencies)
-          []
+  refsResult <- evalJudgementRefsFromFile artifactFile
+  pure $ do
+    refs <- either (Left . ArtifactLoadFailed (entry ^. #name . #unModuleName) . renderModuleLoadError) Right refsResult
+    loaded <- case result of
+      Left err -> Left (ArtifactLoadFailed (entry ^. #name . #unModuleName) (renderModuleLoadError err))
+      Right artifact@Module {dependencies} ->
+        Right $
+          docEntryFromRegistry
+            entry
+            DocModuleKind
+            (DocModuleArtifact artifact)
+            (moduleRefs dependencies)
+            []
+    Right (loaded & #judgementRefs .~ [JudgementDocRef ref False | ref <- refs])
 
 loadRecipeEntry :: FilePath -> RegistryEntry -> IO (Either DocLoadError DocEntry)
 loadRecipeEntry registryDir entry = do
   let artifactFile = registryDir </> entry ^. #path </> "recipe.dhall"
   result <- evalRecipeFromFile artifactFile
-  pure $ case result of
-    Left err -> Left (ArtifactLoadFailed (entry ^. #name . #unModuleName) (renderModuleLoadError err))
-    Right artifact@Recipe {modules = recipeModules} ->
-      Right $
-        docEntryFromRegistry
-          entry
-          DocRecipeKind
-          (DocRecipeArtifact artifact)
-          (moduleRefs recipeModules)
-          []
+  refsResult <- evalJudgementRefsFromFile artifactFile
+  pure $ do
+    refs <- either (Left . ArtifactLoadFailed (entry ^. #name . #unModuleName) . renderModuleLoadError) Right refsResult
+    loaded <- case result of
+      Left err -> Left (ArtifactLoadFailed (entry ^. #name . #unModuleName) (renderModuleLoadError err))
+      Right artifact@Recipe {modules = recipeModules} ->
+        Right $
+          docEntryFromRegistry
+            entry
+            DocRecipeKind
+            (DocRecipeArtifact artifact)
+            (moduleRefs recipeModules)
+            []
+    Right (loaded & #judgementRefs .~ [JudgementDocRef ref False | ref <- refs])
 
 loadBlueprintEntry :: FilePath -> RegistryEntry -> IO (Either DocLoadError DocEntry)
 loadBlueprintEntry registryDir entry = do
@@ -257,13 +279,14 @@ docEntryFromRegistry entry kind artifact refs entailed =
       baseRecipe = case artifact of
         DocRecipeArtifact recipe -> (\ref -> BaseRecipeRef ref False) <$> recipe ^. #extends
         _ -> Nothing,
+      judgementRefs = [],
       entailedRefs = entailed
     }
 
 moduleRefs :: [Dependency] -> [ModuleRef]
 moduleRefs dependencies =
-  [ ModuleRef {name = moduleName ^. #unModuleName, resolved = False}
-  | moduleName <- depModuleNames dependencies
+  [ ModuleRef {name = moduleName ^. #unModuleName, source, vars, resolved = False}
+  | Dependency {module_ = moduleName, source, vars} <- dependencies
   ]
 
 entailedRefs :: [BlueprintMigration] -> [EntailedRef]
@@ -281,10 +304,11 @@ entailedRefs migrations =
 -- | The single place that decides whether a reference points inside this
 -- registry. Module references resolve against the registry\'s module names,
 -- entailed edges against its blueprint names.
-resolveEntryRefs :: [T.Text] -> [T.Text] -> [T.Text] -> DocEntry -> DocEntry
-resolveEntryRefs moduleNames recipeNames blueprintNames entry =
+resolveEntryRefs :: [T.Text] -> [T.Text] -> [T.Text] -> [T.Text] -> DocEntry -> DocEntry
+resolveEntryRefs moduleNames recipeNames blueprintNames judgementNames entry =
   entry
-    & #moduleRefs .~ [ref & #resolved .~ ((ref ^. #name) `elem` moduleNames) | ref <- entry ^. #moduleRefs]
+    & #moduleRefs .~ [ref & #resolved .~ ((ref ^. #name) `elem` moduleNames && ref ^. #source == Nothing) | ref <- entry ^. #moduleRefs]
+    & #judgementRefs %~ map (\ref -> ref & #resolved .~ ((ref ^. #reference . #name) `elem` judgementNames && ref ^. #reference . #source == Nothing))
     & #baseRecipe %~ fmap (\ref -> ref & #resolved .~ ((ref ^. #reference . #recipe . #unRecipeName) `elem` recipeNames && ref ^. #reference . #source == Nothing))
     & #entailedRefs .~ [ref & #resolved .~ ((ref ^. #blueprint) `elem` blueprintNames) | ref <- entry ^. #entailedRefs]
 

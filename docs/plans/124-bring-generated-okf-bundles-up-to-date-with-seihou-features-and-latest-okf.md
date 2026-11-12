@@ -16,6 +16,11 @@ provenance:
       at: 2026-11-11T22:33:17Z
       mode: "other"
       note: "Ground initial plan in current generator, verified OKF release, and user-created Mina intention"
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-11-12T03:04:12Z
+      mode: "implement"
+      note: "Implement current declaration coverage and OKF 0.13 compatibility with real-registry acceptance"
 ---
 
 
@@ -33,16 +38,18 @@ The starting state is a fresh registry checkout containing `seihou-registry.dhal
 ## Progress
 
 
-- [ ] Milestone 1: The extension builds against the verified latest OKF release and generates a strictly valid bundle from a real registry through the ordinary command.
-- [ ] Milestone 2: Generated concepts cover all current artifact fields and preserve source-aware relationships, proven by focused fixtures and strict bundle validation.
-- [ ] Milestone 3: Fresh-checkout, regeneration, failure-preservation, packaging, and help acceptance pass; release and installed-user delivery evidence is recorded.
+- [x] Milestone 1 (2026-11-12): The extension builds against the verified latest OKF release and generates a strictly valid bundle from a real registry through the ordinary command. Source-built 0.15.0.0 with GHC 9.12.4 wrote 29 concepts from the producer revision recorded below; installed OKF 0.13.0.0 passed strict/profile validation.
+- [x] Milestone 2 (2026-11-12): Generated concepts cover current declarations with a field-to-output inventory, source-aware relationships, complete judgement settings and literal-safe rendering. All 59 extension tests pass, including direct current-schema decoding, legacy custom-profile compatibility and strict validation of the five-kind fixture.
+- [ ] Milestone 3: Source and native fresh-checkout, regeneration, failure-preservation, packaging and help acceptance pass (2026-11-12). Publication and installed-user delivery remain outstanding; do not mark this milestone complete until a release and the installed executable pass the workflow.
 
-Creation is the only work authorized in this session. Implementation remains open. Intention `intention_01m76brhtbe11ag2r5ayk8fp0w` was created with `mina ci --json` at the user's request.
+Implementation is authorized in this session. Publication has not been requested; milestone 3 retains its release/installed delivery obligation. Intention `intention_01m76brhtbe11ag2r5ayk8fp0w` was created with `mina ci --json` at the user's request.
 
 ## Surprises & Discoveries
 
 
-(None yet.)
+The current tree is clean at implementation start; the previously uncommitted migration/schema work is now committed. Mori discovery still fails with a refused PostgreSQL notifier socket (FRIC-18 in `docs/friction-log/`), so released source was inspected from the verified tag. Module and recipe judgement references are intentionally decoded separately by `evalJudgementRefsFromFile`; they are not fields of the executable records.
+
+The first ordinary run failed before writing output with `recipes/fumadocs-site: link to missing concept: modules/technical-docs`. Classifying dependency references before rendering fixed this real producer failure. The shared Nix registry pins older OKF source; the unmanaged application overlay now selects the exact Hackage 0.13.0.0 source without a jailbreak or changes to module-owned pins.
 
 ## Decision Log
 
@@ -50,10 +57,20 @@ Creation is the only work authorized in this session. Implementation remains ope
 - Decision (2026-11-11): Treat “all new features” as complete coverage of current artifact declarations and their user-facing semantics, including already implemented features that render only partially. Preserve declaration-only generation; do not expand remote recipe bases or execute commands to create documentation. This keeps a fresh registry checkout usable without an installed dependency closure.
 - Decision (2026-11-11): Target `mori://shinzui/okf/packages/okf-core` 0.13.0.0, subject to rechecking releases at implementation start. Update the standalone house profile and exhaustive diagnostic adapters together with dependency bounds. Merely changing the bound cannot establish compatibility.
 
+- Decision (2026-11-12): Keep strict OKF validation and profile enforcement enabled. Correct the house profile's `tags` presence rule to optional, as for versions, because valid empty catalog lists cannot satisfy OKF's nonempty-list presence rule. Preserve empty source tags rather than inventing replacements. ADR 0010 records this source-schema constraint. Blueprint tool prose describes declared additions because setup tools are always pre-approved.
+
 ## Outcomes & Retrospective
 
 
-(To be filled during implementation.)
+Implementation and source/native acceptance are complete as of 2026-11-12; published delivery is not complete. The ordinary workflow is `seihou-okf-extension docs` for an absent output tree, or `seihou-okf-extension docs --force` for regeneration. The explicit host route is `seihou extension run okf -- docs`. Both source-built and native packaged routes generated 29 concepts from the real producer and passed the installed OKF 0.13.0.0 strict/profile validator. Unchanged regeneration and switching between the two routes produced identical bytes. No Seihou artifact installation or configuration state was created.
+
+All 2,845 tests passed: 1,788 core, 998 CLI and 59 extension tests. After the last test/help refinements, `cabal build all` and the 59-test extension suite passed again without compiler warnings. Native builds of `.#seihou-cli`, `.#seihou-okf-extension` and `.#seihou` passed with package tests enabled. Formatting, flake checks and `git diff --check` passed. All three `cabal check` runs reported no warnings or errors; source distributions were generated and the extension tarball's final profile, bounds and writer bytes matched the working tree. The house descriptor decodes directly as OKF's current `ProfileSpec`, rather than merely succeeding through a frozen fallback.
+
+The five-kind fixture verifies lifecycle distinctions, literal backticks/pipes/newlines, source-qualified local shadows, recipe inheritance/overrides, local and external conditional judgement references, answer/category meanings, disabled gates and every coverage limit. Existing output snapshots survive malformed input and rejecting profiles under `--force`. A profile stored within the output being replaced also succeeds: validation, profile copying and indexing now complete in a temporary sibling before output replacement. ADR 0010 records declaration-only generation, kind/origin-aware links, source-schema profile constraints and this replacement order.
+
+FRIC-18 in `docs/friction-log/` is triaged **accepted**: the unavailable local Mori PostgreSQL connection was bypassed through verified upstream source and a disposable producer checkout. Database recovery is outside this implementation; no runtime Mori dependency was introduced.
+
+Remaining delivery: Hackage still lists 0.15.0.0 as the latest normal extension release, and the user's installed host reports `seihou v0.15.0.0 (d67cf67)`. These results do not include this change. No release tag, upload, push or installed-user replacement was performed. When publication is authorized, use the repository release workflow for the accumulated unreleased changes, then rerun the real-registry workflow with the newly installed binaries before closing milestone 3.
 
 ## Context and Orientation
 
@@ -104,6 +121,13 @@ Exercise one fixture containing all artifact kinds and new declarations, an olde
 
 ## Concrete Steps
 
+
+Implementation evidence (2026-11-12): verified Hackage normal release 0.13.0.0 and upstream tag peeled commit `e0dd9e3047285caff6c4c4d9c6aee06e6ebb31b7` again. Cloned that tag to `/tmp/seihou-plan124-okf` after Mori failed, and cloned `mori://shinzui/seihou-modules` to `/tmp/seihou-plan124-registry` at `6f775be46b13b55887080f402d478a1bdd72bfac`. Moved its existing generated output to `/tmp/seihou-plan124-original-docs` to preserve it. The source-built executable is `dist-newstyle/build/aarch64-osx/ghc-9.12.4/seihou-okf-extension-0.15.0.0/x/seihou-okf-extension/build/seihou-okf-extension/seihou-okf-extension` under this repository; its Cabal package version is 0.15.0.0. From the disposable checkout, invoked this absolute executable with only `docs`, isolating `XDG_CACHE_HOME`, `XDG_DATA_HOME`, and `XDG_CONFIG_HOME` under `/tmp/seihou-plan124-empty`. No artifact installation, composition, registry repair or manifest edit was needed. After the reference fix it reported `Wrote 29 concepts to okf-docs`. `/Users/shinzui/.nix-profile/bin/okf` reports `okf v0.13.0.0 (e0dd9e3)` and strict validation with the emitted profile reported `OK: 29 concepts (okf_version 0.2)`. These are source-candidate results, not published Seihou delivery.
+
+
+Final native evidence (2026-11-12): `nix build .#seihou-cli .#seihou-okf-extension .#seihou --no-link` succeeded, followed by `nix build .#seihou --out-link /tmp/seihou-plan124-native`. The candidate PATH entry was `/tmp/seihou-plan124-native/bin`. The extension reports `seihou-okf-extension 0.15.0.0`; the packaged host reports `seihou v0.15.0.0 (dirty)` because this is an unreleased working-tree build. A second untouched clone of `mori://shinzui/seihou-modules` at the same revision was created at `/tmp/seihou-plan124-packaged-registry`, with all three XDG directories isolated under `/tmp/seihou-plan124-native-empty`. This checkout already tracks `okf-docs`, so the initial `docs` correctly refused with `output directory is not empty: okf-docs; pass --force to overwrite`. Following exactly that remedy, standalone `docs --force` and `seihou extension run okf -- docs --dir . --out okf-docs --force` each wrote 29 concepts and passed strict/profile validation. A snapshot at `/tmp/seihou-plan124-packaged-snapshot` matched every generated byte after host regeneration; the isolated config directory remained empty. Unlike the earlier exploratory move of existing docs, this final adoption check required no registry repair or output preparation.
+
+Source candidate PATH was `/tmp/seihou-plan124-bin`, holding symlinks to the two exact Cabal executable paths under this repository's `dist-newstyle/build/aarch64-osx/ghc-9.12.4/` package directories. The host reported `seihou v0.15.0.0 (68db1e2)`. Both command routes passed and their complete output trees matched. Final package tarballs are under `/tmp/seihou-plan124-sdist`; they are validation artifacts, not uploaded releases.
 
 Run development commands from the Seihou repository root. First inspect status and discover sources; Mori is a contributor lookup tool, not a runtime prerequisite for docs generation.
 

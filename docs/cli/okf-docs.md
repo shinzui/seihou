@@ -1,10 +1,12 @@
 # `seihou-okf-extension docs`
 
 `seihou-okf-extension docs` generates an Open Knowledge Format documentation bundle from a
-seihou registry repository. The input directory must contain `seihou-registry.dhall`.
+seihou registry repository. Run it from a checkout containing `seihou-registry.dhall`. No dependency installation, populated Seihou cache, manifest, or command execution is needed.
 
 ```bash
-seihou-okf-extension docs --dir /path/to/seihou-modules --out okf-docs
+seihou-okf-extension docs
+# After changing declarations:
+seihou-okf-extension docs --force
 ```
 
 The same command can run through the seihou extension host when `seihou-okf-extension` is on
@@ -34,9 +36,8 @@ back to the source registry path.
 
 ## What the bundle contains
 
-For the current `seihou-modules` registry (7 modules, 2 recipes, 3 blueprints, 0 prompts) the
-command writes **13** concepts: one per registry entry, plus one describing the registry
-itself.
+The command reports `Wrote N concepts to okf-docs`: one concept per published module,
+recipe, blueprint, prompt and judgement, plus the registry overview. Indexes are not concepts.
 
 ```text
 okf-docs/
@@ -46,6 +47,7 @@ okf-docs/
   modules/<name>.md         one concept per published module
   recipes/<name>.md
   blueprints/<name>.md
+  judgements/<name>.md
   prompts/<name>.md
   registry/<repo>.md        the registry overview, linking every artifact
 ```
@@ -57,17 +59,34 @@ a `status: stable` lifecycle field.
 Each document renders what its artifact actually declares. A module document lists its
 dependencies, its variables with their declared type, requiredness, default, validation rule
 and description, its exports and any aliases, its interactive prompts, its generation steps
-(strategy, source, destination, patch operation, condition), its shell commands, its removal
+(strategy, source, destination, patch operation, condition, managed/seed/checkout lifecycle), its shell commands, its removal
 procedure, and each migration edge with the operations it performs. A blueprint document adds
 its tool allowlist, agent launch preferences, version-probe command, and migration edges with
 their entailment. A prompt document adds its command-derived variables and guidance blocks.
-A section the artifact declares nothing for is omitted rather than printed empty.
+Recipe pages retain base sources, version intervals, local additions and explicit overrides,
+without expanding inheritance. Judgement pages describe checks, answer meanings, categories,
+enforcement, review and gate thresholds, evidence and every coverage limit. Module and recipe
+pages retain conditional judgement references.
+
+Only proven local artifacts receive local links. Explicit sources and unresolved names remain
+labelled text even if a local artifact shares their name. See the complete
+[declaration inventory](../user/registry-documentation.md#declaration-coverage-inventory).
 
 An entailed migration edge naming a blueprint published by the same registry renders as a
 cross-link to that blueprint's document. One naming a blueprint outside the registry renders
 as plainly labelled text, because an entailed edge is owned by the blueprint that declares it
 and may legitimately live in another repository entirely — see
 [ADR 0008](../adr/0008-an-entailed-migration-edge-is-owned-by-the-blueprint-that-declares-it.md).
+
+## Errors and replacement
+
+A non-empty output directory requires `--force`. Source decoding, strict validation and
+profile checks run before replacement; failures preserve every existing output file even
+with `--force`. Correct the declaration or profile named in the diagnostic, then repeat the
+same command. Generated files are derived; edit the declarations to change their content.
+
+Use `seihou-okf-extension --version` to identify the generator. Both the standalone command
+and `seihou extension run okf -- docs` use the same executable.
 
 ## Follow-up checks
 

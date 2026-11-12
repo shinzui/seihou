@@ -25,7 +25,9 @@ import Okf.Profile
   ( FieldCondition (..),
     FieldPath (..),
     FieldPathSegment (..),
+    ProfileDefinitionError (..),
     ProfileViolation (..),
+    ValueSelector (..),
     renderCardinalityName,
     renderFieldFormatName,
   )
@@ -40,10 +42,12 @@ import System.Directory
     doesPathExist,
     listDirectory,
     removeDirectoryRecursive,
+    renameDirectory,
   )
 import System.Exit (exitFailure)
-import System.FilePath ((</>))
+import System.FilePath (takeDirectory, (</>))
 import System.IO (stderr)
+import System.IO.Temp (withTempDirectory)
 
 data DocsOpts = DocsOpts
   { dir :: !FilePath,
@@ -97,18 +101,18 @@ runDocs opts = do
                   | not (null validationProblems) ->
                       pure (Left (renderMany renderBundleValidationError validationProblems))
                   | otherwise -> do
-                      -- Check the house profile before touching the output
-                      -- directory, so a violating run leaves whatever was
-                      -- there untouched rather than clearing it first.
-                      profileProblems <- checkDocProfile (renderOptionsFor opts) concepts
-                      if not (null profileProblems)
-                        then pure (Left (renderMany renderDocBundleError profileProblems))
-                        else do
-                          prepareOutputDirectory (opts ^. #out)
-                          writeResult <- writeDocBundle (renderOptionsFor opts) (opts ^. #out) model
-                          pure $ case writeResult of
-                            Left errors -> Left (renderMany renderDocBundleError errors)
-                            Right () -> Right ("Wrote " <> T.pack (show (length concepts)) <> " concepts to " <> T.pack (opts ^. #out))
+                      -- Complete validation, profile copying and index writing
+                      -- before replacing output. In particular, --profile may
+                      -- name the descriptor inside the bundle being replaced.
+                      let parent = takeDirectory (opts ^. #out)
+                      createDirectoryIfMissing True parent
+                      withTempDirectory parent ".seihou-okf-docs" $ \staging -> do
+                        writeResult <- writeDocBundle (renderOptionsFor opts) staging model
+                        case writeResult of
+                          Left errors -> pure (Left (renderMany renderDocBundleError errors))
+                          Right () -> do
+                            replaceOutputDirectory staging (opts ^. #out)
+                            pure (Right ("Wrote " <> T.pack (show (length concepts)) <> " concepts to " <> T.pack (opts ^. #out)))
 
 handleDocs :: DocsOpts -> IO ()
 handleDocs opts = do
@@ -135,11 +139,11 @@ checkOutputDirectory opts = do
             then pure (Right ())
             else pure (Left ("output directory is not empty: " <> T.pack (opts ^. #out) <> "; pass --force to overwrite"))
 
-prepareOutputDirectory :: FilePath -> IO ()
-prepareOutputDirectory outDir = do
+replaceOutputDirectory :: FilePath -> FilePath -> IO ()
+replaceOutputDirectory staging outDir = do
   exists <- doesDirectoryExist outDir
   when exists (removeDirectoryRecursive outDir)
-  createDirectoryIfMissing True outDir
+  renameDirectory staging outDir
 
 renderDocLoadError :: DocLoadError -> T.Text
 renderDocLoadError (RegistryNotFound path) =
@@ -158,7 +162,7 @@ renderDocBundleError (DocBundleProfileUnreadable err) =
   "could not read the house profile descriptor: " <> err
 renderDocBundleError (DocBundleProfileInvalid errs) =
   "the house profile descriptor does not compile: "
-    <> T.intercalate "; " (T.pack . show <$> NonEmpty.toList errs)
+    <> T.intercalate "; " (renderProfileDefinitionError <$> NonEmpty.toList errs)
 renderDocBundleError (DocBundleProfileViolation violation) =
   "house profile: " <> renderProfileViolation violation
 
@@ -262,6 +266,20 @@ renderMany render = T.intercalate "\n" . fmap render
 -- lives in the @okf-cli@ package, which this repository does not depend on.
 -- Total by construction, for the reason 'renderBundleValidationError' gives.
 renderProfileViolation :: ProfileViolation -> T.Text
+renderProfileViolation (ConstraintPresenceMissing conceptId path condition) =
+  at conceptId <> "constraint requires field " <> renderFieldPath path <> renderFieldCondition condition
+renderProfileViolation (ConstraintAlternativeMissing conceptId paths condition) =
+  at conceptId <> "constraint requires one of " <> T.intercalate ", " (renderFieldPath <$> paths) <> renderFieldCondition condition
+renderProfileViolation (TimestampOrderViolation conceptId before after) =
+  at conceptId <> renderFieldPath before <> " must precede " <> renderFieldPath after
+renderProfileViolation (TextOperandMismatch conceptId path value) =
+  at conceptId <> renderFieldPath path <> " must hold text for this constraint, but holds " <> renderJson value
+renderProfileViolation (MembershipValueMissing conceptId path value selector) =
+  at conceptId <> renderFieldPath path <> " holds " <> value <> ", which is absent from " <> renderValueSelector selector
+renderProfileViolation (DuplicateSelectedValue conceptId path value other) =
+  at conceptId <> renderFieldPath path <> " repeats " <> value <> " from " <> renderFieldPath other
+renderProfileViolation (NestedFieldNotInProfile conceptId path) =
+  at conceptId <> "nested field " <> renderFieldPath path <> " is not one this profile declares"
 renderProfileViolation (TypeNotInProfile conceptId conceptType) =
   at conceptId <> "type " <> conceptType <> " is not one this profile declares"
 renderProfileViolation (MissingProfileField conceptId key condition) =
@@ -382,3 +400,205 @@ renderFieldPathSegment (ArrayIndex index) = "[" <> T.pack (show index) <> "]"
 
 renderJson :: Value -> T.Text
 renderJson = TL.toStrict . TLB.toLazyText . Aeson.encodeToTextBuilder
+
+renderValueSelector :: ValueSelector -> T.Text
+renderValueSelector ValueSelector {field, member} = field <> foldMap ("[]." <>) member
+
+-- Adapted from the diagnostic contract of mori://shinzui/okf/packages/okf-cli.
+renderProfileDefinitionError :: ProfileDefinitionError -> T.Text
+renderProfileDefinitionError = \case
+  InvalidConceptConstraint scope parent sel reason -> renderScope scope <> ": invalid constraint " <> maybe "" (<> ".") parent <> renderValueSelector sel <> ": " <> reason
+  DuplicateTypeRule ctype -> "duplicate type rule: " <> ctype
+  DuplicateFieldRule scope listName key ->
+    renderScope scope <> ": duplicate " <> listName <> " field: " <> key
+  ConflictingFieldRequirement scope key ->
+    renderScope scope <> ": field appears in more than one of required, recommended, and optional: " <> key
+  UnsatisfiableVocabulary scope key profileValues typeValues ->
+    renderScope scope
+      <> ": disjoint allowed values for "
+      <> key
+      <> " (profile: ["
+      <> T.intercalate ", " profileValues
+      <> "], type: ["
+      <> T.intercalate ", " typeValues
+      <> "])"
+  ConflictingCardinality scope key profileCardinality typeCardinality ->
+    renderScope scope
+      <> ": conflicting cardinality for "
+      <> key
+      <> " (profile: "
+      <> renderCardinalityName profileCardinality
+      <> ", type: "
+      <> renderCardinalityName typeCardinality
+      <> ")"
+  ElementFieldsRequireList scope fieldPath actualCardinality ->
+    renderScope scope
+      <> ": elementFields at "
+      <> renderFieldPath fieldPath
+      <> " requires list cardinality, found: "
+      <> renderCardinalityName actualCardinality
+  ObjectFieldsRequireObjectShape scope fieldPath actualCardinality ->
+    renderScope scope
+      <> ": objectFields at "
+      <> renderFieldPath fieldPath
+      <> " cannot be combined with cardinality "
+      <> renderCardinalityName actualCardinality
+  InvalidFormatParameter fieldPath fieldFormat parameter ->
+    "invalid parameter for format "
+      <> renderFieldFormatName fieldFormat
+      <> " at "
+      <> renderFieldPath fieldPath
+      <> ": "
+      <> parameter
+  ConflictingFieldFormat fieldPath profileFormat typeFormat ->
+    "conflicting formats for "
+      <> renderFieldPath fieldPath
+      <> " (profile: "
+      <> renderFieldFormatName profileFormat
+      <> ", type: "
+      <> renderFieldFormatName typeFormat
+      <> ")"
+  EmptyConditionValues scope target source ->
+    renderConditionDefinition scope target source <> " has an empty hasValue list"
+  ConditionFieldNotDeclared scope target source ->
+    renderConditionDefinition scope target source <> " names an undeclared source field"
+  ConditionFieldNotScalar scope target source actualCardinality ->
+    renderConditionDefinition scope target source
+      <> " requires scalar cardinality, found: "
+      <> renderCardinalityName actualCardinality
+  ConditionFieldOpenVocabulary scope target source ->
+    renderConditionDefinition scope target source <> " requires a non-empty allowedValues vocabulary"
+  ConditionFieldHasUnreachableValues scope target source unreachable allowed ->
+    renderConditionDefinition scope target source
+      <> " contains unreachable values ["
+      <> T.intercalate ", " unreachable
+      <> "]; source allows ["
+      <> T.intercalate ", " allowed
+      <> "]"
+  SelfConditionalField scope target ->
+    renderScope scope <> ": field cannot condition its own presence: " <> renderFieldPath target
+  InvalidReferencePrefix scope target prefix ->
+    renderScope scope <> ": invalid local reference prefix at " <> renderFieldPath target <> ": " <> prefix
+  ReferencePrefixNotDeclared scope target prefix ->
+    renderScope scope
+      <> ": local reference prefix at "
+      <> renderFieldPath target
+      <> " is not declared by any type: "
+      <> prefix
+  ReferenceRequiresIdField scope target ->
+    renderScope scope <> ": reference at " <> renderFieldPath target <> " requires profile idField"
+  InvalidExternalReferenceScheme scope target scheme ->
+    renderScope scope <> ": invalid external reference scheme at " <> renderFieldPath target <> ": " <> scheme
+  ConflictingReferencePrefix ctype target profilePrefix typePrefix ->
+    "type "
+      <> ctype
+      <> " frontmatter: conflicting local reference prefixes for "
+      <> renderFieldPath target
+      <> " (profile: "
+      <> profilePrefix
+      <> ", type: "
+      <> typePrefix
+      <> ")"
+  ReferenceWithFormat scope target fieldFormat ->
+    renderScope scope
+      <> ": reference at "
+      <> renderFieldPath target
+      <> " cannot also declare format "
+      <> renderFieldFormatName fieldFormat
+  OptionalFieldWithCondition scope target ->
+    renderScope scope
+      <> ": optional field cannot carry a when condition: "
+      <> renderFieldPath target
+  PathReferenceWithHandleReference scope target ->
+    renderScope scope
+      <> ": path at "
+      <> renderFieldPath target
+      <> " cannot also declare a document reference; a value is resolved as one or the other"
+  InvalidExternalUriPattern scope target patternText detail ->
+    renderScope scope
+      <> ": invalid external URI pattern at "
+      <> renderFieldPath target
+      <> ": "
+      <> patternText
+      <> " ("
+      <> detail
+      <> ")"
+  ConflictingExternalUriPatterns ctype target profilePattern typePattern ->
+    "type "
+      <> ctype
+      <> " frontmatter: conflicting external URI patterns for "
+      <> renderFieldPath target
+      <> " (profile: "
+      <> profilePattern
+      <> ", type: "
+      <> typePattern
+      <> ")"
+  UniqueByRequiresElementFields scope target key ->
+    renderScope scope
+      <> ": uniqueBy at "
+      <> renderFieldPath target
+      <> " names "
+      <> key
+      <> " but the field has no elementFields"
+  UniqueByFieldNotDeclared scope target ->
+    renderScope scope <> ": uniqueBy field is not declared at " <> renderFieldPath target
+  UniqueByFieldNotUnconditionallyRequired scope target ->
+    renderScope scope <> ": uniqueBy field must be unconditionally required at " <> renderFieldPath target
+  UniqueByFieldNotScalar scope target actualCardinality ->
+    renderScope scope
+      <> ": uniqueBy field must be scalar at "
+      <> renderFieldPath target
+      <> ", found: "
+      <> renderCardinalityName actualCardinality
+  ConflictingUniqueBy ctype target profileKey typeKey ->
+    "type "
+      <> ctype
+      <> " frontmatter: conflicting uniqueBy keys for "
+      <> renderFieldPath target
+      <> " (profile: "
+      <> profileKey
+      <> ", type: "
+      <> typeKey
+      <> ")"
+  -- Each version message names *both* halves of the contradiction. One that said
+  -- only "field requires OKF 0.2" would leave the author hunting for where the
+  -- version is declared, which is the other end of the file.
+  InvalidProfileOkfVersion rawVersion ->
+    "okfVersion is not <major>.<minor>: " <> rawVersion
+  ProfileOkfVersionNotUnderstood rawVersion ->
+    "okfVersion "
+      <> rawVersion
+      <> " names an OKF major version this okf does not implement (supported: "
+      <> "0.2"
+      <> ")"
+  InvalidRequiredBundleVersion rawVersion ->
+    "requireBundleVersion is not <major>.<minor>: " <> rawVersion
+  FieldSupersededInOkfVersion scope target declared supersededIn ->
+    renderScope scope
+      <> ": declared okfVersion "
+      <> declared
+      <> " supersedes the frontmatter key "
+      <> renderFieldPath target
+      <> " (OKF "
+      <> supersededIn
+      <> "); move it to the optional list"
+  FormatRequiresOkfVersion scope target fieldFormat declared introducedIn ->
+    renderScope scope
+      <> ": declared okfVersion "
+      <> declared
+      <> " does not support the format "
+      <> renderFieldFormatName fieldFormat
+      <> " at "
+      <> renderFieldPath target
+      <> ", which OKF "
+      <> introducedIn
+      <> " introduced"
+  where
+    renderScope Nothing = "profile frontmatter"
+    renderScope (Just ctype) = "type " <> ctype <> " frontmatter"
+    renderConditionDefinition scope target source =
+      renderScope scope
+        <> ": condition for "
+        <> renderFieldPath target
+        <> " on "
+        <> renderFieldPath source

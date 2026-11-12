@@ -102,7 +102,16 @@ in
   # enabled and verify the bound relaxation with the complete native suites.
   tasty-hspec = doJailbreak prev.tasty-hspec;
 
-  # mori://shinzui/okf/packages/okf-core is supplied by the shared registry.
+  # mori://shinzui/okf/packages/okf-core: the shared registry still supplies
+  # 0.10. Select the released source matching our Cabal bound without changing
+  # module-owned pins or relaxing this package's bounds.
+  okf-core = final.callHackageDirect
+    {
+      pkg = "okf-core";
+      ver = "0.13.0.0";
+      sha256 = "018p3z3a1aqxas6d4mnadcsil9ip0vkd495yrwvqkcdwgdn6vli3";
+    }
+    { };
 
   seihou-core = pkgs.haskell.lib.compose.overrideCabal
     (drv: {

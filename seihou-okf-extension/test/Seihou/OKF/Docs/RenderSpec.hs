@@ -57,9 +57,12 @@ spec = do
       (_, problems) <- renderOrFail testOptions wellFormedModel
       problems `shouldBe` []
 
-    it "reports a DanglingReference for an unresolved module ref" $ do
+    it "labels an unresolved module without making a dangling link" $ do
       (_, problems) <- renderOrFail testOptions danglingModel
-      problems `shouldSatisfy` any isDanglingReference
+      problems `shouldBe` []
+      body <- requireBody "modules/app" testOptions danglingModel
+      body `shouldSatisfy` T.isInfixOf "`missing` (not linked in this registry)"
+      body `shouldNotSatisfy` T.isInfixOf "](/modules/missing.md)"
 
     it "reports invalid generated concept IDs as render errors" $ do
       renderDocBundle testOptions invalidIdModel
@@ -113,7 +116,7 @@ spec = do
       body `shouldSatisfy` T.isInfixOf "## Prompts"
       body
         `shouldSatisfy` T.isInfixOf
-          "- `license` — Which license? (choices: `MIT`, `BSD-3`) — when `IsSet project.name`"
+          "- `license` — `Which license?` (choices: `MIT`, `BSD-3`) — when `IsSet project.name`"
 
     it "renders generation steps with strategy, patch operation and condition" $ do
       body <- requireBody "modules/rich" testOptions richModel
@@ -286,10 +289,6 @@ requireConcept rawId opts model = do
         [concept] -> pure concept
         other -> expectationFailure ("Expected one concept, got " <> show (length other)) >> error "unreachable"
 
-isDanglingReference :: BundleValidationError -> Bool
-isDanglingReference DanglingReference {} = True
-isDanglingReference _ = False
-
 wellFormedModel :: DocModel
 wellFormedModel =
   DocModel
@@ -297,7 +296,7 @@ wellFormedModel =
       repoDescription = Just "Fixture",
       entries =
         [ moduleEntry "base" [] "modules/base",
-          moduleEntry "app" [ModuleRef "base" True] "modules/app",
+          moduleEntry "app" [ModuleRef "base" Nothing Map.empty True] "modules/app",
           recipeEntry,
           blueprintEntry,
           promptEntry
@@ -310,7 +309,7 @@ danglingModel =
     { repoName = "fixture",
       repoDescription = Nothing,
       entries =
-        [ moduleEntry "app" [ModuleRef "missing" False] "modules/app"
+        [ moduleEntry "app" [ModuleRef "missing" Nothing Map.empty False] "modules/app"
         ]
     }
 
@@ -345,6 +344,7 @@ silentEntry artifactDescription =
       artifact = DocModuleArtifact (silentModuleArtifact artifactDescription),
       moduleRefs = [],
       baseRecipe = Nothing,
+      judgementRefs = [],
       entailedRefs = []
     }
 
@@ -386,6 +386,7 @@ moduleEntry name refs path =
       artifact = DocModuleArtifact (moduleArtifact name refs),
       moduleRefs = refs,
       baseRecipe = Nothing,
+      judgementRefs = [],
       entailedRefs = []
     }
 
@@ -427,8 +428,9 @@ recipeEntry =
               moduleOverrides = [],
               promptOverrides = []
             },
-      moduleRefs = [ModuleRef "base" True, ModuleRef "app" True],
+      moduleRefs = [ModuleRef "base" Nothing Map.empty True, ModuleRef "app" Nothing Map.empty True],
       baseRecipe = Nothing,
+      judgementRefs = [],
       entailedRefs = []
     }
 
@@ -458,8 +460,9 @@ blueprintEntry =
               launch = Nothing,
               versionProbe = Nothing
             },
-      moduleRefs = [ModuleRef "base" True],
+      moduleRefs = [ModuleRef "base" Nothing Map.empty True],
       baseRecipe = Nothing,
+      judgementRefs = [],
       entailedRefs = []
     }
 
@@ -490,6 +493,7 @@ promptEntry =
             },
       moduleRefs = [],
       baseRecipe = Nothing,
+      judgementRefs = [],
       entailedRefs = []
     }
 
@@ -516,6 +520,7 @@ richModuleEntry =
       artifact = DocModuleArtifact richModule,
       moduleRefs = [],
       baseRecipe = Nothing,
+      judgementRefs = [],
       entailedRefs = []
     }
 
@@ -643,8 +648,9 @@ richRecipeEntry =
               moduleOverrides = [],
               promptOverrides = []
             },
-      moduleRefs = [ModuleRef "rich" True],
+      moduleRefs = [ModuleRef "rich" Nothing Map.empty True],
       baseRecipe = Nothing,
+      judgementRefs = [],
       entailedRefs = []
     }
 
@@ -662,6 +668,7 @@ richBlueprintEntry =
       -- One entailed edge resolves inside this registry and one does not, which
       -- is the distinction the renderer has to honour.
       baseRecipe = Nothing,
+      judgementRefs = [],
       entailedRefs =
         [ EntailedRef {blueprint = "other-blueprint", from = "1.9.0", to = "2.0.0", resolved = True},
           EntailedRef {blueprint = "kiroku", from = "1.9.0", to = "2.0.0", resolved = False}
@@ -733,6 +740,7 @@ otherBlueprintEntry =
             },
       moduleRefs = [],
       baseRecipe = Nothing,
+      judgementRefs = [],
       entailedRefs = []
     }
 
@@ -778,6 +786,7 @@ richPromptEntry =
             },
       moduleRefs = [],
       baseRecipe = Nothing,
+      judgementRefs = [],
       entailedRefs = []
     }
 

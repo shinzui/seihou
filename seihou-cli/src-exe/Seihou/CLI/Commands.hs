@@ -2416,7 +2416,9 @@ extensionInfo =
                   indent 2 $
                     vsep
                       [ pretty ("seihou extension run okf -- --help" :: String),
-                        pretty ("seihou extension run okf -- docs --dir . --out okf-docs" :: String)
+                        pretty ("seihou extension run okf -- docs" :: String),
+                        pretty ("seihou extension run okf -- docs --force" :: String),
+                        pretty ("Generate from a registry checkout without installing artifacts; --force regenerates." :: String)
                       ]
                 ]
           )

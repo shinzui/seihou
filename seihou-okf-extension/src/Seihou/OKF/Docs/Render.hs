@@ -16,6 +16,7 @@ where
 
 import Control.Lens ((^.))
 import Data.Aeson (Value (..))
+import Data.Aeson.Text qualified as Aeson
 import Data.Bifunctor (first)
 import Data.Either (partitionEithers)
 import Data.FileEmbed (embedStringFile)
@@ -26,6 +27,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
+import Data.Text.Lazy qualified as TL
 import GHC.Generics (Generic)
 import Okf.Actor (Actor (..))
 import Okf.Bundle (BundleError, Concept, bundleInventoryOfConcepts, conceptFromDocument, writeBundle)
@@ -69,6 +71,7 @@ import Seihou.Core.Types
     RemovalAction (..),
     RemovalStep (..),
     Step (..),
+    StepLifecycle (..),
     Strategy (..),
     Validation (..),
     VarDecl (..),
@@ -317,7 +320,7 @@ registryBody repoName description entries =
         description,
         "Every artifact below is published by the `"
           <> repoName
-          <> "` registry and documented in its own concept."
+          <> "` registry and documented in its own concept. Modules, recipes, blueprints, prompts and judgements are read from declarations; generation never executes their commands or reviews."
       ]
         <> foldMap (uncurry (registryKindSection entries)) kindHeadings
     )
@@ -391,6 +394,8 @@ bodyFor repoName entry =
   T.intercalate
     "\n\n"
     ( baseSections repoName entry
+        <> optionalSection "Declaration metadata" (renderDeclaredMetadata entry)
+        <> optionalSection "Judgements" (renderJudgementRefs (entry ^. #judgementRefs))
         <> kindSections entry
     )
     <> "\n"
@@ -418,7 +423,7 @@ kindSections :: DocEntry -> [T.Text]
 kindSections entry =
   case entry ^. #artifact of
     DocModuleArtifact Module {vars, exports, prompts, steps, commands, dependencies, removal, migrations} ->
-      [ section "Dependencies" (renderDependencies "This module has no dependencies." dependencies),
+      [ section "Dependencies" (renderDependencies entry "This module has no dependencies." dependencies),
         section "Variables" (renderVarDecls vars),
         section "Exports" (renderExports exports)
       ]
@@ -429,20 +434,20 @@ kindSections entry =
         <> optionalSection "Migrations" (renderMigrations migrations)
     DocRecipeArtifact Recipe {modules = recipeModules, vars, prompts, extends, moduleOverrides, promptOverrides} ->
       foldMap (\ref -> [section "Extends" (renderRecipeBase entry ref)]) extends
-        <> [section "Composes" (renderDependencies (maybe "This recipe does not compose any modules." (const "Uses its inherited members without adding modules.") extends) recipeModules)]
-        <> optionalSection "Inherited module overrides" (T.unlines ["- `" <> (override ^. #module_ . #unModuleName) <> "`" <> renderSuppliedVars (override ^. #vars) | override <- moduleOverrides])
+        <> [section "Composes" (renderDependencies entry (maybe "This recipe does not compose any modules." (const "Uses its inherited members without adding modules.") extends) recipeModules)]
+        <> optionalSection "Inherited module overrides" (T.unlines ["- " <> inlineCode (override ^. #module_ . #unModuleName) <> renderSuppliedVars (override ^. #vars) | override <- moduleOverrides])
         <> [section "Override rules" "The oldest base supplies the primary module. Child literals override ancestor literals globally by variable name; defaults remain fallbacks. Explicit module overrides replace selected keys without adding instances. Prompt overrides replace inherited questions in place; new prompts append." | extends /= Nothing]
         <> optionalSection "Variables" (renderVarDecls' vars)
         <> optionalSection "Prompts" (renderPrompts prompts)
         <> optionalSection "Inherited prompt overrides" (renderPrompts promptOverrides)
     DocBlueprintArtifact Blueprint {prompt, vars, prompts, baseModules, files, allowedTools, migrations, launch, versionProbe} ->
-      [ section "Base modules" (renderDependencies "This blueprint declares no base modules." baseModules),
+      [ section "Base modules" (renderDependencies entry "This blueprint declares no base modules." baseModules),
         section "Agent prompt" (renderAgentPrompt prompt)
       ]
         <> optionalSection "Variables" (renderVarDecls' vars)
         <> optionalSection "Prompts" (renderPrompts prompts)
         <> [section "Reference files" (renderBlueprintFiles files)]
-        <> foldMap (optionalSection "Tools" . renderTextList') allowedTools
+        <> [section "Tools" (renderTools allowedTools <> "\n\nBlueprint runs also pre-approve Seihou setup tools.")]
         <> foldMap (optionalSection "Agent launch" . renderAgentLaunch) launch
         <> foldMap (optionalSection "Version probe" . renderVersionProbe) versionProbe
         <> optionalSection
@@ -455,11 +460,12 @@ kindSections entry =
         <> optionalSection "Command variables" (renderCommandVars commandVars)
         <> optionalSection "Guidance" (renderGuidance guidance)
         <> [ section "Reference files" (renderBlueprintFiles files),
-             section "Tools" (maybe "No tool restrictions declared." renderTextList allowedTools)
+             section "Tools" (renderTools allowedTools)
            ]
         <> foldMap (optionalSection "Agent launch" . renderAgentLaunch) launch
     DocJudgementArtifact def ->
-      [ section "Instructions" (if T.null (T.strip (def ^. #instructions)) then "No shared instructions." else def ^. #instructions),
+      [ section "Instructions" (if T.null (T.strip (def ^. #instructions)) then "No shared instructions." else fencedBlock "text" (def ^. #instructions)),
+        section "Decision semantics" "Thresholds apply to the model-reported probability of the concern, converting probability of yes according to concern direction. These probabilities are not calibrated risk estimates. Values at or below passAt may pass only with complete coverage; values at or above blockAt block; the intervening band needs review. Authored enforcement and thresholds are defaults; a consuming project's recorded policy decides. A permitted gate may clear a check, but cannot overrule review or permit a pass at its block threshold.",
         section "Checks" (T.unlines (concatMap renderJudgementCheck (toList (def ^. #checks)))),
         section
           "Evidence"
@@ -472,8 +478,43 @@ kindSections entry =
               <> listOrNone (def ^. #evidence . #exclude)
               <> "."
           ),
-        section "Deterministic checks" (if null (def ^. #deterministicChecks) then "None." else T.intercalate ", " (map J.renderDeterministicCheck (def ^. #deterministicChecks)) <> ".")
+        section "Deterministic checks" (if null (def ^. #deterministicChecks) then "None." else T.intercalate ", " (map J.renderDeterministicCheck (def ^. #deterministicChecks)) <> "."),
+        section "Coverage limits" (renderCoverageLimits (def ^. #limits))
       ]
+
+-- | Catalog metadata remains authoritative. Preserve differing declaration
+-- metadata instead of silently dropping a stale catalog's source values.
+renderDeclaredMetadata :: DocEntry -> T.Text
+renderDeclaredMetadata entry =
+  T.unlines $
+    ["- name: " <> inlineCode name | name /= entry ^. #name]
+      <> ["- version: " <> maybe "not declared" inlineCode version | version /= entry ^. #version]
+      <> ["- description: " <> maybe "not declared" inlineCode description | description /= entry ^. #description]
+      <> ["- tags: " <> T.intercalate ", " (inlineCode <$> tags) | Just tags <- [artifactTags], tags /= entry ^. #tags]
+  where
+    (name, version, description, artifactTags) = case entry ^. #artifact of
+      DocModuleArtifact m -> (m ^. #name . #unModuleName, m ^. #version, m ^. #description, Nothing)
+      DocRecipeArtifact r -> (r ^. #name . #unRecipeName, r ^. #version, r ^. #description, Nothing)
+      DocBlueprintArtifact b -> (b ^. #name . #unModuleName, b ^. #version, b ^. #description, Just (b ^. #tags))
+      DocPromptArtifact p -> (p ^. #name . #unModuleName, p ^. #version, p ^. #description, Just (p ^. #tags))
+      DocJudgementArtifact j -> (j ^. #name, j ^. #version, j ^. #description, Nothing)
+
+renderJudgementRefs :: [JudgementDocRef] -> T.Text
+renderJudgementRefs refs =
+  T.unlines
+    [ "- "
+        <> target ref
+        <> sourceLabel (ref ^. #reference . #source)
+        <> foldMap (\condition -> " — when " <> inlineCode condition) (ref ^. #reference . #when)
+    | ref <- refs
+    ]
+  where
+    target ref
+      | ref ^. #resolved,
+        ref ^. #reference . #source == Nothing,
+        Right conceptId <- conceptIdFor DocJudgementKind (ref ^. #reference . #name) =
+          renderConceptLink conceptId (ref ^. #reference . #name)
+      | otherwise = inlineCode (ref ^. #reference . #name) <> " (not linked in this registry)"
 
 -- | Sections are joined with a blank line between them, so a body\'s own
 -- trailing newline is stripped rather than left to open a second blank line.
@@ -497,21 +538,30 @@ renderRecipeBase :: DocEntry -> RecipeReference -> T.Text
 renderRecipeBase entry ref =
   let name = ref ^. #recipe . #unRecipeName
       linked = case entry ^. #baseRecipe of
-        Just base | base ^. #resolved -> case conceptIdFor DocRecipeKind name of
-          Right conceptId -> renderConceptLink conceptId name
-          Left _ -> "`" <> name <> "`"
-        _ -> "`" <> name <> "`"
-      source = maybe " (declaring registry)" (\url -> " from `" <> url <> "`") (ref ^. #source)
-      interval = maybe "" (\range -> "; version >= `" <> range ^. #minimum <> "` and < `" <> range ^. #before <> "`") (ref ^. #versionRange)
-   in linked <> source <> interval <> ". Selected from the source's default-branch HEAD; no historical tag search."
+        Just base
+          | base ^. #resolved,
+            ref ^. #source == Nothing -> case conceptIdFor DocRecipeKind name of
+              Right conceptId -> renderConceptLink conceptId name
+              Left _ -> inlineCode name
+        _ -> inlineCode name
+      source = sourceLabel (ref ^. #source)
+      interval = maybe "" (\range -> "; version >= " <> inlineCode (range ^. #minimum) <> " and < " <> inlineCode (range ^. #before)) (ref ^. #versionRange)
+   in linked <> source <> interval <> ". Selected from the source's default-branch HEAD; no historical tag search. This page documents the declared child; inherited declarations are not expanded."
 
-renderDependencies :: T.Text -> [Dependency] -> T.Text
-renderDependencies emptyMessage [] = emptyMessage
-renderDependencies _ dependencies =
+renderDependencies :: DocEntry -> T.Text -> [Dependency] -> T.Text
+renderDependencies _ emptyMessage [] = emptyMessage
+renderDependencies entry _ dependencies =
   T.unlines
-    [ "- " <> moduleLink (moduleName ^. #unModuleName) <> renderSuppliedVars vars
-    | Dependency {module_ = moduleName, vars} <- dependencies
+    [ "- " <> target dep <> sourceLabel source <> renderSuppliedVars vars
+    | dep@Dependency {source, vars} <- dependencies
     ]
+  where
+    target Dependency {module_ = moduleName, source, vars}
+      | source == Nothing, any (\ref -> ref ^. #name == moduleName ^. #unModuleName && ref ^. #source == source && ref ^. #vars == vars && ref ^. #resolved) (entry ^. #moduleRefs) = moduleLink (moduleName ^. #unModuleName)
+      | otherwise = inlineCode (moduleName ^. #unModuleName) <> " (not linked in this registry)"
+
+sourceLabel :: Maybe T.Text -> T.Text
+sourceLabel = maybe " (declaring registry)" (\source -> " from " <> inlineCode source)
 
 -- | The variable bindings the composing artifact supplies along this edge.
 renderSuppliedVars :: Map VarName T.Text -> T.Text
@@ -521,7 +571,7 @@ renderSuppliedVars vars
       " (with "
         <> T.intercalate
           ", "
-          [ "`" <> varName <> "` = `" <> value <> "`"
+          [ inlineCode varName <> " = " <> inlineCode value
           | (VarName varName, value) <- Map.toAscList vars
           ]
         <> ")"
@@ -530,7 +580,7 @@ moduleLink :: T.Text -> T.Text
 moduleLink name =
   case conceptIdFor DocModuleKind name of
     Right conceptId -> renderConceptLink conceptId name
-    Left _ -> "`" <> name <> "`"
+    Left _ -> inlineCode name
 
 -- | Variables, with the type, requiredness, default, validation rule and
 -- description the declaration actually carries.
@@ -545,13 +595,13 @@ renderVarDecls' vars = T.unlines (renderVarDecl <$> vars)
 
 renderVarDecl :: VarDecl -> T.Text
 renderVarDecl VarDecl {name = VarName varName, type_, default_, description, required, validation} =
-  "- `"
-    <> varName
-    <> "` — "
+  "- "
+    <> inlineCode varName
+    <> " — "
     <> T.intercalate
       ", "
       ( [renderVarType type_, if required then "required" else "optional"]
-          <> foldMap (\value -> ["default `" <> renderValue value <> "`"]) default_
+          <> foldMap (\value -> ["default " <> inlineCode (renderValue value)]) default_
           <> foldMap (pure . renderValidation) validation
       )
     <> foldMap (". " <>) description
@@ -562,10 +612,10 @@ renderVarType VTBool = "boolean"
 renderVarType VTInt = "integer"
 renderVarType (VTList inner) = "list of " <> renderVarType inner
 renderVarType (VTChoice choices) =
-  "one of " <> T.intercalate ", " ["`" <> choice <> "`" | choice <- choices]
+  "one of " <> T.intercalate ", " [inlineCode choice | choice <- choices]
 
 renderValidation :: Validation -> T.Text
-renderValidation (ValPattern pattern_) = "matching `" <> pattern_ <> "`"
+renderValidation (ValPattern pattern_) = "matching " <> inlineCode pattern_
 renderValidation (ValRange low high) =
   "between " <> T.pack (show low) <> " and " <> T.pack (show high)
 renderValidation (ValMinLength n) = "at least " <> T.pack (show n) <> " characters"
@@ -579,13 +629,16 @@ renderValue (VText text) = text
 renderValue (VBool True) = "true"
 renderValue (VBool False) = "false"
 renderValue (VInt n) = T.pack (show n)
-renderValue (VList values) = T.intercalate ", " (renderValue <$> values)
+renderValue (VList values) = "[" <> T.intercalate ", " (renderListValue <$> values) <> "]"
+  where
+    renderListValue (VText text) = TL.toStrict (Aeson.encodeToLazyText (String text))
+    renderListValue value = renderValue value
 
 renderExports :: [VarExport] -> T.Text
 renderExports [] = "No exports declared."
 renderExports exports =
   T.unlines
-    [ "- `" <> varName <> "`" <> foldMap (\(VarName aliasName) -> " as `" <> aliasName <> "`") alias
+    [ "- " <> inlineCode varName <> foldMap (\(VarName aliasName) -> " as " <> inlineCode aliasName) alias
     | VarExport {var = VarName varName, alias} <- exports
     ]
 
@@ -596,33 +649,39 @@ renderPrompts prompts = T.unlines (renderPrompt <$> prompts)
 
 renderPrompt :: Prompt -> T.Text
 renderPrompt Prompt {var = VarName varName, text, condition, choices} =
-  "- `"
-    <> varName
-    <> "` — "
-    <> T.strip text
+  "- "
+    <> inlineCode varName
+    <> " — "
+    <> inlineCode text
     <> foldMap renderChoices choices
     <> renderCondition condition
   where
     renderChoices options =
-      " (choices: " <> T.intercalate ", " ["`" <> option <> "`" | option <- options] <> ")"
+      " (choices: " <> T.intercalate ", " [inlineCode option | option <- options] <> ")"
 
 renderCondition :: Maybe Expr -> T.Text
-renderCondition = foldMap (\expr -> " — when `" <> renderExpr expr <> "`")
+renderCondition = foldMap (\expr -> " — when " <> inlineCode (renderExpr expr))
 
 renderSteps :: [Step] -> T.Text
 renderSteps steps = T.unlines (renderStep <$> steps)
 
 renderStep :: Step -> T.Text
-renderStep Step {strategy, src, dest, condition, patch} =
-  "- `"
-    <> renderStrategy strategy
-    <> "` `"
-    <> T.pack src
-    <> "` → `"
-    <> dest
-    <> "`"
+renderStep Step {strategy, src, dest, condition, patch, lifecycle} =
+  "- "
+    <> inlineCode (renderStrategy strategy)
+    <> " "
+    <> inlineCode (T.pack src)
+    <> " → "
+    <> inlineCode dest
     <> foldMap (\op -> " (" <> renderPatchOp op <> ")") patch
     <> renderCondition condition
+    <> " — "
+    <> renderStepLifecycle lifecycle
+
+renderStepLifecycle :: StepLifecycle -> T.Text
+renderStepLifecycle Managed = "Managed: owned and reconciled by Seihou updates"
+renderStepLifecycle Seed = "Seed: created once when absent, then project owned; updates and removal preserve it"
+renderStepLifecycle Checkout = "Checkout: portable symlink restored by `seihou sync` in fresh clones and worktrees"
 
 renderStrategy :: Strategy -> T.Text
 renderStrategy Copy = "Copy"
@@ -642,10 +701,14 @@ renderCommands commands = T.unlines (renderCommand <$> commands)
 
 renderCommand :: Command -> T.Text
 renderCommand Command {run, workDir, condition, lifecycle} =
-  "- `" <> run <> "`" <> renderWorkDir workDir <> renderCondition condition <> (if lifecycle == CheckoutCommandLifecycle then " (repeatable checkout setup; seihou sync)" else "")
+  "- " <> inlineCode run <> renderWorkDir workDir <> renderCondition condition <> renderCommandLifecycle lifecycle
 
 renderWorkDir :: Maybe T.Text -> T.Text
-renderWorkDir = foldMap (\dir -> " in `" <> dir <> "`")
+renderWorkDir = foldMap (\dir -> " in " <> inlineCode dir)
+
+renderCommandLifecycle :: CommandLifecycle -> T.Text
+renderCommandLifecycle ApplicationCommand = " (application command)"
+renderCommandLifecycle CheckoutCommandLifecycle = " (repeatable checkout setup; seihou sync)"
 
 renderRemoval :: Removal -> T.Text
 renderRemoval Removal {steps, commands} =
@@ -659,7 +722,7 @@ renderRemoval Removal {steps, commands} =
 
 renderRemovalStep :: RemovalStep -> T.Text
 renderRemovalStep RemovalStep {action, dest, src, condition} =
-  "- " <> renderRemovalAction action <> " `" <> dest <> "`" <> foldMap (\path -> " using `" <> T.pack path <> "`") src <> renderCondition condition
+  "- " <> renderRemovalAction action <> " " <> inlineCode dest <> foldMap (\path -> " using " <> inlineCode (T.pack path)) src <> renderCondition condition
 
 renderRemovalAction :: RemovalAction -> T.Text
 renderRemovalAction RemoveFileAction = "delete"
@@ -679,13 +742,13 @@ renderMigrationOps [] = "This edge declares no operations; it advances the recor
 renderMigrationOps ops = T.unlines (renderMigrationOp <$> ops)
 
 renderMigrationOp :: MigrationOp -> T.Text
-renderMigrationOp MoveFile {src, dest} = "- move `" <> T.pack src <> "` → `" <> T.pack dest <> "`"
-renderMigrationOp MoveDir {src, dest} = "- move directory `" <> T.pack src <> "` → `" <> T.pack dest <> "`"
-renderMigrationOp DeleteFile {path} = "- delete `" <> T.pack path <> "`"
-renderMigrationOp DeleteDir {path} = "- delete directory `" <> T.pack path <> "`"
-renderMigrationOp RemoveLine {path, line} = "- remove exact line `" <> line <> "` from `" <> T.pack path <> "`"
+renderMigrationOp MoveFile {src, dest} = "- move " <> inlineCode (T.pack src) <> " → " <> inlineCode (T.pack dest)
+renderMigrationOp MoveDir {src, dest} = "- move directory " <> inlineCode (T.pack src) <> " → " <> inlineCode (T.pack dest)
+renderMigrationOp DeleteFile {path} = "- delete " <> inlineCode (T.pack path)
+renderMigrationOp DeleteDir {path} = "- delete directory " <> inlineCode (T.pack path)
+renderMigrationOp RemoveLine {path, line} = "- remove exact line " <> inlineCode line <> " from " <> inlineCode (T.pack path) <> "; removes every matching logical line, excluding its LF/CRLF terminator from comparison; preserves nonmatching bytes. Missing files or matches are no-ops."
 renderMigrationOp RunCommand {run, workDir} =
-  "- run `" <> run <> "`" <> foldMap (\dir -> " in `" <> T.pack dir <> "`") workDir
+  "- run " <> inlineCode run <> foldMap (\dir -> " in " <> inlineCode (T.pack dir)) workDir
 
 -- | Blueprint migration edges, each with the guidance the agent is given and
 -- the other blueprints' edges that crossing this one entails.
@@ -725,7 +788,7 @@ renderEntailedEdge resolvedBlueprints EntailedEdge {blueprint, from, to}
       "- `" <> blueprint <> "` `" <> from <> "` → `" <> to <> "` (declared outside this registry)"
 
 renderAgentLaunch :: AgentLaunch -> T.Text
-renderAgentLaunch AgentLaunch {provider, model, effort} =
+renderAgentLaunch AgentLaunch {provider, model, effort, mode} =
   case declared of
     [] -> ""
     _ ->
@@ -735,15 +798,15 @@ renderAgentLaunch AgentLaunch {provider, model, effort} =
            \invoking user's configuration files do not.\n"
   where
     declared =
-      foldMap (\value -> ["- provider: `" <> value <> "`"]) provider
-        <> foldMap (\value -> ["- model: `" <> value <> "`"]) model
-        <> foldMap (\value -> ["- effort: `" <> value <> "`"]) effort
+      foldMap (\value -> ["- provider: " <> inlineCode value]) provider
+        <> foldMap (\value -> ["- model: " <> inlineCode value]) model
+        <> foldMap (\value -> ["- effort: " <> inlineCode value]) effort
+        <> foldMap (\value -> ["- mode: " <> inlineCode value <> " (reserved; ignored)"]) mode
 
 renderVersionProbe :: T.Text -> T.Text
 renderVersionProbe probe =
-  "```bash\n"
-    <> T.strip probe
-    <> "\n```\n\nSeihou reads no package-manager format of its own, so this \
+  fencedBlock "bash" probe
+    <> "\n\nSeihou reads no package-manager format of its own, so this \
        \author-declared command is how it discovers which version of this \
        \blueprint's library the project currently declares; its output supplies \
        \the default `--to` for `seihou agent migrate` (ADR 0009 in the seihou \
@@ -754,11 +817,10 @@ renderCommandVars commandVars = T.unlines (renderCommandVar <$> commandVars)
 
 renderCommandVar :: CommandVar -> T.Text
 renderCommandVar CommandVar {name = VarName varName, run, workDir, condition, trim, maxBytes} =
-  "- `"
-    <> varName
-    <> "` — runs `"
-    <> run
-    <> "`"
+  "- "
+    <> inlineCode varName
+    <> " — runs "
+    <> inlineCode run
     <> renderWorkDir workDir
     <> ", "
     <> (if trim then "trimmed" else "untrimmed")
@@ -782,31 +844,44 @@ renderAgentPrompt :: T.Text -> T.Text
 renderAgentPrompt prompt
   | T.null (T.strip prompt) = "No prompt text provided."
   | otherwise =
-      firstParagraph prompt <> "\n\n```text\n" <> T.strip prompt <> "\n```"
+      fencedBlock "text" prompt
 
 renderBlueprintFiles :: [BlueprintFile] -> T.Text
 renderBlueprintFiles [] = "No reference files declared."
 renderBlueprintFiles files =
   T.unlines
-    [ "- `" <> T.pack src <> "`" <> maybe "" (" - " <>) description
+    [ "- " <> inlineCode (T.pack src) <> maybe "" (" - " <>) description
     | BlueprintFile {src, description} <- files
     ]
 
-renderTextList :: [T.Text] -> T.Text
-renderTextList [] = "No tool restrictions declared."
-renderTextList values = renderTextList' values
+renderTools :: Maybe [T.Text] -> T.Text
+renderTools Nothing = "No additional tools declared."
+renderTools (Just []) = "No additional tools declared (explicit empty allowlist)."
+renderTools (Just tools) = renderTextList' tools
 
 renderTextList' :: [T.Text] -> T.Text
-renderTextList' values = T.unlines ["- `" <> value <> "`" | value <- values]
+renderTextList' values = T.unlines ["- " <> inlineCode value | value <- values]
 
-firstParagraph :: T.Text -> T.Text
-firstParagraph text =
-  case T.splitOn "\n\n" text of
-    [] -> "No prompt text provided."
-    paragraph : _ ->
-      case T.strip paragraph of
-        "" -> "No prompt text provided."
-        stripped -> stripped
+-- | Choose delimiters from the source data, so literals cannot close their own
+-- span or fence. Inline multiline text is labelled JSON to retain exact breaks.
+inlineCode :: T.Text -> T.Text
+inlineCode value
+  | T.null value || T.all (== ' ') value || T.any (`elem` ['\n', '\r']) value = codeSpan (TL.toStrict (Aeson.encodeToLazyText (String value))) <> " (JSON string)"
+  | otherwise = codeSpan value
+
+codeSpan :: T.Text -> T.Text
+codeSpan value = delimiter <> padding <> value <> padding <> delimiter
+  where
+    delimiter = T.replicate (maxBackticks value + 1) "`"
+    padding = if T.null value || T.isPrefixOf "`" value || T.isSuffixOf "`" value || T.isPrefixOf " " value || T.isSuffixOf " " value then " " else ""
+
+fencedBlock :: T.Text -> T.Text -> T.Text
+fencedBlock language value = delimiter <> language <> "\n" <> value <> (if T.isSuffixOf "\n" value then "" else "\n") <> delimiter
+  where
+    delimiter = T.replicate (max 3 (maxBackticks value + 1)) "`"
+
+maxBackticks :: T.Text -> Int
+maxBackticks value = maximum (0 : [T.length run | run <- T.group value, T.isPrefixOf "`" run])
 
 conceptIdTextFor :: DocKind -> T.Text -> T.Text
 conceptIdTextFor kind name = kindDir kind <> "/" <> name
@@ -829,23 +904,38 @@ typeFor DocRegistryKind = "SeihouRegistry"
 
 renderJudgementCheck :: J.JudgementCheck -> [T.Text]
 renderJudgementCheck c =
-  [ "- **" <> c ^. #name <> "** (" <> J.renderEnforcement (c ^. #enforcement) <> "): " <> c ^. #question,
-    "  Concern when the answer is "
-      <> J.renderAnswer (c ^. #concernWhen)
-      <> ". Review passes at "
-      <> J.renderProbability (c ^. #review . #passAt)
-      <> " and blocks at "
-      <> J.renderProbability (c ^. #review . #blockAt)
-      <> " (model-reported probability of the concern); findings block from "
-      <> J.renderSeverity (c ^. #blockingSeverity)
-      <> " severity."
+  [ "### " <> c ^. #name,
+    inlineCode (c ^. #question),
+    "Enforcement: " <> J.renderEnforcement (c ^. #enforcement) <> ". Concern when the answer is " <> J.renderAnswer (c ^. #concernWhen) <> ".",
+    "Review: " <> renderThresholds (c ^. #review) <> "; findings block from " <> J.renderSeverity (c ^. #blockingSeverity) <> " severity.",
+    "Gate: useGate = " <> (if c ^. #useGate then "true" else "false (disabled)") <> "; " <> renderThresholds (c ^. #gate) <> "."
   ]
-    <> ["  Categories: " <> T.intercalate ", " [cat ^. #name <> " (" <> J.renderSeverity (cat ^. #severity) <> ")" | cat <- c ^. #categories] <> "." | not (null (c ^. #categories))]
+    <> foldMap (\meaning -> ["Yes means: " <> inlineCode meaning]) (c ^. #yesMeans)
+    <> foldMap (\meaning -> ["No means: " <> inlineCode meaning]) (c ^. #noMeans)
+    <> ["- Category " <> inlineCode (cat ^. #name) <> ": " <> J.renderSeverity (cat ^. #severity) <> foldMap (\description -> " — " <> inlineCode description) (cat ^. #description) | cat <- c ^. #categories]
+    <> [""]
+
+renderThresholds :: J.Thresholds -> T.Text
+renderThresholds thresholds = "passAt = " <> J.renderProbability (thresholds ^. #passAt) <> ", blockAt = " <> J.renderProbability (thresholds ^. #blockAt)
+
+renderCoverageLimits :: J.CoverageLimits -> T.Text
+renderCoverageLimits limits =
+  T.unlines
+    [ "- " <> field <> ": " <> T.pack (show value)
+    | (field, value) <-
+        [ ("maxFileBytes", limits ^. #maxFileBytes),
+          ("maxChunkBytes", limits ^. #maxChunkBytes),
+          ("maxChunks", limits ^. #maxChunks),
+          ("maxAttempts", limits ^. #maxAttempts),
+          ("timeoutSeconds", limits ^. #timeoutSeconds),
+          ("maxFindings", limits ^. #maxFindings)
+        ]
+    ]
 
 listOrAll :: [T.Text] -> T.Text
 listOrAll [] = "every path"
-listOrAll xs = T.intercalate ", " xs
+listOrAll xs = T.intercalate ", " (inlineCode <$> xs)
 
 listOrNone :: [T.Text] -> T.Text
 listOrNone [] = "none"
-listOrNone xs = T.intercalate ", " xs
+listOrNone xs = T.intercalate ", " (inlineCode <$> xs)

@@ -10,6 +10,7 @@ import Okf.Document (OKFDocument (..), emptyFrontmatter, serializeDocument)
 import Options.Applicative
 import Options.Applicative.Help.Pretty (pretty, vsep)
 import Seihou.OKF.Extension.Docs (DocsOpts (..), handleDocs)
+import Seihou.OKF.Extension.Version (extensionVersion)
 
 data Command
   = Docs DocsOpts
@@ -28,7 +29,7 @@ runExtensionMain = do
 opts :: ParserInfo Command
 opts =
   info
-    (commandParser <**> helper)
+    (commandParser <**> helper <**> infoOption ("seihou-okf-extension " <> T.unpack extensionVersion) (long "version" <> help "Show extension version"))
     ( fullDesc
         <> progDesc "Generate OKF documentation bundles for Seihou registries"
         <> header "seihou-okf-extension - OKF documentation extension for Seihou"
@@ -42,15 +43,16 @@ commandParser =
 docsInfo :: ParserInfo Command
 docsInfo =
   info
-    (Docs <$> docsParser <**> helper)
+    (Docs <$> docsParser)
     ( fullDesc
         <> progDesc "Generate OKF docs for a Seihou registry"
         <> footerDoc
           ( Just $
               vsep
                 [ pretty ("Reads seihou-registry.dhall, loads each listed artifact, validates the OKF bundle," :: String),
-                  pretty ("and writes one Markdown concept document per registry entry." :: String),
-                  pretty ("Smoke value length: " <> show (T.length okfSmoke) :: String)
+                  pretty ("and writes one concept per module, recipe, blueprint, prompt and judgement, plus the registry overview." :: String),
+                  pretty ("From a fresh checkout: seihou-okf-extension docs. Regenerate: add --force." :: String),
+                  pretty ("No dependency installation or command execution is needed. Invalid input preserves existing output." :: String)
                 ]
           )
     )

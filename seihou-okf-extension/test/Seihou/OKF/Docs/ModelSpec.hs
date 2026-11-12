@@ -1,8 +1,9 @@
-module Seihou.OKF.Docs.ModelSpec (tests) where
+module Seihou.OKF.Docs.ModelSpec (tests, writeCurrentFixtureRegistry) where
 
 import Control.Lens ((^.))
 import Data.Generics.Labels ()
 import Data.List (find)
+import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -20,7 +21,7 @@ tests = testSpec "Seihou.OKF.Docs.Model" spec
 spec :: Spec
 spec = do
   describe "loadDocModel" $ do
-    it "loads all four registry entry kinds from a fixture registry" $ do
+    it "loads all five registry entry kinds from a fixture registry" $ do
       withFixtureRegistry $ \registryDir -> do
         model <- shouldLoad registryDir
         (model ^. #repoName) `shouldBe` "fixture-registry"
@@ -43,21 +44,21 @@ spec = do
       withFixtureRegistry $ \registryDir -> do
         model <- shouldLoad registryDir
         let entry = requireEntry "app" model
-        (entry ^. #moduleRefs) `shouldContain` [ModuleRef "base" True]
+        (entry ^. #moduleRefs) `shouldContain` [ModuleRef "base" Nothing Map.empty True]
 
     it "marks module dependencies that do not resolve inside the registry" $ do
       withFixtureRegistry $ \registryDir -> do
         model <- shouldLoad registryDir
         let entry = requireEntry "dangling" model
-        (entry ^. #moduleRefs) `shouldBe` [ModuleRef "missing" False]
+        (entry ^. #moduleRefs) `shouldBe` [ModuleRef "missing" Nothing Map.empty False]
 
     it "captures recipe and blueprint module references" $ do
       withFixtureRegistry $ \registryDir -> do
         model <- shouldLoad registryDir
         let recipe = requireEntry "app-recipe" model
             blueprint = requireEntry "app-blueprint" model
-        (recipe ^. #moduleRefs) `shouldMatchList` [ModuleRef "base" True, ModuleRef "app" True]
-        (blueprint ^. #moduleRefs) `shouldBe` [ModuleRef "base" True]
+        (recipe ^. #moduleRefs) `shouldMatchList` [ModuleRef "base" Nothing Map.empty True, ModuleRef "app" Nothing Map.empty True]
+        (blueprint ^. #moduleRefs) `shouldBe` [ModuleRef "base" Nothing Map.empty True]
 
     it "retains an external base reference without fetching it or requiring installed members" $
       withFixtureRegistry $ \registryDir -> do
@@ -70,6 +71,20 @@ spec = do
             base ^. #resolved `shouldBe` False
             base ^. #reference . #source `shouldBe` Just "https://example.invalid/base.git"
             base ^. #reference . #recipe `shouldBe` "external"
+
+    it "retains source-qualified edges and judgement references without resolving local shadows" $
+      withSystemTempDirectory "seihou-current-model" $ \registryDir -> do
+        writeCurrentFixtureRegistry registryDir
+        model <- shouldLoad registryDir
+        let app = requireEntry "app" model
+            recipe = requireEntry "app-recipe" model
+            blueprint = requireEntry "app-blueprint" model
+        app ^. #moduleRefs `shouldBe` [ModuleRef "base" (Just "https://example.invalid/modules.git") (Map.singleton "literal" "a|`b`") False]
+        map (^. #resolved) (app ^. #judgementRefs) `shouldBe` [True, False, False]
+        map (^. #resolved) (recipe ^. #judgementRefs) `shouldBe` [True, False, False]
+        map (^. #resolved) (recipe ^. #moduleRefs) `shouldBe` [True, False]
+        map (^. #resolved) (blueprint ^. #moduleRefs) `shouldBe` [False]
+        fmap (^. #resolved) (recipe ^. #baseRecipe) `shouldBe` Just False
 
     it "resolves an entailed edge naming a blueprint in the same registry" $ do
       withFixtureRegistry $ \registryDir -> do
@@ -366,3 +381,34 @@ judgementDhall =
   \   , checks = [ { name = \"stale-docs\", question = \"Does this change leave documented behaviour out of date?\", concernWhen = Answer.Yes, yesMeans = None Text, noMeans = None Text\n\
   \              , categories = [ { name = \"stale\", severity = Severity.Medium, description = None Text } ], enforcement = Enforcement.Enforced, blockingSeverity = Severity.High\n\
   \              , blockAt = 0.7, passAt = 0.3, gateBlockAt = 0.9, gatePassAt = 0.05, useGate = True } ] }\n"
+
+-- | Current declarations layered over the older standalone descriptors. None
+-- of the command strings should execute while loading or generating docs.
+writeCurrentFixtureRegistry :: FilePath -> IO ()
+writeCurrentFixtureRegistry registryDir = do
+  writeFixtureRegistry registryDir
+  overlay "modules/app/module.dhall" "let Op = < MoveFile : { src : Text, dest : Text } | MoveDir : { src : Text, dest : Text } | DeleteFile : { path : Text } | DeleteDir : { path : Text } | RemoveLine : { path : Text, line : Text } | RunCommand : { run : Text, workDir : Optional Text } >\nlet Action = < Apply : Text | Checkout : Text >\nin { dependencies = [ { module = \"base\", source = Some \"https://example.invalid/modules.git\", vars = [ {name=\"literal\",value=\"a|`b`\"} ] } ]\n, judgements = [ { name = \"docs-review\", source = None Text, when = Some \"IsSet project.name\" }, { name = \"docs-review\", source = Some \"https://example.invalid/reviews.git\", when = None Text }, { name = \"catalogue-review\", source = None Text, when = None Text } ]\n, steps = [ {strategy=\"template\",src=\"managed.tpl\",dest=\"managed\",when=None Text,patch=None Text,lifecycle=Some \"managed\"}, {strategy=\"template\",src=\"seed.tpl\",dest=\"seed\",when=None Text,patch=None Text,lifecycle=Some \"seed\"}, {strategy=\"symlink\",src=\"files\",dest=\"linked\",when=None Text,patch=None Text,lifecycle=Some \"checkout\"} ]\n, commands = [ {action=Action.Checkout \"touch SHOULD-NOT-EXIST\",workDir=None Text,when=None Text} ]\n, migrations = [ {from=\"1\",to=\"2\",ops=[Op.RemoveLine {path=\".gitignore\",line=\"exact|`literal`\"}]} ]\n}"
+  overlay "recipes/app-recipe/recipe.dhall" "{ modules = [ { module = \"base\", source = None Text, vars = [] : List {name : Text,value : Text} }, { module = \"base\", source = Some \"https://example.invalid/modules.git\", vars = [] : List {name : Text,value : Text} } ]\n, extends = Some { recipe = \"app-recipe\", source = Some \"https://example.invalid/recipes.git\", versionRange = Some {minimum=\"1\",before=\"2\"} }\n, moduleOverrides = [ { module = \"inherited\", vars = [ {name=\"literal\",value=\"a|`b`\"} ] } ]\n, promptOverrides = [ {var=\"inherited\",text=\"First line\\n```text\\nsecond | line\",when=None Text,choices=None (List Text)} ]\n, judgements = [ { name = \"docs-review\", source = None Text, when = Some \"IsSet project.name\" }, { name = \"docs-review\", source = Some \"https://example.invalid/reviews.git\", when = None Text }, { name = \"catalogue-review\", source = None Text, when = None Text } ] }"
+  overlay "blueprints/app-blueprint/blueprint.dhall" "{ baseModules = [ { module = \"base\", source = Some \"https://example.invalid/modules.git\", vars = [] : List {name : Text,value : Text} } ], allowedTools=Some ([] : List Text), prompt=\"First line\\n```text\\nsecond | line\",versionProbe=Some \"touch SHOULD-NOT-EXIST\\n```\",launch=Some {provider=Some \"test\",model=Some \"model\",effort=Some \"high\",mode=Some \"reserved\"} }"
+  let judgementPath = registryDir </> "judgements/docs-review/judgement.dhall"
+  judgement <- TIO.readFile judgementPath
+  TIO.writeFile
+    judgementPath
+    ( T.replace
+        "yesMeans = None Text"
+        "yesMeans = Some \"Documentation is stale\""
+        ( T.replace
+            "noMeans = None Text"
+            "noMeans = Some \"Documentation matches\""
+            ( T.replace
+                "description = None Text"
+                "description = Some \"Category explanation\""
+                (T.replace "useGate = True" "useGate = False" judgement)
+            )
+        )
+    )
+  where
+    overlay relative fields = do
+      let path = registryDir </> relative
+      old <- TIO.readFile path
+      TIO.writeFile path ("(" <> old <> ") // (" <> fields <> ")")

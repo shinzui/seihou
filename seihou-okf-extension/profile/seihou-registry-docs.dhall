@@ -26,6 +26,7 @@ let FieldFormat =
       | Integer
       | NonNegativeInteger
       | Boolean
+      | FiniteDecimal
       >
 
 let FieldCondition = { field : Text, hasValue : List Text }
@@ -51,8 +52,26 @@ let NestedFieldRule =
       , reference : Optional HandleReferenceRule
       }
 
+let ValueSelector = { field : Text, member : Optional Text }
+
+let PresenceConstraint =
+      { when : Optional FieldCondition
+      , whenAnyPresent : List ValueSelector
+      , requireAll : List ValueSelector
+      , requireAny : List ValueSelector
+      }
+
+let TimestampOrderConstraint = { before : Text, after : Text }
+
+let MembershipConstraint = { source : ValueSelector, target : ValueSelector }
+
+let UniqueValuesConstraint = { selectors : List ValueSelector }
+
 let NestedRules =
-      { required : List NestedFieldRule
+      { allowUnknownFields : Bool
+      , presenceConstraints : List PresenceConstraint
+      , timestampOrderConstraints : List TimestampOrderConstraint
+      , required : List NestedFieldRule
       , recommended : List NestedFieldRule
       , optional : List NestedFieldRule
       }
@@ -72,13 +91,18 @@ let FieldRule =
       }
 
 let FrontmatterRules =
-      { required : List FieldRule
+      { presenceConstraints : List PresenceConstraint
+      , timestampOrderConstraints : List TimestampOrderConstraint
+      , membershipConstraints : List MembershipConstraint
+      , uniqueValuesConstraints : List UniqueValuesConstraint
+      , required : List FieldRule
       , recommended : List FieldRule
       , optional : List FieldRule
       }
 
 let TypeRule =
-      { type : Text
+      { guidance : Optional Text
+      , type : Text
       , description : Optional Text
       , frontmatter : FrontmatterRules
       , pathPattern : Optional Text
@@ -90,9 +114,23 @@ let TypeRule =
 
 let emptyRules
     : FrontmatterRules
-    = { required = [] : List FieldRule
+    = { presenceConstraints = [] : List PresenceConstraint
+      , timestampOrderConstraints = [] : List TimestampOrderConstraint
+      , membershipConstraints = [] : List MembershipConstraint
+      , uniqueValuesConstraints = [] : List UniqueValuesConstraint
+      , required = [] : List FieldRule
       , recommended = [] : List FieldRule
       , optional = [] : List FieldRule
+      }
+
+let emptyNestedRules
+    : NestedRules
+    = { allowUnknownFields = True
+      , presenceConstraints = [] : List PresenceConstraint
+      , timestampOrderConstraints = [] : List TimestampOrderConstraint
+      , required = [] : List NestedFieldRule
+      , recommended = [] : List NestedFieldRule
+      , optional = [] : List NestedFieldRule
       }
 
 let nestedScalar =
@@ -141,7 +179,8 @@ let artifactType =
       \(name : Text) ->
       \(description : Text) ->
       \(directory : Text) ->
-        { type = name
+        { guidance = None Text
+        , type = name
         , description = Some description
         , frontmatter = emptyRules // { optional = [ versionRule ] }
         , pathPattern = Some "${directory}/*"
@@ -151,9 +190,10 @@ let artifactType =
         , idPrefix = None Text
         }
 
-in  { name = "seihou-registry-docs"
+in  { guidance = None Text
+    , name = "seihou-registry-docs"
     , description = Some
-        "Generated documentation for a Seihou registry: one concept per published module, recipe, blueprint and agent prompt, plus one describing the registry itself. Every concept names the registry artifact it was derived from through a `seihou://` resource and records the generator that produced it, so a reader can tell derived documentation from hand-written prose and can find the `.dhall` source it came from."
+        "Generated documentation for a Seihou registry: one concept per published module, recipe, blueprint, agent prompt and judgement, plus one describing the registry itself. Every concept names the registry artifact it was derived from through a `seihou://` resource and records the generator that produced it, so a reader can tell derived documentation from hand-written prose and can find the `.dhall` source it came from."
     , okfVersion = "0.2"
     , frontmatter =
             emptyRules
@@ -175,7 +215,7 @@ in  { name = "seihou-registry-docs"
                   Cardinality.Any
                   (None FieldFormat)
                   ( Some
-                      (     emptyRules
+                      (     emptyNestedRules
                         //  { required =
                               [     nestedScalar
                                       "by"
@@ -192,16 +232,15 @@ in  { name = "seihou-registry-docs"
                       )
                   )
               ]
-            , recommended =
+            , recommended = [] : List FieldRule
+            , optional =
               [ field
                   "tags"
-                  "The tags the registry catalog records for this artifact."
+                  "Catalog tags, when nonempty. An empty tag list is a valid registry declaration; generation never invents tags to satisfy the profile."
                   Cardinality.List
                   (None FieldFormat)
                   (None NestedRules)
-              ]
-            , optional =
-              [ field
+              , field
                   "status"
                   "The concept's lifecycle status, per OKF specification section 5.4."
                   Cardinality.Scalar
@@ -216,11 +255,11 @@ in  { name = "seihou-registry-docs"
     , types =
       [ artifactType
           "SeihouModule"
-          "A deterministic file-generation template: variables, generation steps, shell commands, dependencies, an optional removal procedure and optional migration edges."
+          "A deterministic file-generation template: variables, generation steps, shell commands, dependencies, managed/seed/checkout ownership, an optional removal procedure, judgement references and optional migration edges."
           "modules"
       , artifactType
           "SeihouRecipe"
-          "A named composition of modules with preset variable bindings."
+          "A declared composition of modules with sourced dependencies, preset variable bindings, an optional single base and explicit overrides."
           "recipes"
       , artifactType
           "SeihouBlueprint"

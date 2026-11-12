@@ -6,8 +6,8 @@
 ## Context
 
 `seihou-okf-extension docs` turns a registry repository into an OKF documentation
-bundle: one Markdown concept per published module, recipe, blueprint and agent
-prompt, plus one describing the registry itself. The output is *derived*. Nobody
+bundle: one Markdown concept per published module, recipe, blueprint, agent
+prompt and judgement, plus one describing the registry itself. The output is *derived*. Nobody
 edits it; it is regenerated whenever the registry changes, and it is checked into
 the registry repository so that a reader can browse it without running anything.
 
@@ -60,8 +60,9 @@ Concretely, in `seihou-okf-extension`:
   process. It is also written to `<out>/profile.dhall`, so a consumer can re-run
   the identical check with `okf validate --profile <bundle>/profile.dhall
   --profile-enforce`.
-- Both checks run **before** the output directory is prepared. A failing run
-  leaves whatever was already there untouched, rather than clearing it and then
+- Both checks run **before** the output directory is prepared. Validation, profile copying and index writing complete in a temporary sibling
+  directory before replacement, including when `--profile` names a file inside
+  the old output tree. A failing check leaves whatever was already there untouched, rather than clearing it and then
   refusing to write a replacement.
 
 **And: nothing in the generator reads the clock.** A generation date enters the
@@ -72,6 +73,16 @@ unchanged registry produce byte-identical bytes.
 The same rule extends to every other source of incidental ordering. A `Map` is
 walked in key order before rendering, never in whatever order it happens to hold.
 Two runs that differ is a defect, not a quirk.
+
+Documentation reads declarations without acquiring dependencies, expanding remote recipe
+bases or executing commands, probes, command variables or judgement reviews. Local links
+require a published target of the correct kind with no explicit source. A source-qualified
+reference sharing a local name stays labelled text: name equality cannot prove origin.
+Authored judgement defaults are distinct from a consumer's recorded policy and local routes.
+The declaration inventory in `docs/user/registry-documentation.md` records the coverage
+contract; new fields and constructors must update the model, rendering and that inventory.
+Literal values choose their delimiters from their contents so embedded fences and backticks
+cannot change their meaning.
 
 ## Consequences
 
@@ -96,7 +107,9 @@ A profile can only demand what the input can supply. The descriptor marks
 `version` **optional** rather than required, because `seihou-registry.dhall`
 itself declares `version : Optional Text`; a profile that required it would
 refuse a registry that is valid by its own schema. When a house convention and
-the input schema disagree, the input schema wins.
+the input schema disagree, the input schema wins. Catalog tags follow the same rule:
+empty lists are valid and remain empty, so the profile marks `tags` optional instead of
+inventing tags or refusing an untagged artifact. Strict OKF validation remains enabled.
 
 Because `--generated-at` is the only way a date enters the bundle, a bundle that
 uses it earns one `log:` advisory per concept from `okf validate` — a generation

@@ -27,7 +27,7 @@
       # Bundle the CLI together with the OKF extension so a single installed
       # package exposes both `seihou` and `seihou-okf-extension` on PATH. The
       # CLI discovers extensions via `findExecutable "seihou-<name>-extension"`
-      # (see Seihou.CLI.Extension), so `seihou docs` / `seihou extension run okf`
+      # (see Seihou.CLI.Extension), so `seihou extension run okf -- docs`
       # only work when the extension binary is on PATH alongside the CLI.
       seihou-bundle = pkgs.symlinkJoin {
         name = "seihou";
