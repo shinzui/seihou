@@ -52,7 +52,7 @@ PROVIDERS
   claude-cli
       Starts an interactive Claude Code session. Requires the
       `claude` binary on PATH and a working local login. With no
-      explicit model, Seihou passes its pinned default, `claude-opus-4-8`.
+      explicit model, Seihou passes its pinned default, `claude-opus-5-5`.
 
   codex-cli
       Starts an interactive Codex session. Requires the `codex`

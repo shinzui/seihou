@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- The pinned default model for the `claude-cli` agent provider is now `claude-opus-5-5` (was `claude-opus-4-8`). It applies to every `seihou agent` command (`assist`, `run`, `setup`, `migrate`, …) that has no model configured; set `agent.model` or `agent.<command>.model` to keep the old one. `seihou agent models` now lists Claude Opus 5.5.
+
 ## [0.16.0.0] - 2026-11-11
 
 ### Added

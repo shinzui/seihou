@@ -189,7 +189,7 @@ traceToText TraceStderr = "stderr"
 -- return 'Nothing' here; they already send an explicit model chosen in
 -- 'buildBaikaiModel', so they are deterministic without a pinned default.
 defaultModelForProvider :: AgentProvider -> Maybe Text
-defaultModelForProvider AgentProviderClaudeCli = Just "claude-opus-4-8"
+defaultModelForProvider AgentProviderClaudeCli = Just "claude-opus-5-5"
 defaultModelForProvider AgentProviderCodexCli = Just "gpt-5.6-terra"
 defaultModelForProvider AgentProviderAnthropic = Nothing
 defaultModelForProvider AgentProviderOpenAI = Nothing

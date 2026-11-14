@@ -25,6 +25,7 @@ availableAgentModels =
     Models.anthropic_claude_opus_4_6,
     Models.anthropic_claude_opus_4_7,
     Models.anthropic_claude_opus_4_8,
+    Models.anthropic_claude_opus_5_5,
     Models.anthropic_claude_sonnet_4_5,
     Models.anthropic_claude_sonnet_4_6,
     Models.anthropic_claude_sonnet_5,

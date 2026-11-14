@@ -14,10 +14,10 @@ import Test.Tasty.Hspec (testSpec)
 tests :: IO TestTree
 tests = testSpec "Seihou.CLI.AgentModels" $ do
   describe "availableAgentModels" $ do
-    it "contains 31 unique Anthropic and OpenAI model IDs" $ do
+    it "contains 32 unique Anthropic and OpenAI model IDs" $ do
       let ids = modelIds availableAgentModels
-      length ids `shouldBe` 31
-      Set.size (Set.fromList ids) `shouldBe` 31
+      length ids `shouldBe` 32
+      Set.size (Set.fromList ids) `shouldBe` 32
       Set.fromList (map BaikaiModel.provider availableAgentModels)
         `shouldBe` Set.fromList ["anthropic", "openai"]
 
@@ -26,14 +26,14 @@ tests = testSpec "Seihou.CLI.AgentModels" $ do
         `shouldSatisfy` \ids ->
           all
             (`elem` ids)
-            ["claude-sonnet-5", "gpt-5.6", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]
+            ["claude-opus-5-5", "claude-sonnet-5", "gpt-5.6", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]
 
   describe "filterAgentModels" $ do
-    it "maps the Anthropic API and Claude CLI providers to the same 9 models" $ do
+    it "maps the Anthropic API and Claude CLI providers to the same 10 models" $ do
       let anthropicIds = filteredIds AgentProviderAnthropic
           claudeCliIds = filteredIds AgentProviderClaudeCli
       anthropicIds `shouldBe` claudeCliIds
-      length anthropicIds `shouldBe` 9
+      length anthropicIds `shouldBe` 10
 
     it "maps the OpenAI API and Codex CLI providers to the same 22 models" $ do
       let openAIIds = filteredIds AgentProviderOpenAI
@@ -49,12 +49,12 @@ tests = testSpec "Seihou.CLI.AgentModels" $ do
       output `shouldSatisfy` Text.isInfixOf "anthropic, claude-cli"
       output `shouldSatisfy` Text.isInfixOf "GPT-5.6 Terra"
       output `shouldSatisfy` Text.isInfixOf "openai, codex-cli"
-      output `shouldSatisfy` Text.isInfixOf "31 models found."
+      output `shouldSatisfy` Text.isInfixOf "32 models found."
       output `shouldSatisfy` Text.isInfixOf "aliases and custom model IDs remain accepted"
 
     it "reports the filtered model count" $ do
       formatAgentModels (Just AgentProviderAnthropic) availableAgentModels
-        `shouldSatisfy` Text.isInfixOf "9 models found."
+        `shouldSatisfy` Text.isInfixOf "10 models found."
       formatAgentModels (Just AgentProviderCodexCli) availableAgentModels
         `shouldSatisfy` Text.isInfixOf "22 models found."
 

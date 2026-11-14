@@ -113,7 +113,7 @@ precedenceLegend =
       "  7. global ~/.config/seihou/config.dhall  agent.<command>.{provider,model,effort,trace}",
       "  8. global ~/.config/seihou/config.dhall  agent.{provider,model,effort,trace}",
       "  9. built-in default: provider claude-cli; model pinned per provider",
-      "     (claude-cli -> claude-opus-4-8, codex-cli -> gpt-5.6-terra); effort unset",
+      "     (claude-cli -> claude-opus-5-5, codex-cli -> gpt-5.6-terra); effort unset",
       "     (the CLI/provider chooses its own reasoning effort); trace off",
       "",
       "Tier 4 is per-artifact: it depends on which blueprint or prompt you run, so",

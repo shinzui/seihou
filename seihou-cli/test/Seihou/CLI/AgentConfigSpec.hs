@@ -48,7 +48,7 @@ spec = do
 
     it "pins the deterministic claude-cli default model when nothing is set" $
       resolveAgentModelConfig baseInputs
-        `shouldBe` Right (cfg AgentProviderClaudeCli (Just "claude-opus-4-8"))
+        `shouldBe` Right (cfg AgentProviderClaudeCli (Just "claude-opus-5-5"))
 
     it "pins the deterministic codex-cli default model when only the provider is set" $
       resolveAgentModelConfig (baseInputs & #cliProvider ?~ "codex-cli")
@@ -119,12 +119,12 @@ spec = do
 
     it "falls back to the pinned CLI default model with built-in provenance" $ do
       providerOf AgentCmdRun baseInputs `shouldBe` Right (AgentProviderClaudeCli, SourceBuiltinDefault)
-      modelOf AgentCmdRun baseInputs `shouldBe` Right (Just "claude-opus-4-8", SourceBuiltinDefault)
+      modelOf AgentCmdRun baseInputs `shouldBe` Right (Just "claude-opus-5-5", SourceBuiltinDefault)
 
     it "keeps claude-cli and codex-cli deterministic: model is never Nothing" $ do
       -- With nothing configured, every command resolves to a concrete model for
       -- both local CLI providers, so seihou always passes an explicit --model.
-      modelOf AgentCmdAssist baseInputs `shouldBe` Right (Just "claude-opus-4-8", SourceBuiltinDefault)
+      modelOf AgentCmdAssist baseInputs `shouldBe` Right (Just "claude-opus-5-5", SourceBuiltinDefault)
       modelOf
         AgentCmdAssist
         ( baseInputs
@@ -450,7 +450,7 @@ spec = do
       let pending = PendingAgentConfig AgentCmdPromptRun baseInputs
       fmap formatResolvedAgentProvenance (resolvePendingAgentConfig pending noAgentLaunchDeclaration)
         `shouldBe` Right
-          "provider claude-cli [built-in default], model claude-opus-4-8 [built-in default], effort <unset> [built-in default], trace off [built-in default]"
+          "provider claude-cli [built-in default], model claude-opus-5-5 [built-in default], effort <unset> [built-in default], trace off [built-in default]"
 
   describe "resolvePendingAgentConfig" $ do
     it "projects down to the config the launch layer consumes" $ do
