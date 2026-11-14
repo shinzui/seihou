@@ -1,5 +1,10 @@
 # Bundle Update Log
 
+## 2026-11-14
+
+* **Addition**: IR-20 proposes telling off-plan refusals from missing tools in a batch blueprint run, so a run that finished its work despite refused calls the blueprint never asked for (wrapped commands, `find /`, calls added by the user's own hooks) can be reported as completed with refusals; it refines IR-18 and ADR 0026. Raised from mori://tan/tan-seihou-modules/okf/friction-log/concepts/FRIC-6.
+* **Addition**: IR-21 proposes an auditable tool-call record of a batch blueprint run, because Baikai launches Claude with --no-session-persistence and the trace sink records only call timing. Raised from mori://tan/tan-seihou-modules/okf/friction-log/concepts/FRIC-5.
+
 ## 2026-11-11
 
 * **Completed**: IR-18: ExecPlan 122 makes a batch seihou agent run on claude-cli exit 1 when Claude reports any refused tool call, naming each tool with its command or file path and recording no applied blueprint; every refusal counts, including .git/ and shell-redirection guards and the user's own hooks. A Claude Code 2.1.322 probe confirmed those refusals appear in permission_denials, which Baikai drops. seihou validate-blueprint warns, without failing, about a blueprint without allowedTools. ADR 0026 records the rule. The early stop and Codex batch runs are out of scope; unreleased.

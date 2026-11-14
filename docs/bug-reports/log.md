@@ -1,5 +1,9 @@
 # Bundle Update Log
 
+## 2026-11-14
+
+* **Addition**: BUG-4 reports that a blueprint baseline applies its modules' files but silently skips their Apply commands, which seihou run of the same module runs; observed in 0.16.0.0 from mori://tan/tan-seihou-modules (FRIC-4 there).
+
 ## 2026-11-11
 * **Update**: Audit: BUG-1 fixedVersion unreleased -> 0.10.0.0. Fix commits 8671930, d291e41 and ae31c38 (mori://shinzui/seihou/masterplans/11-make-manifest-evolution-explicit-and-targeted-updates-upgrade-safe) are first contained in tag v0.10.0.0, whose changelog lists the BUG-1 fix. Status fixed unchanged.
 * **Update**: Audit: BUG-2 status reported -> fixed, fixedVersion 0.12.0.0. Implementation plan docs/plans/113-declare-and-install-cross-registry-recipe-dependencies.md (commit 8ea17ac, first tag v0.12.0.0, 0.12.0.0 changelog) installs the required dependency closure; the original github-repo/repo-dir reproduction was rerun in isolated XDG directories against installed 0.15.0.0 and installed repo-dir as required, and seihou run --dry-run exited 0.
