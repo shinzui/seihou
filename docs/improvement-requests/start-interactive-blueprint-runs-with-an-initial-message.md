@@ -7,9 +7,15 @@ description: >-
 generated:
   by: process:codex-cli/gpt-6.1-sol
   at: "2026-11-15T16:10:53Z"
-timestamp: 2026-11-15T19:05:00Z
+timestamp: 2026-11-15T21:45:24Z
 requestId: IR-22
-status: in-progress
+status: completed
+completedAt: "2026-11-15T21:45:24Z"
+resolution: >-
+  Released in 0.16.0.1 and installed through Home Manager. Both interactive CLI
+  boundaries use the shared initial-instruction resolver; terminal regressions,
+  raw prompt provenance, debug/help, and a real installed Claude first-turn and
+  follow-up check pass. Explicit text and API behavior are preserved.
 targetPlan: docs/plans/126-start-interactive-blueprint-runs-with-an-initial-message.md
 origin: mori://tan/tan-seihou-modules
 reviews:
@@ -32,9 +38,9 @@ reviews:
 
 ## Status
 
-In progress through [ExecPlan 126](../plans/126-start-interactive-blueprint-runs-with-an-initial-message.md). Raised from
+Completed through [ExecPlan 126](../plans/126-start-interactive-blueprint-runs-with-an-initial-message.md). Raised from
 `mori://tan/tan-seihou-modules/okf/friction-log/concepts/FRIC-15`.
-This is fresh consumer evidence for the interactive-launch work remaining in
+This supplied consumer evidence for the shared interactive-launch work in
 [IR-6](supply-an-initial-instruction-to-cli-providers.md) and
 [ExecPlan 106](../plans/106-supply-default-initial-instructions-to-cli-agent-providers.md).
 Coordinate delivery through that work rather than introducing a separate prompt policy.
@@ -63,7 +69,7 @@ The friction entry does not record an executable version.
 Before plan 126, `seihou-cli/src-exe/Seihou/CLI/AgentLaunchExec.hs` constructed both Claude and Codex
 interactive launch requests with `interactiveLaunchRequest (promptOrEmpty initialPrompt)`.
 Its `promptOrEmpty = maybe "" id` supplied empty text when the argument is omitted.
-This matches the remaining interactive-launch gap documented in IR-6. The Claude behavior
+This matched the pre-fix interactive-launch gap documented in IR-6. The Claude behavior
 above was observed directly; this report does not claim a reproduced Codex session.
 
 ## Requested outcome
@@ -98,6 +104,12 @@ Plan 126 implements the shared interactive resolver and blueprint launch/debug/h
 in source. Terminal fake-provider tests cover Claude and Codex; both failed with
 the original launcher. Real Claude Code 2.1.325 automatically produced
 `INITIAL-TURN-STARTED` without a kickoff and answered `FOLLOW-UP-RECEIVED` in the
-same session, using the Cabal-built Seihou executable. A release and installed
-consumer verification remain pending; this request stays in progress. IR-6 retains
-its broader acceptance obligations.
+same session, using the Cabal-built Seihou executable. The same check passed
+with the installed `/Users/shinzui/.nix-profile/bin/seihou`, reporting
+`seihou v0.16.0.1 (4540d20)`, after Home Manager activation. The default launch
+line appeared, no kickoff was entered, follow-up interaction remained available,
+and the manifest retained raw prompt omission. All three packages and their
+documentation are published on Hackage, and
+[release 0.16.0.1](https://github.com/shinzui/seihou/releases/tag/v0.16.0.1)
+identifies the verified artifact. The installed help/docs audit also passes.
+IR-6 retains its broader acceptance obligations.

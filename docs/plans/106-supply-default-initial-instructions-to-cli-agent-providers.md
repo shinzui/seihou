@@ -16,6 +16,11 @@ provenance:
       at: 2026-11-15T19:04:25Z
       mode: "implement"
       note: "Coordinate shared interactive kickoff evidence from plan 126; retain broader pending acceptance."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-11-15T21:43:39Z
+      mode: "implement"
+      note: "Record released and installed delivery of the shared kickoff policy through plan 126."
 ---
 
 # Supply default initial instructions to CLI agent providers
@@ -44,7 +49,7 @@ the effective initial instruction so the user can inspect the fallback before ex
 ## Progress
 
 
-- [ ] Milestone 1: define the shared CLI initial-prompt policy and apply it to batch completion requests, with context-capture tests for all four providers.
+- [x] Milestone 1 (2026-11-15): the shared completion resolver shipped through plan 111; plan 126 adds passing context-capture tests for all four providers and preserves raw requests.
 - [ ] Milestone 2: apply the same policy to interactive launch and migration preview, with real-binary fake-provider proofs for Claude and Codex.
 - [ ] Milestone 3: prove migration-chain, explicit-prompt, batch, debug, and manifest-provenance behavior end to end.
 - [ ] Milestone 4: document the behavior, distill the launch-policy decision into an ADR, run final gates, and complete IR-6 with evidence.
@@ -57,8 +62,11 @@ then passed; a real Claude Code 2.1.325 session automatically answered
 `INITIAL-TURN-STARTED` and then `FOLLOW-UP-RECEIVED` in the same session.
 The common launcher also covers assist/setup/bootstrap; their separate debug
 branches and this plan's broader migration-chain acceptance remain unverified.
-Do not close IR-6 from the narrower blueprint evidence. Published and installed
-delivery of plan 126 remains pending.
+Do not close IR-6 from the narrower blueprint evidence. Plan 126 is released
+and installed as 0.16.0.1 (`4540d20`), with the installed prompt-free terminal
+startup/follow-up and raw manifest omission verified. ADR 0019 and documentation
+now record the shared launch policy. Broader migration-chain and other-command
+checks remain open.
 
 
 ## Surprises & Discoveries

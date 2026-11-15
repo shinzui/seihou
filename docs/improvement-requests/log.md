@@ -2,6 +2,9 @@
 
 ## 2026-11-15
 
+* **Update**: Complete IR-22 through plan 126: 0.16.0.1 published on Hackage/GitHub and installed through Home Manager; real installed Claude starts without a kickoff, answers a follow-up, and preserves omitted prompt provenance. IR-6 remains in progress for its broader migration-chain and other-command checks; shared completion and interactive boundaries are delivered.
+
+
 * **Update**: IR-22 is in-progress with targetPlan docs/plans/126-start-interactive-blueprint-runs-with-an-initial-message.md: shared interactive kickoff implemented in source, original terminal regressions fail for both providers, and real Claude startup/follow-up verified. Release and installed consumer delivery remain pending; IR-6 stays open.
 
 * **Addition**: IR-22 proposes starting interactive blueprint runs with a default initial message instead of silently waiting at an empty input box. Raised from mori://tan/tan-seihou-modules/okf/friction-log/concepts/FRIC-15; linked to the remaining interactive-launch work in IR-6 and ExecPlan 106.

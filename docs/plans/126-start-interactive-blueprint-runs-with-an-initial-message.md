@@ -76,38 +76,20 @@ not close delivery to the consumer.
 
 - [x] Milestone 1 (2026-11-15): The ordinary terminal command delivers the shared initial instruction to both interactive CLI providers, with a regression that fails against the original launcher and an early real-Claude first-turn/follow-up check.
 - [x] Milestone 2 (2026-11-15): Blank and explicit inputs, debug rendering, launch guidance, and raw manifest provenance agree; batch, API, and migration behavior remain compatible.
-- [ ] Milestone 3: Built-binary checks and a real Claude smoke check demonstrate automatic startup; documentation, plan 106 coordination, and consumer delivery evidence accurately state what is available.
+- [x] Milestone 3 (2026-11-15; released and installed 0.16.0.1, real Claude startup/follow-up verified): Built-binary checks and a real Claude smoke check demonstrate automatic startup; documentation, plan 106 coordination, and consumer delivery evidence accurately state what is available.
 
 
-Implementation handoff (2026-11-15): The shared launcher, blueprint guidance,
-debug rendering, help, docs, ADR 0019, and IR-22 coordination are implemented.
-The focused migration/blueprint group passes 39 tests, including all eight
-terminal input classes with required `--var service.name=demo`, repeat runs,
-raw manifest parsing, debug output, and failed-provider preservation. Final
-full-suite validation passed in `nix develop` (1,788 core, 1,020 CLI, and 59 OKF
-extension tests); the plain shell lacks gitleaks.
-Delivery continuation (2026-11-15): the user requested completion of the plan,
-including its remaining release and installation work. A 0.16.0.1 patch candidate
-is prepared for all three packages, with updated internal bounds and both
-changelogs. Release audit corrected stale Claude default-model docs and moved
-the kickoff entry out of the previous release's user-changelog section.
-The candidate passes `cabal check` for all packages, the native Nix package
-build with tests, Cabal build, formatting, and flake checks. The release's full
-Cabal suite passes all 2,867 tests, and the final help audit passes against
-`seihou v0.16.0.1 (122c9e8)` (19 topics, 37 command pages, 6 examples,
-8 provider-free renders). Haddock preparation is complete for all packages;
-CLI and OKF extension documentation archives were repacked through
-`just docs-tarball`. Flat module pages, documentation indexes, and absence of
-colon filenames were verified. Source archives are in
-`/tmp/seihou-126-release-sdist/`; core documentation is
-`dist-newstyle/seihou-core-0.16.0.1-docs.tar.gz`, and dependent documentation
-archives are in `dist-newstyle/repacked-docs/`. The reviewable release diff is
-`/tmp/seihou-126-release-candidate.diff` and release notes are
-`/tmp/seihou-126-release-notes.md`.
-The user approved the 0.16.0.1 release and activation of the current Home Manager
-working configuration on 2026-11-15. Release publication and installed acceptance
-are now proceeding through the release skill. Preserve all pre-existing dotfiles
-changes and update only the Seihou input for this delivery.
+Delivery complete (2026-11-15): all three packages and documentation are published
+on Hackage at 0.16.0.1. The annotated tag and
+[GitHub release](https://github.com/shinzui/seihou/releases/tag/v0.16.0.1)
+identify release commit `4540d20ca8cba6399ace34295002ea9ae0d02f94`.
+The clean native package build passed before tagging; building the published tag
+returned the same package output. The normal installed command
+`/Users/shinzui/.nix-profile/bin/seihou` reports `seihou v0.16.0.1 (4540d20)`.
+Its prompt-free terminal smoke check and subsequent follow-up both passed.
+The manifest retained the omitted user prompt. All 2,867 tests and the installed
+help/docs audit pass. Plan 106 records the shared acceptance without closing
+its broader obligations; IR-22 is completed and IR-6 remains in progress.
 
 
 ## Surprises & Discoveries
@@ -154,11 +136,48 @@ sessions answered `FOLLOW-UP-RECEIVED` and exited normally through `/exit`.
 The final run also printed the default-instruction launch line. No tool calls
 or consumer infrastructure changes were needed.
 
-The installed PATH executable still reports `seihou v0.16.0.0 (1965b35)` and
-has not received this change. Release, installation, and the installed-binary
-smoke remain required before Milestone 3 and IR-22 can close. IR-6 stays open
-for its broader migration/other-command obligations. ADR 0019 now records
-shared launch ownership and raw-input provenance; ADR 0026 is unchanged.
+Released and installed acceptance (2026-11-15): the user approved publication
+and Home Manager activation. Release 0.16.0.1 contains the kickoff fix and the
+previously pending Claude Opus 5.5 default. Both changelogs were cut, inherited
+model documentation was corrected, and the kickoff note was moved out of the
+previous release's user-changelog section. All package metadata checks and
+source/documentation uploads passed in dependency order. The CLI and OKF
+extension documentation tarballs were flattened and repacked through the
+release workflow.
+
+The published tag resolves to `4540d20ca8cba6399ace34295002ea9ae0d02f94`.
+
+```bash
+nix build --no-link --print-out-paths github:shinzui/seihou/v0.16.0.1
+```
+
+Both the clean-commit native build and the published-tag verification command
+returned
+`/nix/store/36s6msg1z0rssj3gb4ad0adf3syqm3x9-seihou` (build output identity only;
+no store sources were traversed). Home Manager activation installed that release
+through the existing managed profile. In `mori://shinzui/dotfiles.nix`, only the
+Seihou node of project-relative `flake.lock` changed; its artifact-level URI is
+pending. Pre-existing lock changes and all other working edits were preserved.
+No standalone Seihou profile entry was added.
+
+The actual PATH executable `/Users/shinzui/.nix-profile/bin/seihou` reports
+`seihou v0.16.0.1 (4540d20)`. With Claude Code 2.1.325, the Concrete Steps
+fixture, and a fresh Seihou cache, the ordinary command
+`seihou agent run kickoff-smoke --provider claude-cli --var service.name=demo`
+printed the default-instruction launch line and automatically received
+`INITIAL-TURN-STARTED`. Only then was `Reply FOLLOW-UP-RECEIVED` entered; Claude
+answered `FOLLOW-UP-RECEIVED` in the same session and `/exit` returned success.
+Authentication and fixture workspace trust were already prepared. The manifest
+contains the applied fixture but no userPrompt field, preserving raw omission.
+The installed executable also passed the full provider-free docs audit (19
+topics, 37 command pages, 6 examples, 8 renders). This closes the reported
+interactive-startup workflow without running production onboarding or changing
+consumer infrastructure. Existing blueprints need no adoption or migration.
+
+IR-22 is completed. IR-6 retains the broader migration-chain and other-command
+acceptance owned by plan 106. ADR 0019 records shared launch ownership and raw
+provenance; ADR 0026 remains unchanged. No new architectural decision was needed
+for packaging and installation.
 FRIC-19 is accepted because registry restoration is external to this fix;
 terminal fixtures verify the existing request interface without a dependency upgrade.
 FRIC-20 is resolved by using the development shell, which supplies gitleaks.
@@ -192,9 +211,10 @@ without the provider's interactive terminal interface.
 `runRenderedAgentPromptMode`. The handler selects batch mode when `--batch` is supplied
 or stdin is not a terminal. The interactive CLI branch calls
 `launchConfiguredAgentAddingDirs` from `seihou-cli/src-exe/Seihou/CLI/AgentLaunchExec.hs`.
-Both `launchClaude` and `launchCodex` there currently construct an
+At plan creation, both `launchClaude` and `launchCodex` there constructed an
 `interactiveLaunchRequest (promptOrEmpty initialPrompt)`, where `promptOrEmpty = maybe "" id`.
-This drops the kickoff message when the optional prompt is absent.
+This dropped the kickoff message when the optional prompt was absent; the
+implemented launcher now calls the shared resolver for each CLI provider.
 
 The same launcher is used by `seihou-cli/src-exe/Seihou/CLI/Assist.hs`,
 `seihou-cli/src-exe/Seihou/CLI/Setup.hs`, and
@@ -216,9 +236,10 @@ unchecked Progress no longer describes how much source work remains. Do not coun
 same implementation twice. The broader migration-chain and other-command acceptance
 in plan 106 remains there unless its evidence is actually gathered.
 
-`AgentRun.runRenderedAgentPromptMode` returns early in debug mode and currently prints
-only the system prompt, so changing the launcher's debug branch alone will not fix
-blueprint debug display. `AgentRun.appliedBlueprintFromOutcome` records
+At plan creation, `AgentRun.runRenderedAgentPromptMode` returned early in debug
+mode and printed only the system prompt. The implemented debug path now appends
+the resolved initial instruction there; changing the launcher alone would not
+have fixed blueprint debug display. `AgentRun.appliedBlueprintFromOutcome` records
 `userPrompt = opts ^. #prompt`; keep that raw source. `seihou-cli/src-exe/Seihou/CLI/Commands.hs`
 contains `agentRunInfo` and `agentRunParser`; the latter currently calls PROMPT an
 "Optional initial user prompt" without explaining omission.
@@ -258,7 +279,7 @@ The supplied consumer evidence is
 `mori://tan/tan-seihou-modules/plans/5-onboard-tan-services-to-production-with-a-seihou-module-and-blueprint`.
 It records Claude waiting at zero tokens and a successful manual kickoff, but no Seihou
 version. No real interactive provider was reproduced during this plan's creation.
-The local installed executable reports `seihou v0.16.0.0 (1965b35)`; this is inventory,
+The creation-time installed executable reported `seihou v0.16.0.0 (1965b35)`; this is inventory,
 not a reproduction or proof of delivery.
 
 During creation, `mori registry list`, `mori registry show shinzui/baikai --full`, and

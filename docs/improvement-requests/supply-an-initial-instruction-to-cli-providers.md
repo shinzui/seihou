@@ -8,7 +8,7 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-08-17T16:30:00Z"
-timestamp: 2026-11-11T13:37:55Z
+timestamp: 2026-11-15T21:45:24Z
 requestId: IR-6
 status: in-progress
 targetPlan: docs/plans/106-supply-default-initial-instructions-to-cli-agent-providers.md
@@ -22,8 +22,8 @@ origin: mori://shinzui/okf-profiles
 In progress. The request was accepted 2026-10-15 and planned in
 [ExecPlan 106](../plans/106-supply-default-initial-instructions-to-cli-agent-providers.md).
 That plan's four milestones cover a shared fallback for CLI providers, interactive launch and
-migration preview, end-to-end regression evidence, and documentation. All four are still
-unchecked in its Progress section.
+migration preview, end-to-end regression evidence, and documentation. Its shared
+completion-policy milestone is now verified; broader acceptance remains open.
 
 Part of the requested behavior has shipped anyway. It arrived in 0.12.0.0 through
 [ExecPlan 111](../plans/111-run-blueprint-migrations-without-an-interactive-terminal.md)
@@ -42,17 +42,20 @@ The documented invocation `seihou agent migrate BLUEPRINT` without `PROMPT` ther
 reaches the `claude -p` "Input must be provided" failure described below. Receipt provenance
 still keeps the raw user argument.
 
-Remaining before completion, as plan 106 scopes it:
+[ExecPlan 126](../plans/126-start-interactive-blueprint-runs-with-an-initial-message.md)
+ships the general interactive boundary in 0.16.0.1. Claude and Codex terminal
+regressions cover omitted, empty, whitespace-only and explicit multiline input;
+completion context tests cover all four providers. Blueprint debug, launch/help,
+repeat runs, failed-provider provenance, and raw manifest input pass. The installed
+0.16.0.1 executable automatically started real Claude and answered a subsequent
+follow-up in the same session. ADR 0019 and documentation now record the policy.
+IR-22 is completed by that narrower installed-blueprint acceptance.
 
-- `AgentLaunchExec.promptOrEmpty` (`seihou-cli/src-exe/Seihou/CLI/AgentLaunchExec.hs`) still maps
-  an omitted prompt to empty text. The shared policy is therefore not applied at the general
-  interactive launch boundary used by `agent run`, `setup`, `assist`, `bootstrap` and
-  `agent upgrade`.
-- Plan 106's real-binary fake-provider proofs for interactive launch are outstanding.
-- Its migration-chain, debug and provenance end-to-end checks are outstanding.
-- Its documentation and its launch-policy ADR are outstanding.
-
-Plan 106's Progress does not yet record the delivery through plan 111.
+Remaining before completing plan 106 are its broader migration-chain acceptance
+and other-command checks, including the separate assist/setup/bootstrap debug
+branches. The shared launcher itself is delivered; these are outstanding evidence
+and display obligations rather than an unimplemented fallback boundary. IR-6
+remains in progress until that scope is verified.
 
 The failure below is historical evidence from seihou 0.7.0.0. Plan 111 recorded the same
 missing-initial-turn failure through pipes on installed 0.11.0.1 (`4ade3fb`) on 2026-10-27,
