@@ -6,6 +6,16 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 ## [Unreleased]
 
+## [0.16.0.1] - 2026-11-15
+
+### Fixed
+
+- `seihou agent run BLUEPRINT` now starts its first turn automatically with Claude or Codex when you omit the initial message or pass blank text. The session stays open for follow-up input. Launch output and `seihou agent --debug run BLUEPRINT` show which instruction starts it; explicit messages and the original manifest input are preserved.
+
+### Changed
+
+- With no model configured, `claude-cli` now uses `claude-opus-5-5`. Set `agent.model` or `agent.<command>.model` to keep a different model.
+
 ## [0.16.0.0] - 2026-11-11
 
 ### Added
@@ -33,8 +43,6 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 - **A batch `seihou agent run` fails when Claude was refused a tool.** With claude-cli, a run in which any tool call was refused (a command missing from `allowedTools`, a guarded write, a hook) used to report success; it now exits 1, names each refused tool and command, and records no applied blueprint. `seihou validate-blueprint` warns when a blueprint declares no `allowedTools`.
 
 ### Changed
-
-- Interactive CLI agent sessions now start automatically when the initial instruction is omitted or blank. Blueprint launch output, debug rendering, and help explain the instruction; explicit input and raw manifest provenance are preserved (ExecPlan 126).
 
 - **`seihou run` refuses module output that would reach Seihou's own state.** A step destination in the manifest, baselines, transactions, project-local modules or another reserved entry under `.seihou/`, or under `.git/`, is now refused before anything is written, in any letter case. Previously `run` wrote such files.
 - **A module writes under `.seihou/` only inside its own directory.** A destination elsewhere under `.seihou/` is refused when the module runs, with a message naming the allowed `.seihou/<module-name>/`, and `seihou validate-module` reports it as the new "Module state destinations" check. The one known affected module, `gcp-kube-env`, is fixed in its 0.2.0 release: it writes `.seihou/gcp-kube-env/settings.conf`, and ordinary `seihou update` moves an existing `.seihou/gcp-kube-env.conf` there through a migration. An installed 0.1.1 copy still fails `seihou run`; refresh it with `seihou upgrade gcp-kube-env`. Existing applications of 0.1.1 still load for `seihou status` and `seihou remove`. See [Keeping module files under .seihou](module-authoring.md#keeping-module-files-under-seihou).
@@ -1197,7 +1205,8 @@ regeneration.
 
 ---
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.16.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.16.0.1...HEAD
+[0.16.0.1]: https://github.com/shinzui/seihou/compare/v0.16.0.0...v0.16.0.1
 [0.16.0.0]: https://github.com/shinzui/seihou/compare/v0.15.0.0...v0.16.0.0
 [0.15.0.0]: https://github.com/shinzui/seihou/compare/v0.14.0.0...v0.15.0.0
 [0.14.0.0]: https://github.com/shinzui/seihou/compare/v0.13.0.0...v0.14.0.0

@@ -21,7 +21,7 @@ prompt as a completion request and print one response.
 The default provider is `claude-cli`. When you configure no model, Seihou pins a
 deterministic default per provider so it always passes an explicit model to the
 local CLI rather than inheriting whatever model the ambient `claude` or `codex`
-session happens to have active: `claude-cli` defaults to `claude-opus-4-8` and
+session happens to have active: `claude-cli` defaults to `claude-opus-5-5` and
 `codex-cli` defaults to `gpt-5.6-terra`. This keeps CLI runs reproducible and
 avoids accidentally launching a different, possibly token-hungry model that
 another session selected. Override either default with a `--model` flag or an
@@ -61,7 +61,7 @@ seihou config set agent.assist.provider codex-cli --global
 seihou config set agent.assist.model gpt-5-mini --global
 
 # A strong model just for `run`, in this project only:
-seihou config set agent.run.model claude-opus-4-8
+seihou config set agent.run.model claude-opus-5-5
 ```
 
 Configuration is hierarchical: a project's local `.seihou/config.dhall`
@@ -80,7 +80,7 @@ Resolution order is (highest precedence first):
 6. Local `agent.provider` / `agent.model`
 7. Global `agent.<command>.provider` / `agent.<command>.model`
 8. Global `agent.provider` / `agent.model`
-9. Built-in defaults: provider `claude-cli`; model pinned per provider (`claude-cli` → `claude-opus-4-8`, `codex-cli` → `gpt-5.6-terra`)
+9. Built-in defaults: provider `claude-cli`; model pinned per provider (`claude-cli` → `claude-opus-5-5`, `codex-cli` → `gpt-5.6-terra`)
 
 Tier 4 applies only to the commands that load an artifact — `seihou agent run`,
 `seihou agent migrate`, and `seihou prompt run`. A blueprint or prompt author
@@ -131,11 +131,11 @@ Resolved agent provider, model, effort, and trace per command
               effort    high             [global: agent.effort]
               trace     off              [built-in default]
   run         provider  claude-cli       [built-in default]
-              model     claude-opus-4-8  [local: agent.run.model]
+              model     claude-opus-5-5  [local: agent.run.model]
               effort    max              [local: agent.run.effort]
               trace     file             [local: agent.run.trace]
   prompt run  provider  claude-cli       [built-in default]
-              model     claude-opus-4-8  [built-in default]
+              model     claude-opus-5-5  [built-in default]
               effort    (default)        [built-in default]
               trace     off              [built-in default]
 ```
@@ -241,8 +241,8 @@ prompt as the system prompt. And `provider` names the upstream vendor —
 ```text
 $ seihou agent run tracer --batch --trace file
 $ cat .seihou/trace.jsonl
-{"kind":"call_started","eventId":"6a679f6c00000000","timestamp":"...","provider":"anthropic","model":"claude-opus-4-8","maxTokens":0,"promptSummary":""}
-{"kind":"call_finished","eventId":"6a679f6c00000000","timestamp":"...","provider":"anthropic","model":"claude-opus-4-8","latencyMs":5,"inputTokens":0,"outputTokens":0}
+{"kind":"call_started","eventId":"6a679f6c00000000","timestamp":"...","provider":"anthropic","model":"claude-opus-5-5","maxTokens":0,"promptSummary":""}
+{"kind":"call_finished","eventId":"6a679f6c00000000","timestamp":"...","provider":"anthropic","model":"claude-opus-5-5","latencyMs":5,"inputTokens":0,"outputTokens":0}
 ```
 
 ### What tracing does not cover

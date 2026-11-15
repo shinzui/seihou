@@ -26,6 +26,11 @@ provenance:
       at: 2026-11-15T19:02:01Z
       mode: "implement"
       note: "Implement shared interactive kickoff and verify terminal, display, and provenance behavior."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-11-15T20:19:36Z
+      mode: "implement"
+      note: "Prepare patch release and installed delivery to finish the remaining acceptance."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -81,7 +86,28 @@ terminal input classes with required `--var service.name=demo`, repeat runs,
 raw manifest parsing, debug output, and failed-provider preservation. Final
 full-suite validation passed in `nix develop` (1,788 core, 1,020 CLI, and 59 OKF
 extension tests); the plain shell lacks gitleaks.
-Published/installed delivery remains open; no release or installation was performed.
+Delivery continuation (2026-11-15): the user requested completion of the plan,
+including its remaining release and installation work. A 0.16.0.1 patch candidate
+is prepared for all three packages, with updated internal bounds and both
+changelogs. Release audit corrected stale Claude default-model docs and moved
+the kickoff entry out of the previous release's user-changelog section.
+The candidate passes `cabal check` for all packages, the native Nix package
+build with tests, Cabal build, formatting, and flake checks. The release's full
+Cabal suite passes all 2,867 tests, and the final help audit passes against
+`seihou v0.16.0.1 (122c9e8)` (19 topics, 37 command pages, 6 examples,
+8 provider-free renders). Haddock preparation is complete for all packages;
+CLI and OKF extension documentation archives were repacked through
+`just docs-tarball`. Flat module pages, documentation indexes, and absence of
+colon filenames were verified. Source archives are in
+`/tmp/seihou-126-release-sdist/`; core documentation is
+`dist-newstyle/seihou-core-0.16.0.1-docs.tar.gz`, and dependent documentation
+archives are in `dist-newstyle/repacked-docs/`. The reviewable release diff is
+`/tmp/seihou-126-release-candidate.diff` and release notes are
+`/tmp/seihou-126-release-notes.md`.
+The user approved the 0.16.0.1 release and activation of the current Home Manager
+working configuration on 2026-11-15. Release publication and installed acceptance
+are now proceeding through the release skill. Preserve all pre-existing dotfiles
+changes and update only the Seihou input for this delivery.
 
 
 ## Surprises & Discoveries

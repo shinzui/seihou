@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.16.0.1] - 2026-11-15
+
 ### Changed
 
 - Interactive CLI agent sessions now start automatically when the initial instruction is omitted or blank. Blueprint launch output, debug rendering, and help explain the instruction; explicit input and raw manifest provenance are preserved (ExecPlan 126).
@@ -1309,7 +1311,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.16.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.16.0.1...HEAD
+[0.16.0.1]: https://github.com/shinzui/seihou/compare/v0.16.0.0...v0.16.0.1
 [0.16.0.0]: https://github.com/shinzui/seihou/compare/v0.15.0.0...v0.16.0.0
 [0.15.0.0]: https://github.com/shinzui/seihou/compare/v0.14.0.0...v0.15.0.0
 [0.14.0.0]: https://github.com/shinzui/seihou/compare/v0.13.0.0...v0.14.0.0
