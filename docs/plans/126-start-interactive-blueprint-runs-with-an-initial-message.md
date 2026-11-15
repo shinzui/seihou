@@ -16,6 +16,17 @@ provenance:
       at: 2026-11-15T16:24:44Z
       mode: "other"
       note: "Ground IR-22 delivery in the existing shared resolver, terminal launch regressions, plan 106 coordination, and consumer acceptance."
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-11-15T18:23:33Z
+      mode: "update"
+      note: "Apply review: prove real interactive startup and follow-up early, isolate smoke context, and document shared-launcher scope."
+  reviews:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-11-15T18:23:08Z
+      verdict: "changes-requested"
+      note: "Source diagnosis verified; move real-provider proof before matrix expansion, verify follow-up interaction, isolate context, and name shared-launcher callers."
 ---
 
 # Start interactive blueprint runs with an initial message
@@ -53,7 +64,7 @@ not close delivery to the consumer.
 
 ## Progress
 
-- [ ] Milestone 1: The ordinary terminal command delivers the shared initial instruction to both interactive CLI providers, with a regression that fails against the original launcher.
+- [ ] Milestone 1: The ordinary terminal command delivers the shared initial instruction to both interactive CLI providers, with a regression that fails against the original launcher and an early real-Claude first-turn/follow-up check.
 - [ ] Milestone 2: Blank and explicit inputs, debug rendering, launch guidance, and raw manifest provenance agree; batch, API, and migration behavior remain compatible.
 - [ ] Milestone 3: Built-binary checks and a real Claude smoke check demonstrate automatic startup; documentation, plan 106 coordination, and consumer delivery evidence accurately state what is available.
 
@@ -96,6 +107,14 @@ Both `launchClaude` and `launchCodex` there currently construct an
 `interactiveLaunchRequest (promptOrEmpty initialPrompt)`, where `promptOrEmpty = maybe "" id`.
 This drops the kickoff message when the optional prompt is absent.
 
+The same launcher is used by `seihou-cli/src-exe/Seihou/CLI/Assist.hs`,
+`seihou-cli/src-exe/Seihou/CLI/Setup.hs`, and
+`seihou-cli/src-exe/Seihou/CLI/Bootstrap.hs`, so the shared fix also starts their
+omitted/blank CLI requests automatically. This is the policy already intended by
+plan 106. Their separate early debug branches remain outside this blueprint-specific
+display change; name that remaining work in plan 106 rather than claiming those
+commands' full acceptance here.
+
 `seihou-cli/src/Seihou/CLI/AgentCompletion.hs` already exports
 `resolveAgentInitialPrompt :: AgentProvider -> Maybe Text -> Maybe Text`. It returns
 the neutral sentence for absent or stripped-empty CLI input, preserves each nonblank
@@ -130,7 +149,7 @@ a full context-capture matrix. `AgentTraceE2ESpec.hs`, `AgentGuardE2ESpec.hs`, a
 Installed blueprints are discovered under `XDG_CONFIG_HOME/seihou/installed/NAME` by
 `seihou-core/src/Seihou/Core/Module.hs`; project-local fixtures under
 `.seihou/modules/NAME` are another supported source. Isolate config and cache directories
-and scrub inherited `SEIHOU_AGENT_*` settings as the existing fixtures do. Do not change
+and scrub inherited `SEIHOU_CONTEXT` and `SEIHOU_AGENT_*` settings as the existing fixtures do. Do not change
 real provider authentication or user configuration to run deterministic tests.
 
 ADR discovery scanned local filenames and headings and inspected `mori show --full`.
@@ -192,6 +211,15 @@ the original failure recorded concisely. Run the same installed fixture from a f
 project and empty Seihou cache. Required variables must be supplied through the ordinary
 `--var` option; no fixture may inject a kickoff behind the command's back.
 
+Before expanding the matrix in Milestone 2, run the real-Claude fixture in Concrete
+Steps with the changed source binary. Observe the first response without keyboard
+kickoff, then send the specified follow-up and verify a second response in the same
+session. This proves both automatic startup and continued interaction. Record the
+binary path and versions plus both observations. If provider authentication, trust,
+or availability prevents this proof, leave this acceptance open and report the
+blocker; fake argv success cannot replace it. This early run need not show the
+launch-guidance line until Milestone 2 adds it.
+
 
 ### Milestone 2: Make the instruction and its provenance consistent
 
@@ -247,8 +275,8 @@ patch that is restored immediately; never reset unrelated work.
 ### Milestone 3: Verify the consumer workflow and coordinate delivery
 
 
-Run the harmless real-Claude fixture in Concrete Steps from a terminal before calling
-the interactive issue fixed. Record the executable path, Seihou version, Claude version,
+Retain the early real-Claude evidence from Milestone 1 and rerun the harmless fixture
+against the final candidate to verify the launch guidance and continued interaction. Record the executable path, Seihou version, Claude version,
 command, and first-turn observation. No keyboard kickoff is allowed. Authentication or
 workspace-trust setup, if required, is provider preparation and must be reported separately;
 acceptance starts from an authenticated, trusted provider workspace. The fake tests prove
@@ -323,7 +351,7 @@ DHALL
 "$seihou_test_binary" --version
 claude --version
 cd "$seihou_test_root/project"
-env -u SEIHOU_AGENT_PROVIDER -u SEIHOU_AGENT_MODEL -u SEIHOU_AGENT_EFFORT -u SEIHOU_AGENT_TRACE \
+env -u SEIHOU_CONTEXT -u SEIHOU_AGENT_PROVIDER -u SEIHOU_AGENT_MODEL -u SEIHOU_AGENT_EFFORT -u SEIHOU_AGENT_TRACE \
   XDG_CONFIG_HOME="$seihou_test_root/config" XDG_CACHE_HOME="$seihou_test_root/cache" \
   "$seihou_test_binary" agent run kickoff-smoke --provider claude-cli --var service.name=demo
 ```
@@ -333,7 +361,10 @@ capture. Keep provider credentials available; if isolating XDG config hides auth
 use the already authenticated provider's supported setup and record that preparation.
 The expected observation is a launch line announcing the default instruction followed by
 Claude's first response containing `INITIAL-TURN-STARTED` for `demo` before any user
-message. Exit the provider normally. A blank input box waiting for a kickoff is failure.
+message. After observing that first response, enter `Reply FOLLOW-UP-RECEIVED` and
+verify the provider answers in the same session, then exit normally. The follow-up
+must only be sent after automatic first-turn evidence is captured. A blank input box
+waiting for a kickoff, or a process that exits after its first response, is failure.
 Inspect the resulting manifest through the normal parser in tests to prove no user prompt
 was invented. Use separate fresh project directories for failure and first-use cases.
 
@@ -375,7 +406,7 @@ provider session or implementation acceptance has run.
 The primary acceptance is `seihou agent run BLUEPRINT` in a terminal with normal required
 variables, no trailing prompt, and no injected stdin. Both fake CLI providers receive a
 nonblank user request as well as the blueprint instructions, and the real Claude smoke
-check begins its first turn without a kickoff. This early real-command path must run
+check begins its first turn without a kickoff and answers a subsequent user message in the same session. This early real-command path must run
 before broadening the test matrix. Piped subprocess success alone is batch evidence.
 
 Omission, explicit empty input, and whitespace-only input produce the shared sentence.
@@ -450,3 +481,11 @@ already in the working tree is its prerequisite and is available now. Cross-refe
 actual evidence rather than blocking on plan 106's entire unchecked list. Source delivery,
 real interactive verification, and published/installed availability are distinct outcomes
 and must remain visible until each required outcome is verified.
+
+
+Revision note (2026-11-15): Review against the current launchers and acceptance workflow
+moved real-provider startup and follow-up proof into Milestone 1, retaining final-candidate
+verification in Milestone 3. The smoke command now clears inherited context, and Context
+and Orientation names the other callers affected by the shared launch policy. Mori
+registry access still fails with a refused local PostgreSQL connection; dependency argv
+rendering and the external consumer friction reference remain unverified in this review.
