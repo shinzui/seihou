@@ -400,8 +400,21 @@ manifest before any manual edit, and to ask you before anything that needs your 
 ### Run
 
 ```sh
+seihou agent run api-service
 seihou agent run api-service "tailor this for payments"
 ```
+
+With `claude-cli` or `codex-cli`, omitting PROMPT or supplying empty or
+whitespace-only text starts the first turn automatically with
+`Follow the instructions in the system prompt.` The terminal stays open for
+follow-up input. A nonblank explicit instruction is passed exactly as supplied,
+including whitespace. API providers (`anthropic`, `openai`) keep optional input
+unchanged. Automatic startup preserves provider tool approvals.
+
+`seihou agent --debug run api-service` shows the effective initial instruction
+without contacting a provider. Blueprint debug still applies baseline modules
+and records blueprint provenance; it is not a dry run. The manifest records
+the original PROMPT, including omission or blank text.
 
 Use `run` for blueprints. The runner resolves blueprint variables, optionally
 applies baseline modules, renders the blueprint prompt, and records the

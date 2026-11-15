@@ -1,16 +1,18 @@
 module Seihou.CLI.AgentCompletionSpec (tests) where
 
 import Baikai qualified
+import Baikai.Context qualified as Context
 import Baikai.Model qualified as BaikaiModel
 import Baikai.Response qualified as BaikaiResponse
 import Baikai.Trace.Sink (TraceSink, silent)
 import Control.Exception (throwIO)
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString.Lazy.Char8 qualified as BL8
 import Data.Generics.Labels ()
+import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.Text qualified as Text
 import Data.Time (UTCTime)
 import Data.Vector qualified as V
@@ -41,6 +43,31 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
             resolveAgentInitialPrompt provider (Just "  ") `shouldBe` Just "  "
         )
         [AgentProviderAnthropic, AgentProviderOpenAI]
+
+  describe "completion context policy" $
+    it "resolves execution input for all providers while keeping the request raw" $
+      mapM_
+        ( \provider ->
+            mapM_
+              ( \raw -> do
+                  captured <- newIORef Nothing
+                  let config = defaultAgentModelConfig & #provider .~ provider
+                      request = buildAgentCompletionRequest config "unchanged system" raw
+                      api = BaikaiModel.api (buildBaikaiModel config)
+                      respond _ context _ = writeIORef captured (Just context) >> pure (okResponse "done")
+                      register = Baikai.registerApiProvider (Baikai.apiProviderWith api (Baikai.liftCompleteToStream respond) respond)
+                  runAgentCompletionWith register request `shouldReturn` Right "done"
+                  request ^. #initialPrompt `shouldBe` raw
+                  context <- readIORef captured
+                  case context of
+                    Nothing -> expectationFailure "provider did not receive context"
+                    Just ctx -> do
+                      Context.systemPrompt ctx `shouldBe` Just "unchanged system"
+                      V.length (Context.messages ctx) `shouldBe` maybe 0 (const 1) (resolveAgentInitialPrompt provider raw)
+              )
+              [Nothing, Just "", Just " \t\n ", Just "  explicit\nmessage  "]
+        )
+        [AgentProviderClaudeCli, AgentProviderCodexCli, AgentProviderAnthropic, AgentProviderOpenAI]
 
   describe "provider text helpers" $ do
     it "parses known providers case-insensitively" $ do

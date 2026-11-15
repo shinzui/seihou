@@ -1,5 +1,17 @@
 # Bundle Update Log
 
+## 2026-11-15
+
+* **Update**: FRIC-20 resolved: Use the complete development environment for the full suite.
+
+
+* **Addition**: FRIC-20 records detour environment friction with mori://shinzui/seihou: Full test suite needs the development shell secret scanner
+
+
+* **Update**: FRIC-19 accepted: Accept local registry outage for this implementation; dependency source discovery must be retried before future dependency changes.
+
+* **Addition**: FRIC-19 records detour environment friction with mori://shinzui/mori: Mori registry unavailable during provider investigation
+
 ## 2026-11-12
 
 * **Update**: FRIC-18 accepted: Accept the documented upstream-source fallback for this implementation.

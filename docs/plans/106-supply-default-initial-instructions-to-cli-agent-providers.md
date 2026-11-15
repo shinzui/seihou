@@ -10,6 +10,12 @@ provenance:
     model: "gpt-6.1-sol"
     harness: "codex-cli"
     at: 2026-10-15T15:15:20Z
+  revisions:
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-11-15T19:04:25Z
+      mode: "implement"
+      note: "Coordinate shared interactive kickoff evidence from plan 126; retain broader pending acceptance."
 ---
 
 # Supply default initial instructions to CLI agent providers
@@ -42,6 +48,17 @@ the effective initial instruction so the user can inspect the fallback before ex
 - [ ] Milestone 2: apply the same policy to interactive launch and migration preview, with real-binary fake-provider proofs for Claude and Codex.
 - [ ] Milestone 3: prove migration-chain, explicit-prompt, batch, debug, and manifest-provenance behavior end to end.
 - [ ] Milestone 4: document the behavior, distill the launch-policy decision into an ADR, run final gates, and complete IR-6 with evidence.
+
+
+Coordination (2026-11-15): [plan 126](126-start-interactive-blueprint-runs-with-an-initial-message.md)
+implements the shared interactive boundary for both CLI providers and blueprint
+launch/debug guidance. Its terminal regression failed for both original launchers,
+then passed; a real Claude Code 2.1.325 session automatically answered
+`INITIAL-TURN-STARTED` and then `FOLLOW-UP-RECEIVED` in the same session.
+The common launcher also covers assist/setup/bootstrap; their separate debug
+branches and this plan's broader migration-chain acceptance remain unverified.
+Do not close IR-6 from the narrower blueprint evidence. Published and installed
+delivery of plan 126 remains pending.
 
 
 ## Surprises & Discoveries

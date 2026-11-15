@@ -240,3 +240,17 @@ fails, reports a permission denial, or returns incomplete output, no receipt is
 written for that edge. Inspect partial edits, repair the reported problem, and
 rerun the same command; completed edges are skipped. Receipts do not verify that
 the migrated project builds or passes tests.
+
+BLUEPRINT INITIAL INSTRUCTION
+
+With claude-cli or codex-cli, omitting PROMPT or supplying empty or
+whitespace-only text starts the first turn automatically with
+Follow the instructions in the system prompt. The terminal stays open for
+follow-up input. A nonblank explicit instruction is passed exactly as supplied,
+including whitespace. API providers (anthropic, openai) keep optional input
+unchanged. Automatic startup preserves provider tool approvals.
+
+seihou agent --debug run api-service shows the effective initial instruction
+without contacting a provider. Blueprint debug still applies baseline modules
+and records blueprint provenance; it is not a dry run. The manifest records
+the original PROMPT, including omission or blank text.

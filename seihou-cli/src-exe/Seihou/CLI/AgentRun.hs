@@ -13,7 +13,7 @@ module Seihou.CLI.AgentRun
 where
 
 import Control.Exception (IOException, displayException, try)
-import Control.Monad (unless, when)
+import Control.Monad (forM_, unless, when)
 import Data.FileEmbed (embedFile)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
@@ -29,6 +29,7 @@ import Seihou.CLI.AgentCompletion
   ( AgentModelConfig (..),
     AgentProvider (..),
     buildAgentCompletionRequestWith,
+    resolveAgentInitialPrompt,
     runAgentCompletionWithCliAccess,
   )
 import Seihou.CLI.AgentConfig
@@ -233,6 +234,7 @@ handleAgentRun debug pending opts = do
   -- (f) Launch.
   launchSucceeded <-
     runRenderedAgentPromptMode
+      "blueprint"
       debug
       batch
       modelConfig
@@ -264,14 +266,21 @@ handleAgentRun debug pending opts = do
               <> err
 
 runRenderedAgentPrompt :: Bool -> AgentModelConfig -> [String] -> Maybe FilePath -> Text -> Maybe Text -> IO Bool
-runRenderedAgentPrompt debug = runRenderedAgentPromptMode debug False
+runRenderedAgentPrompt debug = runRenderedAgentPromptMode "agent" debug False
 
-runRenderedAgentPromptMode :: Bool -> Bool -> AgentModelConfig -> [String] -> Maybe FilePath -> Text -> Maybe Text -> IO Bool
-runRenderedAgentPromptMode debug batch modelConfig tools mFilesDir systemPrompt initialPrompt
+runRenderedAgentPromptMode :: Text -> Bool -> Bool -> AgentModelConfig -> [String] -> Maybe FilePath -> Text -> Maybe Text -> IO Bool
+runRenderedAgentPromptMode sessionName debug batch modelConfig tools mFilesDir systemPrompt initialPrompt
   | debug = do
       TIO.putStr systemPrompt
+      forM_ (resolveAgentInitialPrompt (modelConfig ^. #provider) initialPrompt) $ \instruction -> do
+        TIO.putStrLn "\n===== Initial user instruction ====="
+        TIO.putStrLn instruction
       pure True
   | not batch && (modelConfig ^. #provider == AgentProviderClaudeCli || modelConfig ^. #provider == AgentProviderCodexCli) = do
+      TIO.putStrLn $
+        if resolveAgentInitialPrompt (modelConfig ^. #provider) initialPrompt /= initialPrompt
+          then "Starting " <> sessionName <> " with the default initial instruction."
+          else "Starting " <> sessionName <> " with your initial instruction."
       exitCode <-
         launchConfiguredAgentAddingDirs
           (maybeToList mFilesDir)

@@ -7,9 +7,10 @@ description: >-
 generated:
   by: process:codex-cli/gpt-6.1-sol
   at: "2026-11-15T16:10:53Z"
-timestamp: 2026-11-15T16:10:53Z
+timestamp: 2026-11-15T19:05:00Z
 requestId: IR-22
-status: proposed
+status: in-progress
+targetPlan: docs/plans/126-start-interactive-blueprint-runs-with-an-initial-message.md
 origin: mori://tan/tan-seihou-modules
 reviews:
   - kind: model
@@ -31,7 +32,7 @@ reviews:
 
 ## Status
 
-Proposed. Raised from
+In progress through [ExecPlan 126](../plans/126-start-interactive-blueprint-runs-with-an-initial-message.md). Raised from
 `mori://tan/tan-seihou-modules/okf/friction-log/concepts/FRIC-15`.
 This is fresh consumer evidence for the interactive-launch work remaining in
 [IR-6](supply-an-initial-instruction-to-cli-providers.md) and
@@ -57,11 +58,11 @@ The operator had to send a kickoff message such as
 Passing the optional trailing `PROMPT` to `seihou agent run` is another workaround.
 The friction entry does not record an executable version.
 
-## Current source evidence
+## Pre-fix source evidence
 
-`seihou-cli/src-exe/Seihou/CLI/AgentLaunchExec.hs` constructs both Claude and Codex
+Before plan 126, `seihou-cli/src-exe/Seihou/CLI/AgentLaunchExec.hs` constructed both Claude and Codex
 interactive launch requests with `interactiveLaunchRequest (promptOrEmpty initialPrompt)`.
-Its `promptOrEmpty = maybe "" id` supplies empty text when the argument is omitted.
+Its `promptOrEmpty = maybe "" id` supplied empty text when the argument is omitted.
 This matches the remaining interactive-launch gap documented in IR-6. The Claude behavior
 above was observed directly; this report does not claim a reproduced Codex session.
 
@@ -90,3 +91,13 @@ deliberately waits for user input, it must say that it is waiting and state the 
   inspectable while recorded provenance retains the original user input.
 - The normal command and its help explain what starts automatically and when input is needed.
   Record the executable/version used for the consumer check before marking this delivered.
+
+## Implementation evidence
+
+Plan 126 implements the shared interactive resolver and blueprint launch/debug/help
+in source. Terminal fake-provider tests cover Claude and Codex; both failed with
+the original launcher. Real Claude Code 2.1.325 automatically produced
+`INITIAL-TURN-STARTED` without a kickoff and answered `FOLLOW-UP-RECEIVED` in the
+same session, using the Cabal-built Seihou executable. A release and installed
+consumer verification remain pending; this request stays in progress. IR-6 retains
+its broader acceptance obligations.

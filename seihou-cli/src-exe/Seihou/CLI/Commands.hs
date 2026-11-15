@@ -2116,7 +2116,7 @@ agentRunInfo =
                 [ pretty ("Resolves the named blueprint, prompts for any required variables," :: String),
                   pretty ("optionally applies the blueprint's baseModules as a starting scaffold," :: String),
                   pretty ("renders the prompt template, and starts the configured" :: String),
-                  pretty ("provider." :: String),
+                  pretty ("provider. CLI sessions start their first turn automatically and stay open for follow-up input." :: String),
                   pretty ("Baseline seeds are created once; edits and deletion survive --force." :: String),
                   pretty ("Lifecycle changes require seihou update <recorded-target>." :: String),
                   line,
@@ -2149,7 +2149,7 @@ agentRunParser =
   fmap AgentRun $
     BlueprintRunOpts
       <$> argument moduleNameReader (metavar "BLUEPRINT" <> help "Name of the blueprint to run")
-      <*> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Optional initial user prompt"))
+      <*> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Initial instruction (CLI: omitted or blank starts the blueprint automatically)"))
       <*> many
         ( option
             varPair

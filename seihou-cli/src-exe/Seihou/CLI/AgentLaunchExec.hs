@@ -26,7 +26,7 @@ import Baikai.ThinkingLevel (ThinkingLevel)
 import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Seihou.CLI.AgentCompletion (AgentModelConfig (..), AgentProvider (..))
+import Seihou.CLI.AgentCompletion (AgentModelConfig (..), AgentProvider (..), resolveAgentInitialPrompt)
 import Seihou.CLI.Kit (seihouKitConfig)
 import Seihou.Prelude
 import System.Directory (findExecutable, getCurrentDirectory)
@@ -69,7 +69,7 @@ launchClaude addDirs tools model effortLevel systemPrompt initialPrompt = do
       launchExitCode
         =<< launchClaudeInteractive
           defaultClaudeInteractiveConfig
-          ( interactiveLaunchRequest (promptOrEmpty initialPrompt)
+          ( interactiveLaunchRequest (maybe "" id (resolveAgentInitialPrompt AgentProviderClaudeCli initialPrompt))
               & #systemPrompt
               .~ Just systemPrompt
               & #modelId
@@ -98,7 +98,7 @@ launchCodex addDirs model effortLevel systemPrompt initialPrompt = do
       launchExitCode
         =<< launchCodexInteractive
           defaultCodexInteractiveConfig
-          ( interactiveLaunchRequest (promptOrEmpty initialPrompt)
+          ( interactiveLaunchRequest (maybe "" id (resolveAgentInitialPrompt AgentProviderCodexCli initialPrompt))
               & #systemPrompt
               .~ Just systemPrompt
               & #modelId
@@ -124,9 +124,6 @@ launchExitCode = \case
   Left err -> do
     TIO.putStrLn ("Error: " <> renderAgentRenderError err)
     exitFailure
-
-promptOrEmpty :: Maybe Text -> Text
-promptOrEmpty = maybe "" id
 
 unsupportedInteractiveProvider :: Text -> IO ExitCode
 unsupportedInteractiveProvider providerName = do

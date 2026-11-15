@@ -11,7 +11,8 @@ import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Seihou.CLI.SeihouBinary (seihouBinary)
 import Seihou.Core.Types
-  ( AppliedBlueprintMigration (..),
+  ( AppliedBlueprint (..),
+    AppliedBlueprintMigration (..),
     Manifest (..),
     MigrationOutcome (..),
     ModuleName (..),
@@ -39,7 +40,38 @@ import Test.Tasty.Hspec (testSpec)
 
 tests :: IO TestTree
 tests = testSpec "Agent migrate end-to-end" $ do
+  mapM_ (\provider -> mapM_ (interactiveBlueprintProof provider) [Nothing, Just "", Just " \t\n ", Just "  Do this\ncarefully.  "]) ["claude-cli", "codex-cli"]
   mapM_ batchMigrationProof ["claude-cli", "codex-cli"]
+
+  it "preserves optional API instructions in blueprint debug output" $
+    withDeclaredLaunchBlueprint $ \_ _ run ->
+      mapM_
+        ( \provider ->
+            mapM_
+              ( \raw -> do
+                  (code, output, errors, _) <- run (["--debug", "--provider", provider] <> maybe [] (: []) raw)
+                  expectSuccess "API debug" code output errors
+                  case raw of
+                    Nothing -> output `shouldSatisfy` (not . T.isInfixOf "===== Initial user instruction =====")
+                    Just text -> output `shouldSatisfy` T.isInfixOf ("===== Initial user instruction =====\n" <> T.pack text <> "\n")
+              )
+              [Nothing, Just "", Just " \t\n ", Just "  explicit\nmessage  "]
+        )
+        ["anthropic", "openai"]
+
+  it "keeps raw batch blueprint input while supplying the CLI fallback" $
+    withDeclaredLaunchBlueprint $ \root _ run ->
+      mapM_
+        ( \raw -> do
+            (code, output, errors, argv) <- run (["--batch"] <> maybe [] (: []) raw)
+            expectSuccess "batch instruction" code output errors
+            argv `shouldSatisfy` any (T.isInfixOf "Follow the instructions in the system prompt.")
+            bytes <- LBS.readFile (root </> ".seihou/manifest.json")
+            case manifestFromJSON bytes of
+              Left err -> expectationFailure err
+              Right manifest -> ((^. #userPrompt) =<< manifest ^. #blueprint) `shouldBe` (T.pack <$> raw)
+        )
+        [Nothing, Just "", Just " \t\n "]
 
   it "exposes non-interactive blueprint runs in help" $ do
     binary <- seihouBinary
@@ -1079,7 +1111,7 @@ withDeclaredLaunchBlueprint action =
           (exitCode, output, errorOutput) <-
             runProcessText
               binary
-              (["agent", "run", "declared-launch"] <> extraArgs)
+              (["agent"] <> ["--debug" | "--debug" `elem` extraArgs] <> ["run", "declared-launch"] <> filter (/= "--debug") extraArgs)
               (Just root)
               (Just environment)
           launchArgs <-
@@ -1359,3 +1391,73 @@ batchMigrationProof provider = it ("migrates through pipes with " <> provider <>
     (marker, mo, me) <- run command
     expectSuccess "text-marker retry" marker mo me
     readReceipts (root </> ".seihou/manifest.json") `shouldReturn` [("1.0.0", "2.0.0", MigrationNotApplicable "text-marker")]
+
+-- Terminal stdin is essential: a piped invocation only exercises batch mode.
+interactiveBlueprintProof :: String -> Maybe String -> Spec
+interactiveBlueprintProof provider rawPrompt = it ("starts an interactive blueprint with " <> provider <> " and prompt " <> show rawPrompt) $
+  withSystemTempDirectory "seihou-initial-turn" $ \root -> do
+    binary <- seihouBinary
+    let config = root </> "config"
+        blueprintDir = config </> "seihou/installed/declared-launch"
+        fakeBin = root </> "bin"
+        script = fakeBin </> if provider == "claude-cli" then "claude" else "codex"
+        logPath = root </> "argv"
+    createDirectoryIfMissing True blueprintDir
+    createDirectoryIfMissing True fakeBin
+    TIO.writeFile (blueprintDir </> "blueprint.dhall") $
+      T.replace "Think hard about this repository." "Think hard about this repository for {{service.name}}." $
+        T.replace
+          "vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }"
+          "vars = [ { name = \"service.name\", type = \"text\", default = None Text, description = None Text, required = True, validation = None Text } ]"
+          declaredLaunchBlueprintDhall
+    TIO.writeFile script $
+      T.unlines
+        [ "#!/bin/sh",
+          "[ -t 0 ] || exit 91",
+          "printf '%s\\0' \"$@\" > \"$SEIHOU_FAKE_AGENT_LOG\""
+        ]
+    permissions <- getPermissions script
+    setPermissions script (permissions {executable = True})
+    inherited <- getEnvironment
+    let environment =
+          [ ("PATH", fakeBin <> [searchPathSeparator] <> fromMaybe "" (lookup "PATH" inherited)),
+            ("XDG_CONFIG_HOME", config),
+            ("XDG_CACHE_HOME", root </> "cache"),
+            ("SEIHOU_FAKE_AGENT_LOG", logPath)
+          ]
+            <> filter (\(key, _) -> key `notElem` ["PATH", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "SEIHOU_CONTEXT", "SEIHOU_FAKE_AGENT_LOG"] && not ("SEIHOU_AGENT_" `T.isPrefixOf` T.pack key)) inherited
+        ptyCode = "import os,pty,subprocess,sys; m,s=pty.openpty()\ntry:\n p=subprocess.run(sys.argv[1:],stdin=s,timeout=60)\nfinally:\n os.close(s); os.close(m)\nsys.exit(p.returncode)"
+
+        command = [binary, "agent", "run", "declared-launch", "--provider", provider, "--var", "service.name=demo"] <> maybe [] (: []) rawPrompt
+        run flags = runProcessText "python3" (["-c", ptyCode] <> command <> flags) (Just root) (Just environment)
+        expected = case rawPrompt of
+          Just value | not (T.null (T.strip (T.pack value))) -> T.pack value
+          _ -> "Follow the instructions in the system prompt."
+        readPrompt = do
+          bytes <- LBS.readFile (root </> ".seihou/manifest.json")
+          case manifestFromJSON bytes of
+            Left err -> expectationFailure err >> fail "invalid manifest"
+            Right manifest -> pure ((^. #userPrompt) =<< manifest ^. #blueprint)
+    (code, out, err) <- run []
+    expectSuccess "terminal blueprint" code out err
+    out `shouldSatisfy` T.isInfixOf (if Just (T.unpack expected) == rawPrompt then "with your initial instruction" else "with the default initial instruction")
+    argv <- T.splitOn "\0" <$> TIO.readFile logPath
+    argv `shouldSatisfy` notElem (if provider == "claude-cli" then "-p" else "exec")
+    argv `shouldSatisfy` any (T.isInfixOf "Think hard about this repository for demo.")
+    -- Codex combines context and user request; test its user suffix separately.
+    if provider == "claude-cli"
+      then argv `shouldSatisfy` elem expected
+      else argv `shouldSatisfy` any (T.isSuffixOf ("User request:\n" <> expected))
+    readPrompt `shouldReturn` (T.pack <$> rawPrompt)
+    (again, ao, ae) <- run []
+    expectSuccess "repeat terminal blueprint" again ao ae
+    readPrompt `shouldReturn` (T.pack <$> rawPrompt)
+    (debugCode, debugOut, debugErr) <- runProcessText binary (["agent", "--debug", "run", "declared-launch", "--provider", provider, "--var", "service.name=demo"] <> maybe [] (: []) rawPrompt) (Just root) (Just environment)
+    expectSuccess "debug blueprint" debugCode debugOut debugErr
+    debugOut `shouldSatisfy` T.isInfixOf ("===== Initial user instruction =====\n" <> expected <> "\n")
+    readPrompt `shouldReturn` (T.pack <$> rawPrompt)
+    before <- LBS.readFile (root </> ".seihou/manifest.json")
+    TIO.appendFile script "exit 17\n"
+    (failed, _, _) <- run []
+    failed `shouldBe` ExitFailure 17
+    LBS.readFile (root </> ".seihou/manifest.json") `shouldReturn` before

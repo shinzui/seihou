@@ -34,6 +34,8 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 ### Changed
 
+- Interactive CLI agent sessions now start automatically when the initial instruction is omitted or blank. Blueprint launch output, debug rendering, and help explain the instruction; explicit input and raw manifest provenance are preserved (ExecPlan 126).
+
 - **`seihou run` refuses module output that would reach Seihou's own state.** A step destination in the manifest, baselines, transactions, project-local modules or another reserved entry under `.seihou/`, or under `.git/`, is now refused before anything is written, in any letter case. Previously `run` wrote such files.
 - **A module writes under `.seihou/` only inside its own directory.** A destination elsewhere under `.seihou/` is refused when the module runs, with a message naming the allowed `.seihou/<module-name>/`, and `seihou validate-module` reports it as the new "Module state destinations" check. The one known affected module, `gcp-kube-env`, is fixed in its 0.2.0 release: it writes `.seihou/gcp-kube-env/settings.conf`, and ordinary `seihou update` moves an existing `.seihou/gcp-kube-env.conf` there through a migration. An installed 0.1.1 copy still fails `seihou run`; refresh it with `seihou upgrade gcp-kube-env`. Existing applications of 0.1.1 still load for `seihou status` and `seihou remove`. See [Keeping module files under .seihou](module-authoring.md#keeping-module-files-under-seihou).
 - **`seihou list` fits an 80-column terminal.** Entries are grouped under one heading per kind (`Modules (N)`, `Recipes (N)`, …), sorted by name, with the description on a second line cut at 72 characters. `seihou list --full` prints every description in full.

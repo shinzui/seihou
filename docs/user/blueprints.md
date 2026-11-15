@@ -437,8 +437,21 @@ exits 0.
 Run blueprints through the agent command:
 
 ```sh
+seihou agent run api-service
 seihou agent run api-service "make this a payments service"
 ```
+
+With `claude-cli` or `codex-cli`, omitting PROMPT or supplying empty or
+whitespace-only text starts the first turn automatically with
+`Follow the instructions in the system prompt.` The terminal stays open for
+follow-up input. A nonblank explicit instruction is passed exactly as supplied,
+including whitespace. API providers (`anthropic`, `openai`) keep optional input
+unchanged. Automatic startup preserves provider tool approvals.
+
+`seihou agent --debug run api-service` shows the effective initial instruction
+without contacting a provider. Blueprint debug still applies baseline modules
+and records blueprint provenance; it is not a dry run. The manifest records
+the original PROMPT, including omission or blank text.
 
 Pass `--batch` for non-interactive automation. Seihou also selects batch mode
 automatically when stdin is not a terminal:

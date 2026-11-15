@@ -21,6 +21,11 @@ provenance:
       at: 2026-11-15T18:23:33Z
       mode: "update"
       note: "Apply review: prove real interactive startup and follow-up early, isolate smoke context, and document shared-launcher scope."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-11-15T19:02:01Z
+      mode: "implement"
+      note: "Implement shared interactive kickoff and verify terminal, display, and provenance behavior."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -64,12 +69,34 @@ not close delivery to the consumer.
 
 ## Progress
 
-- [ ] Milestone 1: The ordinary terminal command delivers the shared initial instruction to both interactive CLI providers, with a regression that fails against the original launcher and an early real-Claude first-turn/follow-up check.
-- [ ] Milestone 2: Blank and explicit inputs, debug rendering, launch guidance, and raw manifest provenance agree; batch, API, and migration behavior remain compatible.
+- [x] Milestone 1 (2026-11-15): The ordinary terminal command delivers the shared initial instruction to both interactive CLI providers, with a regression that fails against the original launcher and an early real-Claude first-turn/follow-up check.
+- [x] Milestone 2 (2026-11-15): Blank and explicit inputs, debug rendering, launch guidance, and raw manifest provenance agree; batch, API, and migration behavior remain compatible.
 - [ ] Milestone 3: Built-binary checks and a real Claude smoke check demonstrate automatic startup; documentation, plan 106 coordination, and consumer delivery evidence accurately state what is available.
 
 
+Implementation handoff (2026-11-15): The shared launcher, blueprint guidance,
+debug rendering, help, docs, ADR 0019, and IR-22 coordination are implemented.
+The focused migration/blueprint group passes 39 tests, including all eight
+terminal input classes with required `--var service.name=demo`, repeat runs,
+raw manifest parsing, debug output, and failed-provider preservation. Final
+full-suite validation passed in `nix develop` (1,788 core, 1,020 CLI, and 59 OKF
+extension tests); the plain shell lacks gitleaks.
+Published/installed delivery remains open; no release or installation was performed.
+
+
 ## Surprises & Discoveries
+
+
+The original launcher failed both initial terminal tests: Claude argv contained
+no user request; Codex's combined argument ended in `User request:` with no text.
+After resolver wiring both passed. Tests capture NUL-separated argv and give
+stdin a pseudo terminal, so nonempty system context cannot satisfy kickoff.
+`runRenderedAgentPrompt` is also used by `prompt run`; the internal mode renderer
+now receives a display name so reusable prompts say “Starting agent”, while
+blueprints say “Starting blueprint”. No provider mode selection changed.
+
+Mori remained unavailable (FRIC-19); no dependency change was needed. The first
+full test invocation lacked gitleaks (FRIC-20); use `nix develop` for final gates.
 
 
 
@@ -87,6 +114,42 @@ render path, which may apply a baseline and record provenance; it is not a new d
 
 
 ## Outcomes & Retrospective
+
+
+Source behavior is implemented. Real-provider evidence on 2026-11-15 used
+`dist-newstyle/build/aarch64-osx/ghc-9.12.4/seihou-cli-0.16.0.0/x/seihou/build/seihou/seihou`,
+reporting `seihou v0.16.0.0 (ffb437e)`, with Claude Code 2.1.325. The exact
+smoke fixture and command in Concrete Steps were run from an isolated project
+and empty Seihou cache, with inherited agent settings cleared. Provider login
+was already available; workspace trust was accepted for this agent-created
+fixture before acceptance. Both early and final runs automatically answered
+`INITIAL-TURN-STARTED`; only then was `Reply FOLLOW-UP-RECEIVED` sent, and both
+sessions answered `FOLLOW-UP-RECEIVED` and exited normally through `/exit`.
+The final run also printed the default-instruction launch line. No tool calls
+or consumer infrastructure changes were needed.
+
+The installed PATH executable still reports `seihou v0.16.0.0 (1965b35)` and
+has not received this change. Release, installation, and the installed-binary
+smoke remain required before Milestone 3 and IR-22 can close. IR-6 stays open
+for its broader migration/other-command obligations. ADR 0019 now records
+shared launch ownership and raw-input provenance; ADR 0026 is unchanged.
+FRIC-19 is accepted because registry restoration is external to this fix;
+terminal fixtures verify the existing request interface without a dependency upgrade.
+FRIC-20 is resolved by using the development shell, which supplies gitleaks.
+
+Final source gates (2026-11-15): `nix develop -c cabal build all` and
+`nix develop -c cabal test all --enable-tests --test-show-details=direct` pass
+all three suites (2,867 tests). The focused migration/blueprint group passes
+39 cases; the full suite includes completion-context, tracing, artifact guard,
+and upgrade checks. `--list-tests` confirms the existing groups, including
+`Agent call tracing end-to-end` and `agent path artifact guard`.
+The runtime/source docs audit passes 19 topics, 37 command help pages,
+6 example modules, and 8 provider-free renders. Formatting, all four native
+flake checks, `git diff --check`, and strict friction validation pass.
+IR validation passes normally (22 concepts); strict validation retains exactly
+the same ten pre-existing missing-review diagnostics as before this change.
+No review provenance was fabricated to silence them.
+
 
 
 

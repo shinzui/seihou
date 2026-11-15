@@ -1,6 +1,9 @@
 # Bundle Update Log
 
 ## 2026-11-15
+
+* **Update**: IR-22 is in-progress with targetPlan docs/plans/126-start-interactive-blueprint-runs-with-an-initial-message.md: shared interactive kickoff implemented in source, original terminal regressions fail for both providers, and real Claude startup/follow-up verified. Release and installed consumer delivery remain pending; IR-6 stays open.
+
 * **Addition**: IR-22 proposes starting interactive blueprint runs with a default initial message instead of silently waiting at an empty input box. Raised from mori://tan/tan-seihou-modules/okf/friction-log/concepts/FRIC-15; linked to the remaining interactive-launch work in IR-6 and ExecPlan 106.
 
 ## 2026-11-14

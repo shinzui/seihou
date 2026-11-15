@@ -20,6 +20,14 @@ API dispatch. Omitted or blank CLI instructions receive the neutral instruction
 “Follow the instructions in the system prompt.” Explicit instructions and raw
 receipt provenance retain their original meaning.
 
+The shared interactive launcher owns this policy for blueprint runs, assist,
+setup, and bootstrap, using `resolveAgentInitialPrompt` at the provider request
+boundary. Resolve only execution and display input: command options and the
+manifest keep the raw optional user input. Do not move the default into parsing,
+templates, or persistent state. Blueprint debug shows the effective instruction
+but retains its existing baseline and provenance effects. See
+[plan 126](../plans/126-start-interactive-blueprint-runs-with-an-initial-message.md).
+
 Claude batch migrations use `--permission-mode acceptEdits` for workspace
 editing while retaining shell approval boundaries. Codex uses workspace-write.
 Batch migrations use the existing provider command renderers and workspace,

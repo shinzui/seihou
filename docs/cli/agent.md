@@ -240,6 +240,18 @@ seihou agent run BLUEPRINT [PROMPT] [OPTIONS]
 
 Resolves the named blueprint, prompts for required variables, optionally applies its baseline modules, renders the blueprint prompt, and starts the configured provider. A successful run records applied-blueprint provenance in `.seihou/manifest.json`; a `--debug` run does so too, after printing the prompt.
 
+With `claude-cli` or `codex-cli`, omitting PROMPT or supplying empty or
+whitespace-only text starts the first turn automatically with
+`Follow the instructions in the system prompt.` The terminal stays open for
+follow-up input. A nonblank explicit instruction is passed exactly as supplied,
+including whitespace. API providers (`anthropic`, `openai`) keep optional input
+unchanged. Automatic startup preserves provider tool approvals.
+
+`seihou agent --debug run api-service` shows the effective initial instruction
+without contacting a provider. Blueprint debug still applies baseline modules
+and records blueprint provenance; it is not a dry run. The manifest records
+the original PROMPT, including omission or blank text.
+
 ### agent migrate
 
 
