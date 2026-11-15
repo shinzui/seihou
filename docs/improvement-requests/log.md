@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-11-15
+* **Addition**: IR-22 proposes starting interactive blueprint runs with a default initial message instead of silently waiting at an empty input box. Raised from mori://tan/tan-seihou-modules/okf/friction-log/concepts/FRIC-15; linked to the remaining interactive-launch work in IR-6 and ExecPlan 106.
+
 ## 2026-11-14
 
 * **Addition**: IR-20 proposes telling off-plan refusals from missing tools in a batch blueprint run, so a run that finished its work despite refused calls the blueprint never asked for (wrapped commands, `find /`, calls added by the user's own hooks) can be reported as completed with refusals; it refines IR-18 and ADR 0026. Raised from mori://tan/tan-seihou-modules/okf/friction-log/concepts/FRIC-6.
