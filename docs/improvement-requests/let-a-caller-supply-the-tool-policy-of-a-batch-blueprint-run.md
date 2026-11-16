@@ -73,8 +73,8 @@ exclusive:
 3. A blueprint-level declaration of the commands its guidance requires (backups, dev-shell
    comparison), checked by `seihou validate-blueprint` against the prompt's own instructions.
 
-Separately, `seihou agent --debug` should print the resolved prompt without writing anything to
-the manifest.
+Separately, `seihou agent --debug run` should not record the blueprint as applied; that defect
+is tracked as [BUG-5](../bug-reports/a-debug-blueprint-run-records-the-blueprint-as-applied.md).
 
 ## Acceptance sketch
 
