@@ -1,5 +1,9 @@
 # Bundle Update Log
 
+## 2026-11-16
+
+* **Addition**: IR-23 proposes letting a caller supply the tool policy of a batch blueprint run (extra allowed-tool rules or a provider settings file with its own hook), because `fix-nix-haskell-flake-customizations` cannot run unattended under its own allowedTools, and asks that `seihou agent --debug` stop writing a blueprint record. Raised from mori://shinzui/shikigami/plans/132-modernize-the-keiro-services-with-a-declared-campaign-playbook.
+
 ## 2026-11-15
 
 * **Update**: Complete IR-22 through plan 126: 0.16.0.1 published on Hackage/GitHub and installed through Home Manager; real installed Claude starts without a kickoff, answers a follow-up, and preserves omitted prompt provenance. IR-6 remains in progress for its broader migration-chain and other-command checks; shared completion and interactive boundaries are delivered.
