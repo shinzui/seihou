@@ -1,5 +1,9 @@
 # Bundle Update Log
 
+## 2026-11-16
+
+* **Addition**: BUG-5 reports that `seihou agent --debug run` writes a `blueprint` record with `appliedAt` into `.seihou/manifest.json`, indistinguishable from an applied blueprint, while migration debug writes nothing; observed in 0.16.0.1 from mori://shinzui/shikigami (the keiro modernization campaign, beside IR-23).
+
 ## 2026-11-14
 
 * **Addition**: BUG-4 reports that a blueprint baseline applies its modules' files but silently skips their Apply commands, which seihou run of the same module runs; observed in 0.16.0.0 from mori://tan/tan-seihou-modules (FRIC-4 there).
