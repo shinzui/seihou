@@ -359,8 +359,13 @@ misreport the already-successful update.
 
 Manifests without recorded applications require one explicit target for their
 first update. That successful update seeds the reproducible application record,
-saved instance values, ownership, baselines, and receipts. Ambiguous legacy
-flat values are reported instead of guessed.
+saved instance values, ownership, baselines, and receipts. The target must be
+a root application: a module the legacy manifest records only as a dependency
+is refused with `legacy_target_is_dependency`, which names the application to
+update instead. A dependency binding always wins over the flat legacy values.
+A flat value that another module may have written is not reused; it is
+resolved again with a warning, and without a terminal
+the `legacy_value_ambiguous` error shows the held value and the `--var` to pass.
 
 ## Examples
 

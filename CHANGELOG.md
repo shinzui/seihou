@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.16.0.2] - 2026-11-18
+
 ### Fixed
 
 - `seihou update <target>` on a manifest that predates recorded applications no longer reuses a flat legacy value for a variable that any instance received through a dependency binding, whether in the target's composition or anywhere in the legacy module records. A dependency binding now always wins over the flat map, and a name some other instance was bound to is resolved afresh with an `AmbiguousLegacyValue` warning, so `seihou update master-plan` no longer aims exec-plan at another skill's directory. A root instance that shares such a name (a root `link-skill`, say) is no longer filled from the flat map either: answer the prompt, or, without a terminal, read the new `legacy_value_ambiguous` error, which shows the value the legacy manifest holds and the `--var` to pass, instead of a bare missing-variable error (BUG-6).
@@ -1316,7 +1318,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.16.0.1...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.16.0.2...HEAD
+[0.16.0.2]: https://github.com/shinzui/seihou/compare/v0.16.0.1...v0.16.0.2
 [0.16.0.1]: https://github.com/shinzui/seihou/compare/v0.16.0.0...v0.16.0.1
 [0.16.0.0]: https://github.com/shinzui/seihou/compare/v0.15.0.0...v0.16.0.0
 [0.15.0.0]: https://github.com/shinzui/seihou/compare/v0.14.0.0...v0.15.0.0

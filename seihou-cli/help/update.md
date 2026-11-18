@@ -169,8 +169,12 @@ LEGACY PROJECTS
 
   A manifest without recorded applications needs one explicit TARGET for its
   first update. That successful run seeds application identity, saved inputs,
-  ownership, generated baselines, and command receipts. Ambiguous legacy values
-  are reported rather than guessed.
+  ownership, generated baselines, and command receipts. Name a root: a module
+  the legacy manifest records only as a dependency is refused
+  (legacy_target_is_dependency) with the application to update instead. A
+  dependency binding wins over the flat legacy values; a value another module
+  may have written is not reused but resolved again, and without a terminal
+  legacy_value_ambiguous shows the held value and the --var to pass.
 
 SEE ALSO
 

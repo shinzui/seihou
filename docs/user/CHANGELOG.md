@@ -6,6 +6,13 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 ## [Unreleased]
 
+## [0.16.0.2] - 2026-11-18
+
+### Fixed
+
+- **Updating a project from an older manifest no longer borrows another module's value.** On a manifest that predates recorded applications, `seihou update master-plan` used to fill a dependency's input from the shared flat value map, so a shared variable such as `skill.name` could point exec-plan at another skill's directory. A dependency binding now always wins, and a value that another module may have written is no longer reused: Seihou asks for it again, or, without a terminal, stops with `legacy_value_ambiguous`, showing the value the old manifest holds and the flag to pass, for example `--var skill.name=VALUE`.
+- **`seihou update` refuses a module that the old manifest records only as a dependency.** Running `seihou update exec-plan` when exec-plan was installed by `master-plan` used to record a second application that owned the same files and could not be removed. It now stops with `legacy_target_is_dependency` and tells you what to run instead, for example `seihou update master-plan`.
+
 ## [0.16.0.1] - 2026-11-15
 
 ### Fixed
@@ -1205,7 +1212,8 @@ regeneration.
 
 ---
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.16.0.1...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.16.0.2...HEAD
+[0.16.0.2]: https://github.com/shinzui/seihou/compare/v0.16.0.1...v0.16.0.2
 [0.16.0.1]: https://github.com/shinzui/seihou/compare/v0.16.0.0...v0.16.0.1
 [0.16.0.0]: https://github.com/shinzui/seihou/compare/v0.15.0.0...v0.16.0.0
 [0.15.0.0]: https://github.com/shinzui/seihou/compare/v0.14.0.0...v0.15.0.0
