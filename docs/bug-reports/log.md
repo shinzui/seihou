@@ -1,5 +1,9 @@
 # Bundle Update Log
 
+## 2026-11-18
+
+* **Addition**: BUG-6 reports that a targeted `seihou update` on a legacy manifest reuses a flat `variables` value declared by other recorded modules (`skill.name=release` from `link-skill`) and ignores the instance's legacy `parentVars`, so exec-plan and master-plan updates aim at the release skill; observed in 0.16.0.1 from mori://shinzui/relay-pagination.
+
 ## 2026-11-16
 
 * **Addition**: BUG-5 reports that `seihou agent --debug run` writes a `blueprint` record with `appliedAt` into `.seihou/manifest.json`, indistinguishable from an applied blueprint, while migration debug writes nothing; observed in 0.16.0.1 from mori://shinzui/shikigami (the keiro modernization campaign, beside IR-23).
