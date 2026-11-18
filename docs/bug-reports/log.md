@@ -2,6 +2,7 @@
 
 ## 2026-11-18
 
+* **Update**: BUG-6 resolution notes that an ambiguous required legacy value left unresolved without a terminal now fails with `legacy_value_ambiguous`, showing the held value and the `--var` remedy.
 * **Update**: BUG-7 status reported -> fixed, fixedVersion unreleased. A legacy target recorded only with parent bindings is refused with `legacy_target_is_dependency`, naming the bindings and the roots that include it; verified against relay-pagination's pre-update tree (`25e0336~1`), regressions in `UpdateSpec.hs` and `UpdateRenderSpec.hs`.
 * **Addition**: BUG-7 reports that `seihou update <module>` on a legacy manifest, for a module recorded only as a dependency, seeds a new root application from the installed copy instead of upgrading the dependency instance, leaving duplicate unremovable owners; observed in 0.16.0.1 from mori://shinzui/relay-pagination alongside BUG-6.
 * **Update**: BUG-6 status reported -> fixed, fixedVersion unreleased. `legacySavedValues` lets a dependency binding win over the flat map and treats any name bound anywhere in the legacy records as ambiguous; verified against relay-pagination's pre-update tree (`25e0336~1`), regression in `seihou-cli/test/Seihou/CLI/UpdateSpec.hs`. Corrected the report: master-plan 0.14.0 depends only on agent-gitignore and exec-plan and declares `mp.skill.name`, not `skill.name`; the bound `link-skill` records come from master-plan 0.6.0.

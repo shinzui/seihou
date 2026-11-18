@@ -26,7 +26,9 @@ resolution: >-
   have been written by another module. Against a copy of relay-pagination's pre-update tree,
   `seihou update master-plan --dry-run` and `seihou update exec-plan --dry-run` now plan with 0
   conflicts, the latter warning about `skill.name`; the root `link-skill` is no longer filled
-  from the flat map and needs `--var skill.name=release` or a prompt answer. Regression:
+  from the flat map and needs `--var skill.name=release` or a prompt answer; without a terminal
+  it fails with `legacy_value_ambiguous`, which shows the held `skill.name=release` and the
+  `--var` to pass, rather than a bare `missing required variable`. Regression:
   `seihou-cli/test/Seihou/CLI/UpdateSpec.hs` ("legacy saved values"). The related defect of
   `seihou update exec-plan` creating a second root application is BUG-7.
 generated:
