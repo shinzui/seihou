@@ -208,6 +208,7 @@ spec = do
               NoRecordedApplications,
               LegacyUpdateRequiresOneTarget,
               LegacyTargetIsDependency "exec-plan" [ParentVars (Map.singleton "skill.name" "exec-plan")] ["master-plan"],
+              LegacyValuesNeedChoice [("skill.name", "release")] [],
               UpdateTargetNotFound "nope" ["alpha"],
               SharedPathRequiresApplications ".gitignore" Set.empty (Set.singleton skillRef),
               SharedWriteEvidenceUnavailable ".gitignore" [],
@@ -239,6 +240,13 @@ spec = do
         `shouldSatisfy` T.isInfixOf "Update the module or recipe that depends on it instead."
       rendered `shouldNotSatisfy` leaksInternals
 
+    it "leads an ambiguous legacy value with the --var remedy and shows the held value" $ do
+      let rendered = renderUpdateHuman False (errorOutput (LegacyValuesNeedChoice [("skill.name", "release")] [MissingRequiredVar "other"]))
+      rendered `shouldSatisfy` T.isPrefixOf "Update failed [legacy_value_ambiguous]: Pass --var skill.name=VALUE: "
+      rendered `shouldSatisfy` T.isInfixOf "legacy skill.name=release may have been written by another module"
+      rendered `shouldSatisfy` T.isInfixOf "Also: missing required variable: other"
+      rendered `shouldNotSatisfy` leaksInternals
+
     it "keeps the machine error codes stable in JSON" $
       mapM_
         ( \(err, code) ->
@@ -247,7 +255,8 @@ spec = do
         [ (SharedPathRequiresApplications ".gitignore" Set.empty (Set.singleton skillRef), "shared_path_requires_applications"),
           (SharedWriteEvidenceUnavailable ".gitignore" [], "shared_write_evidence_unavailable"),
           (UpdateManifestUpgradeRequired "m" (ManifestSchemaVersion 5), "manifest_upgrade_required"),
-          (LegacyTargetIsDependency "exec-plan" [] [], "legacy_target_is_dependency")
+          (LegacyTargetIsDependency "exec-plan" [] [], "legacy_target_is_dependency"),
+          (LegacyValuesNeedChoice [] [], "legacy_value_ambiguous")
         ]
 
   it "shows a staged manifest preparation in the human and JSON plan" $ do

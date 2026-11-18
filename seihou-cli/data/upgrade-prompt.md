@@ -116,6 +116,12 @@ The manifest predates recorded applications. Run one `seihou update {{module}}`
 root alongside newer applications: update fetches its saved remote and includes
 matching recorded dependencies in the normal preview. Later updates can name any target.
 
+### legacy_value_ambiguous
+The legacy manifest holds a value for a required variable, but another module
+may have written it, so it was not reused. The message shows that value. Never
+pass it back on your own: show the user the value and the module being updated,
+ask which value this application needs, then rerun with `--var KEY=VALUE`.
+
 ### legacy_target_is_dependency
 The legacy manifest records `{{module}}` only as a dependency of another module,
 so updating it alone would record a second application owning the same files.

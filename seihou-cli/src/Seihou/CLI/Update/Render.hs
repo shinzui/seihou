@@ -539,6 +539,7 @@ errorCode UpdateManifestUpgradeRequired {} = "manifest_upgrade_required"
 errorCode NoRecordedApplications = "no_recorded_applications"
 errorCode LegacyUpdateRequiresOneTarget = "legacy_update_requires_one_target"
 errorCode LegacyTargetIsDependency {} = "legacy_target_is_dependency"
+errorCode LegacyValuesNeedChoice {} = "legacy_value_ambiguous"
 errorCode UpdateTargetNotFound {} = "target_not_found"
 errorCode SharedPathRequiresApplications {} = "shared_path_requires_applications"
 errorCode SharedWriteEvidenceUnavailable {} = "shared_write_evidence_unavailable"
@@ -604,6 +605,15 @@ errorMessage (LegacyTargetIsDependency target bindings owners) =
     boundAs = case mapMaybe parentVarsText bindings of
       [] -> ""
       shown -> " " <> T.intercalate ", " shown
+errorMessage (LegacyValuesNeedChoice held others) =
+  "Pass "
+    <> T.intercalate " " ["--var " <> name ^. #unVarName <> "=VALUE" | (name, _) <- held]
+    <> ": this manifest predates recorded applications, and its legacy "
+    <> T.intercalate "; " [name ^. #unVarName <> "=" <> value | (name, value) <- held]
+    <> " may have been written by another module, so it was not reused. Confirm that value or choose the one this application needs."
+    <> case others of
+      [] -> ""
+      _ -> " Also: " <> T.intercalate "; " (map formatVarError others)
 errorMessage (UpdateTargetNotFound target available) =
   "No recorded application matches '"
     <> target

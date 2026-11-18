@@ -26,7 +26,7 @@ import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime (..), fromGregorian)
 import GHC.Generics (Generic)
 import Seihou.CLI.CommandExecution (CommandPolicy (..))
-import Seihou.CLI.Update (PromptPolicy (..), UpdateRequest (..), UpdateSelection (..), applyProjectUpdate, isUpdateNoOp, legacySavedValues, withProjectUpdate)
+import Seihou.CLI.Update (PromptPolicy (..), UpdateRequest (..), UpdateSelection (..), applyProjectUpdate, explainAmbiguousLegacyValues, isUpdateNoOp, legacySavedValues, withProjectUpdate)
 import Seihou.CLI.Update.Migrations (StagedMigrations (..), planAndStageMigrations)
 import Seihou.CLI.Update.Rebinding (alignPriorInstances)
 import Seihou.CLI.Update.Selection
@@ -102,6 +102,16 @@ spec = do
       -- The root link-skill is resolved afresh too, rather than trusted.
       snd (legacySavedValues legacyManifest [(rootOf "link-skill", linkSkill, "")])
         `shouldBe` [AmbiguousLegacyValue skillName]
+
+    it "names the held legacy value when an ambiguous required name stays unresolved" $ do
+      -- A root link-skill cannot prompt without a terminal; the bare
+      -- missing-variable error would leave the caller guessing.
+      let (_, warnings) = legacySavedValues legacyManifest [(rootOf "link-skill", linkSkill, "")]
+          unresolved = UpdateVariableErrors [MissingRequiredVar skillName, MissingRequiredVar (VarName "other")]
+      explainAmbiguousLegacyValues legacyManifest warnings unresolved
+        `shouldBe` LegacyValuesNeedChoice [(skillName, "release")] [MissingRequiredVar (VarName "other")]
+      -- Without an ambiguity warning the error is left alone.
+      explainAmbiguousLegacyValues legacyManifest [] unresolved `shouldBe` unresolved
 
     it "still reuses a value only the target's composition declares" $ do
       let manifest = legacyManifest & #modules .~ [] & #vars .~ Map.fromList [(skillName, "custom"), (intentions, "true")]

@@ -17,6 +17,7 @@ module Seihou.CLI.Update
     withProjectUpdate,
     isUpdateNoOp,
     legacySavedValues,
+    explainAmbiguousLegacyValues,
   )
 where
 
@@ -848,7 +849,7 @@ seedLegacyApplication request session projectRoot installed manifest now request
                     namespace = deriveNamespace primary
                 resolved <- resolveApplicationValues request namespace "" saved (artifactRecipeInputs expansion Nothing) overrides modulesInOrder
                 case resolved of
-                  Left err -> pure (Left err)
+                  Left err -> pure (Left (explainAmbiguousLegacyValues manifest legacyWarnings err))
                   Right (recipeValues, values) -> do
                     origined <- traverse (withInstanceOrigin projectRoot catalog) modulesInOrder
                     let recorded = buildAppliedComposition target origin version [] (Just namespace) Nothing origined values now & #recipeInputs .~ recordedRecipeInputs target recipeValues & #instances %~ map (restoreLegacyVersion manifest)
@@ -915,7 +916,7 @@ seedInstalledLegacyApplication request projectRoot manifest now requested = do
                   namespace = deriveNamespace primary
               resolved <- resolveApplicationValues request namespace "" saved (artifactRecipeInputs expansion Nothing) overrides modulesInOrder
               case resolved of
-                Left err -> pure (Left err)
+                Left err -> pure (Left (explainAmbiguousLegacyValues manifest warnings err))
                 Right (recipeValues, resolvedValues) -> do
                   targetOrigin <- detectArtifactOrigin projectRoot targetSource
                   originedModules <- traverse (\(instanceId, modul, dir) -> (instanceId,modul,) <$> detectArtifactOrigin projectRoot dir) modulesInOrder
@@ -976,6 +977,20 @@ legacySavedValues manifest modulesInOrder = (saved, warnings)
         Map.notMember (declaration ^. #name) (manifest ^. #vars)
       ]
     warnings = ambiguous <> missing
+
+-- | A required name left unresolved only because its legacy value was
+-- ambiguous gets the legacy value beside the error, so the caller confirms
+-- or replaces it rather than guessing; prompts are unavailable here.
+explainAmbiguousLegacyValues :: Manifest -> [UpdateWarning] -> UpdateError -> UpdateError
+explainAmbiguousLegacyValues manifest warnings = \case
+  UpdateVariableErrors errors
+    | not (null held) -> LegacyValuesNeedChoice held [e | e <- errors, not (isHeld e)]
+    where
+      ambiguous = Set.fromList [name | AmbiguousLegacyValue name <- warnings]
+      held = nubOrd [(name, value) | MissingRequiredVar name <- errors, Set.member name ambiguous, Just value <- [Map.lookup name (manifest ^. #vars)]]
+      isHeld (MissingRequiredVar name) = any ((== name) . fst) held
+      isHeld _ = False
+  err -> err
 
 restoreLegacyVersion :: Manifest -> AppliedInstanceState -> AppliedInstanceState
 restoreLegacyVersion manifest state =

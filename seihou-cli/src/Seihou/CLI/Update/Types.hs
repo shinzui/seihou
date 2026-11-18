@@ -299,6 +299,10 @@ data UpdateError
     -- second, unbound root application. The recorded bindings, then the
     -- recorded roots whose installed composition includes the module.
     LegacyTargetIsDependency Text [ParentVars] [Text]
+  | -- | Required inputs left unresolved because their legacy value may have
+    -- been written by another module: each name with the value the legacy
+    -- manifest holds, then any other variable errors.
+    LegacyValuesNeedChoice [(VarName, Text)] [VarError]
   | UpdateTargetNotFound Text [Text]
   | -- | The path is known to require the ownership closure: selected
     -- owners, then the owners missing from the selection.
