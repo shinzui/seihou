@@ -116,6 +116,14 @@ The manifest predates recorded applications. Run one `seihou update {{module}}`
 root alongside newer applications: update fetches its saved remote and includes
 matching recorded dependencies in the normal preview. Later updates can name any target.
 
+### legacy_target_is_dependency
+The legacy manifest records `{{module}}` only as a dependency of another module,
+so updating it alone would record a second application owning the same files.
+Update the application the message names (the module or recipe that depends on
+`{{module}}`) instead; that upgrades the dependency with its binding. If the
+message names none, read `.seihou/manifest.json` `modules` for the unbound root
+that pulls `{{module}}` in, and ask the user before choosing.
+
 ### target_not_found
 `{{module}}` is not a recorded target. The message lists the ones that are. Ask
 the user which one they meant; do not guess.

@@ -823,6 +823,11 @@ loadConfigMaps namespace context =
 
 seedLegacyApplication :: UpdateRequest -> FilePath -> FilePath -> FilePath -> Manifest -> UTCTime -> Text -> IO (Either UpdateError ([AppliedComposition], [UpdateWarning], Maybe StagedSelection))
 seedLegacyApplication request session projectRoot installed manifest now requested = case roots of
+  -- Recorded only as some module's dependency: seeding it from the installed
+  -- copy would add a second, unbound root owning the same files (BUG-7).
+  [] | not (null dependencyBindings) -> do
+    owners <- legacyDependencyOwners projectRoot manifest requested
+    pure (Left (LegacyTargetIsDependency requested dependencyBindings owners))
   [] -> fmap (fmap (\(apps, warnings) -> (apps, warnings, Nothing))) (seedInstalledLegacyApplication request projectRoot manifest now requested)
   (target, origin, version) : _ -> do
     let provisional = AppliedComposition (mkApplicationId target []) target origin version [] (Just (deriveNamespace (ModuleName requested))) Nothing [] Map.empty [] Nothing Nothing now
@@ -855,6 +860,32 @@ seedLegacyApplication request session projectRoot installed manifest now request
     roots =
       [(AppliedModuleTarget (applied ^. #name), applied ^. #origin, applied ^. #moduleVersion) | applied <- manifest ^. #modules, applied ^. #name == ModuleName requested, applied ^. #parentVars == emptyParentVars]
         <> [(AppliedRecipeTarget (recipe ^. #name), recipe ^. #origin, recipe ^. #recipeVersion) | recipe <- maybeToList (manifest ^. #recipe), recipe ^. #name == RecipeName requested]
+    dependencyBindings = nubOrd [applied ^. #parentVars | applied <- manifest ^. #modules, applied ^. #name == ModuleName requested]
+
+-- | The legacy roots (unbound module records and the recorded recipe) whose
+-- installed composition includes the requested module. Best effort: a root
+-- that is not installed here, or does not load, is left out.
+legacyDependencyOwners :: FilePath -> Manifest -> Text -> IO [Text]
+legacyDependencyOwners projectRoot manifest requested = do
+  searchPaths <- defaultSearchPaths
+  catMaybes <$> forM candidates (\candidate -> fmap (\includes -> if includes then Just candidate else Nothing) (includesRequested searchPaths candidate))
+  where
+    candidates =
+      nubOrd
+        ( [applied ^. #name . #unModuleName | applied <- manifest ^. #modules, applied ^. #parentVars == emptyParentVars, applied ^. #name /= ModuleName requested]
+            <> [recipe ^. #name . #unRecipeName | recipe <- maybeToList (manifest ^. #recipe)]
+        )
+    includesRequested searchPaths candidate = do
+      discovered <- discoverRunnable searchPaths (ModuleName candidate)
+      loaded <- case discovered of
+        Right (RunnableModule modul _) -> loadComposition searchPaths (modul ^. #name) []
+        Right (RunnableRecipe recipe dir) -> do
+          expanded <- loadRecipeChain projectRoot searchPaths recipe dir
+          case expanded of
+            Left err -> pure (Left err)
+            Right expansion -> loadComposition searchPaths (expansion ^. #primary) (drop 1 (map (^. #dependency . #module_) (expansion ^. #members)))
+        _ -> pure (Right [])
+      pure (either (const False) (any (\(instanceId, _, _) -> instanceId ^. #module_ == ModuleName requested)) loaded)
 
 seedInstalledLegacyApplication ::
   UpdateRequest -> FilePath -> Manifest -> UTCTime -> Text -> IO (Either UpdateError ([AppliedComposition], [UpdateWarning]))

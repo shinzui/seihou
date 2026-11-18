@@ -19,7 +19,7 @@ import Data.Aeson.Types (Pair)
 import Data.ByteString.Lazy (ByteString)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, isNothing)
+import Data.Maybe (fromMaybe, isNothing, mapMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.CLI.ApplicationDisplay (applicationLabel, appliedTargetName, moduleNameText, parentVarsText)
@@ -538,6 +538,7 @@ errorCode UpdateManifestUnreadable {} = "manifest_unreadable"
 errorCode UpdateManifestUpgradeRequired {} = "manifest_upgrade_required"
 errorCode NoRecordedApplications = "no_recorded_applications"
 errorCode LegacyUpdateRequiresOneTarget = "legacy_update_requires_one_target"
+errorCode LegacyTargetIsDependency {} = "legacy_target_is_dependency"
 errorCode UpdateTargetNotFound {} = "target_not_found"
 errorCode SharedPathRequiresApplications {} = "shared_path_requires_applications"
 errorCode SharedWriteEvidenceUnavailable {} = "shared_write_evidence_unavailable"
@@ -590,6 +591,19 @@ errorMessage NoRecordedApplications =
 errorMessage LegacyUpdateRequiresOneTarget =
   "This manifest predates recorded applications. Name exactly one target to update, and"
     <> " seihou records it as the first application."
+errorMessage (LegacyTargetIsDependency target bindings owners) =
+  "This manifest predates recorded applications and records "
+    <> target
+    <> " only as a dependency"
+    <> boundAs
+    <> ". Updating it alone would record a second, unbound application that owns the same files. "
+    <> case owners of
+      [] -> "Update the module or recipe that depends on it instead."
+      _ -> "Update the application that depends on it instead: " <> T.intercalate ", " ["seihou update " <> owner | owner <- owners] <> "."
+  where
+    boundAs = case mapMaybe parentVarsText bindings of
+      [] -> ""
+      shown -> " " <> T.intercalate ", " shown
 errorMessage (UpdateTargetNotFound target available) =
   "No recorded application matches '"
     <> target

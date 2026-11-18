@@ -294,6 +294,11 @@ data UpdateError
     UpdateManifestUpgradeRequired FilePath ManifestSchemaVersion
   | NoRecordedApplications
   | LegacyUpdateRequiresOneTarget
+  | -- | A legacy manifest records the named module only as a dependency
+    -- (each record carries parent bindings), so seeding it would add a
+    -- second, unbound root application. The recorded bindings, then the
+    -- recorded roots whose installed composition includes the module.
+    LegacyTargetIsDependency Text [ParentVars] [Text]
   | UpdateTargetNotFound Text [Text]
   | -- | The path is known to require the ownership closure: selected
     -- owners, then the owners missing from the selection.

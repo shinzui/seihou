@@ -553,6 +553,45 @@ spec = do
                   other -> expectationFailure ("expected one legacy module instance, got " <> show other)
                 other -> expectationFailure ("expected one seeded application, got " <> show other)
 
+    it "refuses a legacy target recorded only as a dependency and names its owner" $
+      -- BUG-7: seeding exec-plan from its installed copy recorded a second,
+      -- unbound root beside master-plan's bound instance.
+      withSystemTempDirectory "seihou-update-legacy-dependency" $ \root -> do
+        fixture <- prepareUpdateFixture root
+        decoded <- manifestFromJSON <$> LBS.readFile (fixture ^. #manifestPath)
+        let binding = ParentVars (Map.singleton "project.name" "bound")
+            ownerDir = fixture ^. #xdgHome </> "seihou" </> "installed" </> "owner"
+            ownerModule =
+              T.replace
+                ", dependencies = [] : List Text"
+                ", dependencies = [{ module = \"demo\", vars = [{ name = \"project.name\", value = \"bound\" }] }]"
+                (moduleDhall "owner" "1.0.0")
+        legacy <- case decoded of
+          Left err -> expectationFailure err >> pure (emptyManifest testTime)
+          Right manifest ->
+            pure
+              ( withoutApplications manifest
+                  & #modules
+                    .~ [ AppliedModule "demo" binding (LocalOrigin "demo") (Just "1.0.0") testTime Nothing,
+                         AppliedModule "owner" emptyParentVars (LocalOrigin "owner") (Just "1.0.0") testTime Nothing,
+                         AppliedModule "unrelated" emptyParentVars (LocalOrigin "unrelated") (Just "1.0.0") testTime Nothing
+                       ]
+              )
+        LBS.writeFile (fixture ^. #manifestPath) (manifestToJSON legacy)
+        createDirectoryIfMissing True ownerDir
+        TIO.writeFile (ownerDir </> "module.dhall") ownerModule
+        beforeManifest <- LBS.readFile (fixture ^. #manifestPath)
+        let request = ((updateRequest False) & #selection .~ NamedUpdateTargets ["demo"])
+        withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
+          withCurrentDirectory (fixture ^. #projectRoot) $ do
+            result <- withProjectUpdate request $ \case
+              Left err -> pure (Left err)
+              Right plan -> applyProjectUpdate plan
+            case result of
+              Left err -> err `shouldBe` LegacyTargetIsDependency "demo" [binding] ["owner"]
+              Right _ -> expectationFailure "expected the dependency-only legacy target to be refused"
+            LBS.readFile (fixture ^. #manifestPath) `shouldReturn` beforeManifest
+
     it "rolls managed project and cache state back when a candidate command fails" $
       withSystemTempDirectory "seihou-update-command-failure" $ \root -> do
         fixture <- prepareUpdateFixture root

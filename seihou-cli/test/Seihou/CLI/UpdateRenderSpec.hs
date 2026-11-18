@@ -207,6 +207,7 @@ spec = do
               UpdateManifestUpgradeRequired ".seihou/manifest.json" (ManifestSchemaVersion 5),
               NoRecordedApplications,
               LegacyUpdateRequiresOneTarget,
+              LegacyTargetIsDependency "exec-plan" [ParentVars (Map.singleton "skill.name" "exec-plan")] ["master-plan"],
               UpdateTargetNotFound "nope" ["alpha"],
               SharedPathRequiresApplications ".gitignore" Set.empty (Set.singleton skillRef),
               SharedWriteEvidenceUnavailable ".gitignore" [],
@@ -228,6 +229,16 @@ spec = do
         )
         failures
 
+    it "names the owner to update when a legacy target is only a dependency" $ do
+      let binding = ParentVars (Map.singleton "skill.name" "exec-plan")
+          rendered = renderUpdateHuman False (errorOutput (LegacyTargetIsDependency "exec-plan" [binding] ["master-plan"]))
+      rendered `shouldSatisfy` T.isPrefixOf "Update failed [legacy_target_is_dependency]: "
+      rendered `shouldSatisfy` T.isInfixOf "records exec-plan only as a dependency [skill.name=exec-plan]"
+      rendered `shouldSatisfy` T.isInfixOf "instead: seihou update master-plan."
+      renderUpdateHuman False (errorOutput (LegacyTargetIsDependency "exec-plan" [binding] []))
+        `shouldSatisfy` T.isInfixOf "Update the module or recipe that depends on it instead."
+      rendered `shouldNotSatisfy` leaksInternals
+
     it "keeps the machine error codes stable in JSON" $
       mapM_
         ( \(err, code) ->
@@ -235,7 +246,8 @@ spec = do
         )
         [ (SharedPathRequiresApplications ".gitignore" Set.empty (Set.singleton skillRef), "shared_path_requires_applications"),
           (SharedWriteEvidenceUnavailable ".gitignore" [], "shared_write_evidence_unavailable"),
-          (UpdateManifestUpgradeRequired "m" (ManifestSchemaVersion 5), "manifest_upgrade_required")
+          (UpdateManifestUpgradeRequired "m" (ManifestSchemaVersion 5), "manifest_upgrade_required"),
+          (LegacyTargetIsDependency "exec-plan" [] [], "legacy_target_is_dependency")
         ]
 
   it "shows a staged manifest preparation in the human and JSON plan" $ do
