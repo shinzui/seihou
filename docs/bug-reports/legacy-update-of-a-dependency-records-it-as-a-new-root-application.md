@@ -13,7 +13,22 @@ affects: mori://shinzui/seihou
 affectedVersion: 0.16.0.1
 origin: mori://shinzui/relay-pagination
 severity: degraded
-status: reported
+status: fixed
+fixedVersion: unreleased
+resolution: >-
+  `seedLegacyApplication` in `seihou-cli/src/Seihou/CLI/Update.hs` now refuses, before planning
+  or writing anything, a legacy target that has no root record but is recorded with parent
+  bindings: the new `legacy_target_is_dependency` error (`LegacyTargetIsDependency`) names the
+  recorded bindings and the legacy roots whose installed composition includes the module, found
+  best effort by loading each root's installed module or recipe. Against a copy of
+  relay-pagination's pre-update tree, `seihou update exec-plan --dry-run` now fails with
+  "records exec-plan only as a dependency [skill.name=exec-plan] ... Update the application that
+  depends on it instead: seihou update master-plan."; `seihou update master-plan` and the root
+  `link-skill` still plan. Seeding from the installed copy remains for a name with no legacy
+  record at all. The `seihou agent upgrade` prompt documents the new code. Regressions:
+  `seihou-cli/test/Seihou/CLI/UpdateSpec.hs` ("refuses a legacy target recorded only as a
+  dependency and names its owner") and `UpdateRenderSpec.hs`. A project that already holds the
+  duplicate application still needs the manual cleanup in the workaround.
 generated:
   by: process:claude-code
   at: "2026-11-18T18:34:29Z"
