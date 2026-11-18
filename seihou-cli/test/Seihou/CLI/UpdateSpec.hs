@@ -26,7 +26,7 @@ import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime (..), fromGregorian)
 import GHC.Generics (Generic)
 import Seihou.CLI.CommandExecution (CommandPolicy (..))
-import Seihou.CLI.Update (PromptPolicy (..), UpdateRequest (..), UpdateSelection (..), applyProjectUpdate, isUpdateNoOp, withProjectUpdate)
+import Seihou.CLI.Update (PromptPolicy (..), UpdateRequest (..), UpdateSelection (..), applyProjectUpdate, isUpdateNoOp, legacySavedValues, withProjectUpdate)
 import Seihou.CLI.Update.Migrations (StagedMigrations (..), planAndStageMigrations)
 import Seihou.CLI.Update.Rebinding (alignPriorInstances)
 import Seihou.CLI.Update.Selection
@@ -63,6 +63,52 @@ tests = testSpec "Seihou.CLI.Update" spec
 
 spec :: Spec
 spec = do
+  describe "legacy saved values" $ do
+    -- BUG-6: relay-pagination's legacy manifest, where the root link-skill
+    -- last wrote skill.name=release into the flat map.
+    let skillName = VarName "skill.name"
+        intentions = VarName "intentions.enabled"
+        bound value = ParentVars (Map.singleton skillName value)
+        legacyManifest =
+          (emptyManifest testTime)
+            & #modules
+              .~ [ AppliedModule "link-skill" (bound "master-plan") (LocalOrigin "link-skill") (Just "0.4.0") testTime Nothing,
+                   AppliedModule "link-skill" (bound "exec-plan") (LocalOrigin "link-skill") (Just "0.4.0") testTime Nothing,
+                   AppliedModule "exec-plan" (bound "exec-plan") (LocalOrigin "exec-plan") (Just "0.6.0") testTime Nothing,
+                   AppliedModule "master-plan" emptyParentVars (LocalOrigin "master-plan") (Just "0.6.0") testTime Nothing,
+                   AppliedModule "link-skill" emptyParentVars (LocalOrigin "link-skill") (Just "0.4.0") testTime Nothing
+                 ]
+            & #vars
+              .~ Map.fromList [(skillName, "release"), (intentions, "false"), (VarName "mp.skill.name", "master-plan")]
+        execPlan = legacyModule "exec-plan" [legacyVar skillName, legacyVar intentions]
+        masterPlan = legacyModule "master-plan" [legacyVar (VarName "mp.skill.name"), legacyVar intentions]
+        linkSkill = legacyModule "link-skill" [legacyVar skillName]
+        boundExecPlan = ModuleInstance "exec-plan" (bound "exec-plan")
+        rootOf name = ModuleInstance name emptyParentVars
+        savedFor instanceId = Map.findWithDefault Map.empty instanceId . fst
+
+    it "never lets the flat map outrank a dependency binding" $ do
+      let result = legacySavedValues legacyManifest [(rootOf "master-plan", masterPlan, ""), (boundExecPlan, execPlan, "")]
+      Map.lookup skillName (savedFor boundExecPlan result) `shouldBe` Nothing
+      Map.lookup (VarName "mp.skill.name") (savedFor (rootOf "master-plan") result) `shouldBe` Just "master-plan"
+      -- exec-plan resolves to its binding, so skill.name is not reported.
+      snd result `shouldBe` [AmbiguousLegacyValue intentions]
+
+    it "treats a name bound anywhere in the legacy records as ambiguous" $ do
+      let result = legacySavedValues legacyManifest [(rootOf "exec-plan", execPlan, "")]
+      Map.lookup skillName (savedFor (rootOf "exec-plan") result) `shouldBe` Nothing
+      Map.lookup intentions (savedFor (rootOf "exec-plan") result) `shouldBe` Just "false"
+      snd result `shouldBe` [AmbiguousLegacyValue skillName]
+      -- The root link-skill is resolved afresh too, rather than trusted.
+      snd (legacySavedValues legacyManifest [(rootOf "link-skill", linkSkill, "")])
+        `shouldBe` [AmbiguousLegacyValue skillName]
+
+    it "still reuses a value only the target's composition declares" $ do
+      let manifest = legacyManifest & #modules .~ [] & #vars .~ Map.fromList [(skillName, "custom"), (intentions, "true")]
+          result = legacySavedValues manifest [(rootOf "exec-plan", execPlan, "")]
+      savedFor (rootOf "exec-plan") result `shouldBe` Map.fromList [(skillName, "custom"), (intentions, "true")]
+      snd result `shouldBe` []
+
   describe "application selection" $ do
     it "matches every application containing a requested bare module" $ do
       let first = application (AppliedModuleTarget "one") [instanceState "shared"]
@@ -1216,6 +1262,25 @@ application target instances =
     targetName = case target of
       AppliedModuleTarget name -> name ^. #unModuleName
       AppliedRecipeTarget name -> name ^. #unRecipeName
+
+legacyModule :: ModuleName -> [VarDecl] -> Module
+legacyModule name vars =
+  Module
+    { name,
+      version = Nothing,
+      description = Nothing,
+      vars,
+      exports = [],
+      prompts = [],
+      steps = [],
+      commands = [],
+      dependencies = [],
+      removal = Nothing,
+      migrations = []
+    }
+
+legacyVar :: VarName -> VarDecl
+legacyVar name = VarDecl name VTText Nothing Nothing True Nothing
 
 instanceState :: ModuleName -> AppliedInstanceState
 instanceState name = instanceStateFrom name (LocalOrigin (name ^. #unModuleName))

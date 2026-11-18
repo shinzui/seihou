@@ -498,7 +498,7 @@ warningText (SameVersionContentChanged name) =
 warningText (AmbiguousLegacyValue name) =
   "the legacy manifest value for "
     <> name ^. #unVarName
-    <> " is declared by more than one module, so it was not reused; it is resolved again"
+    <> " may have been written by another module, so it was not reused; it is resolved again"
 warningText (MissingLegacyValue name) =
   "the legacy manifest has no value for required variable " <> name ^. #unVarName <> "; it is resolved again"
 warningText (MigrationCommandNotSimulated name command) =

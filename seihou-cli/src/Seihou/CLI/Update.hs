@@ -16,6 +16,7 @@ module Seihou.CLI.Update
     applyProjectUpdate,
     withProjectUpdate,
     isUpdateNoOp,
+    legacySavedValues,
   )
 where
 
@@ -906,21 +907,34 @@ legacySavedValues manifest modulesInOrder = (saved, warnings)
   where
     declarations = [(instanceId, declaration) | (instanceId, modul, _) <- modulesInOrder, declaration <- modul ^. #vars]
     counts = Map.fromListWith (+) [(declaration ^. #name, 1 :: Int) | (_, declaration) <- declarations]
-    reusable name = Map.lookup name counts == Just 1 || (sharedExport name && sameTypes name && not (any (Map.member name . (^. #parentVars . #unParentVars) . (\(instanceId, _, _) -> instanceId)) modulesInOrder))
+    -- The flat legacy map is last-writer-wins across every module the
+    -- project ever ran. A name some instance received through a dependency
+    -- binding, in this composition or anywhere in the legacy records, was
+    -- written by more than one instance, so the flat value cannot be
+    -- attributed to any one of them.
+    boundBy instanceId name = Map.member name (instanceId ^. #parentVars . #unParentVars)
+    boundAnywhere name =
+      any (\(instanceId, _, _) -> boundBy instanceId name) modulesInOrder
+        || any (Map.member name . (^. #parentVars . #unParentVars)) (manifest ^. #modules)
+    reusable name = not (boundAnywhere name) && (Map.lookup name counts == Just 1 || (sharedExport name && sameTypes name))
     sharedExport name = any (\(_, modul, _) -> any (\export -> export ^. #var == name && maybe True (== name) (export ^. #alias)) (modul ^. #exports)) modulesInOrder
     sameTypes name = case [declaration ^. #type_ | (_, declaration) <- declarations, declaration ^. #name == name] of firstType : rest -> all (== firstType) rest; [] -> False
+    -- A dependency binding is the instance's own value; the flat map must
+    -- never outrank it, since a saved value beats a parent binding.
+    unbound = [(instanceId, declaration) | (instanceId, declaration) <- declarations, not (boundBy instanceId (declaration ^. #name))]
     saved =
       Map.fromListWith
         Map.union
         [ (instanceId, Map.singleton (declaration ^. #name) value)
-        | (instanceId, declaration) <- declarations,
+        | (instanceId, declaration) <- unbound,
           reusable (declaration ^. #name),
           Just value <- [Map.lookup (declaration ^. #name) (manifest ^. #vars)]
         ]
+    -- Warn only where the flat value would otherwise have been used: an
+    -- instance bound by its parent resolves to that binding regardless.
     ambiguous =
       [ AmbiguousLegacyValue name
-      | (name, count) <- Map.toAscList counts,
-        count > 1,
+      | name <- Set.toAscList (Set.fromList [declaration ^. #name | (_, declaration) <- unbound]),
         not (reusable name),
         Map.member name (manifest ^. #vars)
       ]

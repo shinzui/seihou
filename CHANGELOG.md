@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- `seihou update <target>` on a manifest that predates recorded applications no longer reuses a flat legacy value for a variable that any instance received through a dependency binding, whether in the target's composition or anywhere in the legacy module records. A dependency binding now always wins over the flat map, and a name some other instance was bound to is resolved afresh with an `AmbiguousLegacyValue` warning, so `seihou update master-plan` no longer aims exec-plan at another skill's directory. A root instance that shares such a name (a root `link-skill`, say) is no longer filled from the flat map either: supply `--var`, or answer the prompt (BUG-6).
+
 ## [0.16.0.1] - 2026-11-15
 
 ### Changed
