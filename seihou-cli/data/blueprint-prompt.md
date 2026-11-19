@@ -57,7 +57,9 @@ subdirectory.
    when it is available; otherwise ask the user to paste the relevant file.
 
 2. **Examine the baseline.** If the Baseline section above lists applied
-   modules, the project already contains files generated from them. Inspect
+   modules, the project already contains files generated from them, and the
+   modules' commands already ran successfully before you started. Do not run
+   those commands again unless the task asks for it. Inspect
    `seihou status`, `git status` and relevant files when tools are available;
    otherwise ask for the needed output. Preserve user changes and declared
    checkout links; fresh clones restore those with `seihou sync`. Baseline seeds

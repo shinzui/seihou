@@ -13,6 +13,7 @@ import Seihou.CLI.AgentTraceSpec qualified as AgentTraceSpec
 import Seihou.CLI.AgentUpgradeE2ESpec qualified as AgentUpgradeE2ESpec
 import Seihou.CLI.AppliedBlueprintMigrationSpec qualified as AppliedBlueprintMigrationSpec
 import Seihou.CLI.AppliedBlueprintSpec qualified as AppliedBlueprintSpec
+import Seihou.CLI.BaselineCommandE2ESpec qualified as BaselineCommandE2ESpec
 import Seihou.CLI.BlueprintMigrationSpec qualified as BlueprintMigrationSpec
 import Seihou.CLI.BrowseFormatSpec qualified as BrowseFormatSpec
 import Seihou.CLI.CheckoutSyncE2ESpec qualified as CheckoutSyncE2ESpec
@@ -92,6 +93,7 @@ main = do
         AgentTraceE2ESpec.tests,
         AppliedBlueprintSpec.tests,
         AppliedBlueprintMigrationSpec.tests,
+        BaselineCommandE2ESpec.tests,
         BlueprintMigrationSpec.tests,
         BrowseFormatSpec.tests,
         CommitMessageSpec.tests,

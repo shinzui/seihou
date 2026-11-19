@@ -16,6 +16,7 @@ import Control.Exception (IOException, displayException, try)
 import Control.Monad (forM_, unless, when)
 import Data.FileEmbed (embedFile)
 import Data.Generics.Labels ()
+import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, maybeToList)
 import Data.Set qualified as Set
@@ -60,6 +61,20 @@ import Seihou.CLI.BlueprintExecution
     varValueToText,
   )
 import Seihou.CLI.CheckoutSync (renderCheckoutPlan)
+import Seihou.CLI.CommandExecution
+  ( CommandDisposition (..),
+    CommandExecutionError (..),
+    CommandPlan (..),
+    CommandPolicy (..),
+    PlannedCommand (..),
+    executeCommandPlanWithOutput,
+    expectedCommandReceipts,
+    finalizeCommandReceipts,
+    planCommands,
+    plannedCommandText,
+    setApplicationCommandReceipts,
+    withReceiptWithdrawal,
+  )
 import Seihou.CLI.Commands (BlueprintRunOpts (..))
 import Seihou.CLI.ManifestCapabilityUpgrade (prepareRecordedSeedOwnership)
 import Seihou.CLI.Shared
@@ -76,7 +91,7 @@ import Seihou.Core.Application (attachApplication, buildAppliedComposition, mkAp
 import Seihou.Core.ArtifactFiles (renderAmbiguousArtifact)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.Checkout
-import Seihou.Core.CommandFingerprint (checkoutCommandsFromOperations)
+import Seihou.Core.CommandFingerprint (checkoutCommandsFromOperations, isCheckoutCommand)
 import Seihou.Core.Context (resolveContext)
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
 import Seihou.Core.Seed (renderSeedOwnershipError, replaceSelectedSeedClaims)
@@ -93,7 +108,7 @@ import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConsoleInterp (runConsole)
 import Seihou.Effect.Filesystem (createDirectoryIfMissing)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
-import Seihou.Effect.Logger (logError, logInfo, logWarn)
+import Seihou.Effect.Logger (logDebug, logError, logInfo, logWarn)
 import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Effect.ProcessInterp (runProcessIO)
@@ -109,7 +124,7 @@ import System.Directory (getCurrentDirectory)
 import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.FilePath (takeDirectory, (</>))
-import System.IO (hIsTerminalDevice, stdin)
+import System.IO (hIsTerminalDevice, hPutStrLn, stderr, stdin)
 
 -- | The prompt template, embedded at compile time from data/blueprint-prompt.md.
 promptTemplate :: Text
@@ -464,7 +479,30 @@ applyBaseline level opts (primary, modulesInOrder) cliOverridesIn resolvedBluepr
       applicationId = mkApplicationId appliedTarget []
       primaryOrigins = [(origin, m ^. #version) | (inst, m, origin) <- originedModules, inst ^. #module_ == primary]
       (primaryOrigin, primaryVersion) = case primaryOrigins of pair : _ -> pair; [] -> (LocalOrigin (primary ^. #unModuleName), Nothing)
-      seedApplication = buildAppliedComposition appliedTarget primaryOrigin primaryVersion [] (Just namespace) context originedModules baseResolved now & #checkoutCommands .~ checkoutCommandsFromOperations ops
+      -- The baseline's command phase follows 'seihou run': plan every command
+      -- of the complete compiled composition (before conflict filtering) to
+      -- run, against the receipts this application already holds. The
+      -- receipts a successful phase earns are published with the generated
+      -- files, and the failure map is what the manifest falls back to if the
+      -- phase fails. See
+      -- docs/adr/0023-command-receipts-are-published-before-the-command-phase-runs.md.
+      priorCommandReceipts =
+        case [ application ^. #commandReceipts
+             | application <- manifest ^. #applications,
+               application ^. #applicationId == applicationId
+             ] of
+          receipts : _ -> receipts
+          [] -> Map.empty
+      commandPlan = planCommands RunAllCommands priorCommandReceipts ops
+      failureCommandReceipts = finalizeCommandReceipts commandPlan [] priorCommandReceipts
+      expectedCommandReceiptMap =
+        finalizeCommandReceipts commandPlan (expectedCommandReceipts now commandPlan) priorCommandReceipts
+      seedApplication =
+        buildAppliedComposition appliedTarget primaryOrigin primaryVersion [] (Just namespace) context originedModules baseResolved now
+          & #checkoutCommands
+          .~ checkoutCommandsFromOperations ops
+          & #commandReceipts
+          .~ expectedCommandReceiptMap
   searchPaths <- defaultSearchPaths
   let legacyPaths = Set.fromList [path | (path, receipt) <- Map.toAscList (manifest ^. #seeds), case receipt ^. #ownership of LegacySeedOwners apps -> Set.member applicationId apps || Map.member path seedOwnerMap; _ -> False]
   preparedSeeds <- prepareRecordedSeedOwnership projectRoot searchPaths legacyPaths manifest
@@ -597,6 +635,18 @@ applyBaseline level opts (primary, modulesInOrder) cliOverridesIn resolvedBluepr
           logIO level $ logWarn $ "Warning: could not prune generated baselines: " <> T.pack (displayException err)
         Right _ -> pure ()
 
+      runBaselineCommands
+        level
+        (opts ^. #name)
+        manifestPath
+        applicationId
+        now
+        commandPlan
+        priorCommandReceipts
+        failureCommandReceipts
+        expectedCommandReceiptMap
+        newManifest
+
       let nNew = length (diff ^. #new)
           nMod = length (diff ^. #modified)
           nUnch = length (diff ^. #unchanged)
@@ -612,6 +662,127 @@ applyBaseline level opts (primary, modulesInOrder) cliOverridesIn resolvedBluepr
       pure $
         BaselineApplied
           [(m ^. #name, m ^. #version) | (_, m, _) <- modulesInOrder]
+
+-- | Run the baseline's command phase after its files, seeds, and checkout
+-- outputs are applied and the manifest carrying the expected receipts is
+-- saved. Mirrors the command block of @Seihou.CLI.Run.handleRun@, except that
+-- everything it prints goes to standard error: @agent run --batch@ reserves
+-- standard output for the provider's response and @--debug@ prints the
+-- rendered prompt there.
+--
+-- On a failed or interrupted phase only this application's receipts are
+-- rewritten, to @failureReceipts@, in @savedManifest@; the files and
+-- declarations already applied stay. A failure exits 1 before the provider
+-- launches.
+runBaselineCommands ::
+  LogLevel ->
+  ModuleName ->
+  FilePath ->
+  ApplicationId ->
+  UTCTime ->
+  CommandPlan ->
+  Map CommandFingerprint CommandReceipt ->
+  Map CommandFingerprint CommandReceipt ->
+  Map CommandFingerprint CommandReceipt ->
+  Manifest ->
+  IO ()
+runBaselineCommands level blueprintName manifestPath applicationId now commandPlan priorReceipts failureReceipts expectedReceipts savedManifest = do
+  let runnable = filter ((== CommandWillRun) . (^. #disposition)) (commandPlan ^. #commands)
+      blueprint = blueprintName ^. #unModuleName
+      say = hPutStrLn stderr . T.unpack
+  unless (null runnable) $ do
+    -- Command output is captured rather than streamed, so without this line a
+    -- slow command looks like a hang. It is shown at every verbosity.
+    say ("Running " <> T.pack (show (length runnable)) <> " baseline command(s)...")
+    forM_ runnable $ \planned ->
+      logIO level (logDebug ("  run  " <> plannedCommandText planned))
+    let receiptsPublished = expectedReceipts /= failureReceipts
+    -- Nothing: no withdrawal was needed or attempted; Just ok: whether it
+    -- succeeded. withReceiptWithdrawal discards an exception the withdrawal
+    -- throws, so a failure is recorded and reported here.
+    withdrawal <- newIORef Nothing
+    let withdrawReceipts = when receiptsPublished $ do
+          attempt <-
+            try @IOException $
+              runEff $
+                runFilesystem $
+                  runManifestStore manifestPath $
+                    writeManifest (setApplicationCommandReceipts applicationId failureReceipts savedManifest)
+          case attempt of
+            Left err -> do
+              logIO level $
+                logError $
+                  "Could not withdraw this run's command receipts from "
+                    <> T.pack manifestPath
+                    <> ": "
+                    <> T.pack (displayException err)
+              writeIORef withdrawal (Just False)
+            Right () -> writeIORef withdrawal (Just True)
+    commandResult <-
+      withReceiptWithdrawal withdrawReceipts $
+        runEff $
+          runProcessIO $
+            executeCommandPlanWithOutput
+              now
+              (\_ commandStdout _ -> unless (T.null commandStdout) (liftIO (TIO.hPutStr stderr commandStdout)))
+              commandPlan
+    case commandResult of
+      Left commandError -> do
+        let failed = commandError ^. #command
+            operation = failed ^. #operation
+            (owner, directory) = case operation of
+              RunCommandOp {moduleName, workDir} -> (moduleName ^. #unModuleName, maybe "." T.pack workDir)
+              _ -> ("(unknown)", ".")
+        unless (T.null (commandError ^. #stdout)) $ TIO.hPutStr stderr (commandError ^. #stdout)
+        unless (T.null (commandError ^. #stderr)) $ TIO.hPutStr stderr (commandError ^. #stderr)
+        logIO level $
+          logError $
+            "Baseline command failed (exit "
+              <> T.pack (show (commandError ^. #exitCode))
+              <> "): "
+              <> plannedCommandText failed
+        say ("  module: " <> owner)
+        say ("  directory: " <> directory)
+        say "The agent was not started. Baseline files and the effects of earlier commands remain; inspect them before retrying."
+        when (isCheckoutCommand operation) $
+          say "Accepted checkout declarations remain recorded; seihou sync retries their checkout commands."
+        withdrawn <- readIORef withdrawal
+        case withdrawn of
+          Just True ->
+            say
+              ( "The command receipts this run published in advance were withdrawn from "
+                  <> T.pack manifestPath
+                  <> ". If a command in this run committed or pushed the manifest, that snapshot records receipts for commands that did not complete; commit the result of the successful rerun."
+              )
+          Just False ->
+            say
+              ( T.pack manifestPath
+                  <> " may still hold provisional receipts for commands that did not complete; a successful rerun replaces them."
+              )
+          Nothing -> pure ()
+        say ("Correct the failure, then rerun: seihou agent run " <> blueprint)
+        say ("To start the agent without applying the baseline again: seihou agent run " <> blueprint <> " --no-baseline")
+        exitFailure
+      Right completed -> do
+        -- The receipts were published before the phase. Rewrite the manifest
+        -- only if the phase's actual receipts differ from that expectation,
+        -- which would indicate a bug in expectedCommandReceipts.
+        let finalReceipts = finalizeCommandReceipts commandPlan completed priorReceipts
+        if finalReceipts == expectedReceipts
+          then logIO level (logDebug "Command receipts published before the baseline command phase were confirmed.")
+          else do
+            logIO level (logDebug "Command receipts differed from those published before the baseline command phase; rewriting the manifest.")
+            attempt <-
+              try @IOException $
+                runEff $
+                  runFilesystem $
+                    runManifestStore manifestPath $
+                      writeManifest (setApplicationCommandReceipts applicationId finalReceipts savedManifest)
+            case attempt of
+              Left err -> do
+                logIO level $ logError $ "Baseline commands succeeded but their receipts could not be recorded: " <> T.pack (displayException err)
+                exitFailure
+              Right () -> pure ()
 
 -- | Stitch the system-prompt template together. Each block in
 -- @blueprint-prompt.md@ has a @{{key}}@ placeholder filled here.

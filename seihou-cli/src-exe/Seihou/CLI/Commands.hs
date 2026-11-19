@@ -2117,6 +2117,8 @@ agentRunInfo =
                   pretty ("optionally applies the blueprint's baseModules as a starting scaffold," :: String),
                   pretty ("renders the prompt template, and starts the configured" :: String),
                   pretty ("provider. CLI sessions start their first turn automatically and stay open for follow-up input." :: String),
+                  pretty ("The baseline writes its modules' files, then runs their commands, before" :: String),
+                  pretty ("the provider starts; a failing command stops the run without starting it." :: String),
                   pretty ("Baseline seeds are created once; edits and deletion survive --force." :: String),
                   pretty ("Lifecycle changes require seihou update <recorded-target>." :: String),
                   line,
@@ -2124,8 +2126,9 @@ agentRunInfo =
                   pretty ("CLI overrides > env > local config > namespace > context > global > defaults" :: String),
                   pretty ("> interactive prompts." :: String),
                   line,
-                  pretty ("Pass --no-baseline to skip baseline application; --debug (on the parent" :: String),
-                  pretty ("'seihou agent --debug') prints the resolved system prompt without" :: String),
+                  pretty ("Pass --no-baseline to skip baseline application, files and commands;" :: String),
+                  pretty ("--debug (on the parent 'seihou agent --debug') still applies the baseline," :: String),
+                  pretty ("including its commands, then prints the resolved system prompt without" :: String),
                   pretty ("contacting the configured provider." :: String),
                   pretty ("Pass --batch to use a non-interactive CLI provider; Seihou selects" :: String),
                   pretty ("batch mode automatically when stdin is not a terminal." :: String),
@@ -2155,7 +2158,7 @@ agentRunParser =
             varPair
             (long "var" <> metavar "KEY=VALUE" <> help "Variable override (repeatable)")
         )
-      <*> switch (long "no-baseline" <> help "Skip applying the blueprint's baseModules before rendering the prompt")
+      <*> switch (long "no-baseline" <> help "Skip applying the blueprint's baseModules, their files and commands, before rendering the prompt")
       <*> optional (option (T.pack <$> str) (long "namespace" <> metavar "NS" <> help "Override namespace for config lookup"))
       <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Override context for config lookup"))
       <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")

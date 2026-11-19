@@ -26,6 +26,8 @@ import Seihou.CLI.CommandExecution
     expectedCommandReceipts,
     finalizeCommandReceipts,
     planCommands,
+    plannedCommandText,
+    setApplicationCommandReceipts,
     withReceiptWithdrawal,
   )
 import Seihou.CLI.Commands (RunOpts (..))
@@ -865,26 +867,6 @@ operationDestination (WriteFileOp dest _ _) = Just dest
 operationDestination (CopyFileOp _ dest) = Just dest
 operationDestination (PatchFileOp dest _ _ _ _) = Just dest
 operationDestination _ = Nothing
-
-plannedCommandText :: PlannedCommand -> Text
-plannedCommandText planned = case planned ^. #operation of
-  RunCommandOp {command} -> command
-  _ -> "<non-command operation>"
-
-setApplicationCommandReceipts ::
-  ApplicationId ->
-  Map CommandFingerprint CommandReceipt ->
-  Manifest ->
-  Manifest
-setApplicationCommandReceipts applicationId receipts manifest =
-  manifest
-    & #applications
-    %~ map updateApplication
-  where
-    updateApplication application
-      | application ^. #applicationId == applicationId =
-          application & #commandReceipts .~ receipts
-      | otherwise = application
 
 -- | Apply the pending-migration policy.
 --

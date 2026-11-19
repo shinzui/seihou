@@ -18,6 +18,8 @@ module Seihou.CLI.CommandExecution
     executeCommandOutcomes,
     commandOutcomesFailed,
     checkCheckoutWorkDir,
+    plannedCommandText,
+    setApplicationCommandReceipts,
   )
 where
 
@@ -297,3 +299,29 @@ finalizeCommandReceipts commandPlan completed priorReceipts =
 
     retainPrior planned =
       (planned ^. #fingerprint,) <$> Map.lookup (planned ^. #fingerprint) priorReceipts
+
+-- | The rendered shell text of a planned command, for progress and failure
+-- messages.
+plannedCommandText :: PlannedCommand -> Text
+plannedCommandText planned = case planned ^. #operation of
+  RunCommandOp {command} -> command
+  _ -> "<non-command operation>"
+
+-- | Replace one application's command receipts inside a manifest, leaving
+-- every other record alone. Used to withdraw receipts published before a
+-- command phase that then failed, and to correct them after one that
+-- succeeded.
+setApplicationCommandReceipts ::
+  ApplicationId ->
+  Map CommandFingerprint CommandReceipt ->
+  Manifest ->
+  Manifest
+setApplicationCommandReceipts applicationId receipts manifest =
+  manifest
+    & #applications
+    %~ map updateApplication
+  where
+    updateApplication application
+      | application ^. #applicationId == applicationId =
+          application & #commandReceipts .~ receipts
+      | otherwise = application

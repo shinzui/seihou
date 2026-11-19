@@ -1,4 +1,4 @@
-module Seihou.CLI.CommandReceiptE2ESpec (tests) where
+module Seihou.CLI.CommandReceiptE2ESpec (tests, initCommand, commitCommand, demoReceipts, committedManifest) where
 
 import Control.Monad (filterM)
 import Data.ByteString qualified as BS
