@@ -20,6 +20,11 @@ provenance:
       at: 2026-11-19T02:34:15Z
       mode: "update"
       note: "Fix command-phase output to stderr, specify failure text and recovery, move two Run helpers to the library, correct context and signatures."
+    - model: "claude-opus-5-5"
+      harness: "claude-code"
+      at: 2026-11-19T02:44:28Z
+      mode: "implement"
+      note: "Implemented all three milestones: baseline command phase, receipt withdrawal, docs, prompt and ADR 0023 amendment."
 ---
 
 # Run blueprint baseline commands before launching the agent
@@ -40,12 +45,16 @@ This plan creates a source fix and verifies the built executable. Record its pat
 
 ## Progress
 
-- [ ] Milestone 1: A public-command regression reproduces BUG-4, then baseline commands run successfully before the provider with ordinary run semantics.
-- [ ] Milestone 2: Failed or interrupted command phases withdraw provisional receipts and stop the blueprint before provider launch; repeated runs and skip behavior are verified.
-- [ ] Milestone 3: Documentation, diagnostics, and final built-binary acceptance demonstrate the complete workflow and accurately state delivery status.
+- [x] Milestone 1 (2026-11-18): `seihou-cli/test/Seihou/CLI/BaselineCommandE2ESpec.hs` reproduced BUG-4 against the unfixed source (debug run: `cmd.log` absent, "expected: True but got: False"; batch run: the stub refused with "baseline sentinel missing"; 9 of 10 cases failed). After the helper move and the `applyBaseline` command phase, the debug and batch regressions pass: the commands' output and the `Running N baseline command(s)...` line are on standard error, and the batch stub's response is the only thing beyond the seed plan on standard output.
+- [x] Milestone 2 (2026-11-18): `runBaselineCommands` in `seihou-cli/src-exe/Seihou/CLI/AgentRun.hs` withdraws this application's receipts on failure or exception, prints the specified failure text, and exits 1 before provider launch. All 10 cases of `blueprint baseline commands` pass, as do `command receipts end-to-end`, `agent path artifact guard`, and the `CommandExecution` unit cases (39 tests).
+- [x] Milestone 3 (2026-11-18): `docs/user/blueprints.md`, `seihou-cli/help/blueprints.md`, `docs/cli/agent.md`, the `agent run --help` text, the embedded system prompt, and ADR 0023 describe the command phase; BUG-4 is marked fixed (unreleased). `cabal test seihou-cli-test` passed 1037 tests, `nix fmt` changed nothing, `nix flake check` passed, and `git diff --check` is clean. Delivery status is in Outcomes & Retrospective.
 
 
 ## Surprises & Discoveries
+
+`Run.hs` imports `Seihou.CLI.CommandExecution` with an explicit list, not the whole module as the plan assumed, so the helper move also added `plannedCommandText` and `setApplicationCommandReceipts` to that list. No other consequence.
+
+The seed plan that `applyBaseline` prints with `TIO.putStr` stays on standard output, as the Decision Log intended, so a failing batch run's standard output is not empty: it holds `create once ...` lines. The failure regression therefore asserts that standard output carries none of the command phase's output, rather than that it is empty.
 
 
 ## Decision Log
@@ -68,6 +77,24 @@ Decision (2026-11-18): Tell the agent, in the embedded system prompt, that the b
 
 
 ## Outcomes & Retrospective
+
+Outcome (2026-11-18): a blueprint baseline now applies its modules completely. In `applyBaseline`, the command plan comes from the full compiled operations under `RunAllCommands` against the shared application record's prior receipts. The expected receipts are set on `seedApplication`, so the existing generation write publishes them. `runBaselineCommands` then runs the phase after files, seeds, checkout outputs, the manifest write and baseline pruning. Run's withdrawal, confirmation and failure-reporting steps are reproduced there, with all output on standard error. The fix is commit `967e9c3`.
+
+Acceptance evidence, all from the development executable `cabal list-bin exe:seihou` (under `dist-newstyle/`). It reports `seihou v0.16.0.2 (9df09c2)`: it was built from a working tree on top of `9df09c2` holding exactly the changes later committed as `967e9c3`, and cabal did not relink it after the commit, so the embedded hash names the parent:
+
+```text
+blueprint baseline commands (10 cases), command receipts end-to-end, agent path artifact guard: All 22 tests passed
+cabal test seihou-cli-test: All 1037 tests passed
+nix flake check: record-conventions, treefmt, cli-module-placement, pre-commit all passed
+```
+
+A manual failing run (`echo first...`, `echo boom >&2; exit 7`, `echo third...`) under `seihou agent --debug run proto-bp` exited 1 with empty standard output, left `cmd.log` holding only `first`, and printed the Plan of Work's failure text on standard error, preceded by `Running 3 baseline command(s)...` and the commands' captured output, and including the withdrawal sentence.
+
+The artifact guard was not given its own command-bearing case. It runs in `handleAgentRun` before `applyBaseline` is called, so it cannot follow any shell execution, and `agent path artifact guard` still passes. The conflict refusal, which happens inside `applyBaseline`, has a dedicated case showing no command runs.
+
+Delivery: not released. The installed executable is `/Users/shinzui/.nix-profile/bin/seihou`, `seihou v0.16.0.1 (4540d20)`, which does not contain this fix, and neither does the 0.16.0.2 release. BUG-4 records `fixedVersion: unreleased`. Producers such as `mori://tan/tan-seihou-modules` should keep their workaround until their consumers run a release containing `967e9c3`, then remove it as `docs/user/blueprints.md` describes.
+
+No friction met the recording threshold. ADR 0023 was amended to cover the baseline path; no new ADR was needed, because the decision to keep the agent's standard output for the provider is already enforced by `AgentTraceE2ESpec` and is now stated in the user guide.
 
 
 ## Context and Orientation

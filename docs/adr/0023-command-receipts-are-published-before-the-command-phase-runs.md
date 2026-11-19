@@ -37,6 +37,14 @@ command phase will produce before the phase runs
   command takes holds exactly the referenced blobs. `.seihou/transactions/` ignores
   itself in git.
 
+- A blueprint baseline (`seihou agent run`) follows run's contract for the composition it
+  applies (amended 2026-11-18, plan 125). Its applied-composition record is the one
+  `seihou run PRIMARY` writes, so `applyBaseline` plans every command to run against that
+  record's receipts, publishes the expected set with the generation manifest, runs the
+  phase after files, seeds and checkout outputs, and on failure or exception rewrites only
+  that application's receipts. The provider never starts after a failed phase, and no new
+  applied-blueprint provenance is recorded.
+
 The serialized manifest is unchanged, so no schema version advances (ADR 0014).
 
 ## Consequences
@@ -48,8 +56,9 @@ completed, with one documented exception. If a command commits and a later comma
 fails, or a hard kill hits run between the early write and the withdrawal, the committed
 snapshot claims receipts for commands that did not complete. Seihou never rewrites git
 history. The withdrawal shows up as a working-tree change, and the failure message names
-the residual. `seihou run MODULE` and `seihou update --run-all-commands` re-run the
-commands and record them again.
+the residual. `seihou run MODULE`, `seihou update --run-all-commands` and, for a
+blueprint baseline, `seihou agent run BLUEPRINT` re-run the commands and record them
+again.
 
 This revises the EP-67 decision to record receipts only after each command returns
 success. Removing the early write restores that behavior. Removing update's journaled
@@ -58,6 +67,7 @@ manifest copy is unsafe while update publishes its manifest before the phase.
 ## References
 
 - [Plan 116](../plans/116-record-command-receipts-before-module-commands-can-commit-the-manifest.md)
+- [Plan 125](../plans/125-run-blueprint-baseline-commands-before-launching-the-agent.md)
 - [Plan 67](../plans/67-track-generated-commands-and-skip-unchanged-executions.md)
 - [IR-9](../improvement-requests/record-command-receipts-before-commands-can-commit-them.md)
 - [ADR 0004](0004-the-manifest-is-the-only-record-of-applied-state.md)

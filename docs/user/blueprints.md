@@ -352,11 +352,57 @@ Use baselines for stable foundations: language skeletons, Nix setup, CI
 defaults, shared repository conventions. Base entries must resolve to modules
 or recipes, not other blueprints.
 
-Skip the baseline for a one-off run with:
+Applying the baseline is the same as `seihou run` of its modules. Files, seeds
+and checkout links are written first; then every module's `commands` run in
+composition order (dependencies before the modules that require them), with
+their variables rendered and in their declared `workDir`. Only when every
+command succeeds does the provider start. Each `seihou agent run` applies the
+baseline again, so its commands run again too, just as an explicit
+`seihou run` repeats them.
+
+The command phase reports on standard error, so standard output stays the
+provider's response in batch mode and the rendered prompt under `--debug`:
+
+```text
+Running 2 baseline command(s)...
+```
+
+A failing command stops the phase. Later commands do not run, the agent is not
+started, and the run exits 1:
+
+```text
+[error] Baseline command failed (exit 7): ./scripts/check-tools.sh
+  module: haskell-base
+  directory: .
+The agent was not started. Baseline files and the effects of earlier commands remain; inspect them before retrying.
+Correct the failure, then rerun: seihou agent run api-service
+To start the agent without applying the baseline again: seihou agent run api-service --no-baseline
+```
+
+The command receipts that were recorded in `.seihou/manifest.json` before the
+phase began are withdrawn, so the manifest never claims a command completed
+when it did not; a successful rerun records them again. See
+[ADR 0023](../adr/0023-command-receipts-are-published-before-the-command-phase-runs.md).
+
+Baseline commands run directly as Seihou's own processes, with your normal
+shell permissions. A blueprint's [`allowedTools`](#allowed-tools) governs only
+what the provider's agent may run; it has no effect on baseline commands, and
+you do not need to list them there.
+
+Skip the baseline, its files and its commands, for a one-off run with:
 
 ```sh
 seihou agent run api-service --no-baseline --var project.name=payments
 ```
+
+### Note for blueprint authors
+
+Seihou releases through 0.16.0.2 applied a baseline's files but silently
+skipped its modules' commands. If your blueprint's prompt tells the agent to
+run those commands, or its `allowedTools` lists entries added only so the agent
+could run them, remove that workaround once your consumers run a fixed
+release; otherwise each command runs twice. The rendered system prompt now
+tells the agent the baseline's commands already ran.
 
 ## Artifact guard
 
@@ -385,8 +431,8 @@ under a `! Proceeding anyway` heading rather than falling silent, because a
 deliberate downgrade still changes shared state.
 
 `--debug` does not exempt `agent run` from this check. Unlike `agent migrate`,
-a debug run still applies the baseline and still records provenance; it skips
-only the provider call.
+a debug run still applies the baseline, including its commands, and still
+records provenance; it skips only the provider call.
 
 ## Reference files
 
@@ -449,8 +495,8 @@ including whitespace. API providers (`anthropic`, `openai`) keep optional input
 unchanged. Automatic startup preserves provider tool approvals.
 
 `seihou agent --debug run api-service` shows the effective initial instruction
-without contacting a provider. Blueprint debug still applies baseline modules
-and records blueprint provenance; it is not a dry run. The manifest records
+without contacting a provider. Blueprint debug still applies baseline modules,
+runs their commands, and records blueprint provenance; it is not a dry run. The manifest records
 the original PROMPT, including omission or blank text.
 
 Pass `--batch` for non-interactive automation. Seihou also selects batch mode
@@ -479,7 +525,9 @@ The runner:
    local copy is older than, or from a different repository than, this project
    records. See [Artifact guard](#artifact-guard) below.
 3. Resolves blueprint variables and prompts for required missing values.
-4. Applies `baseModules`, unless `--no-baseline` is set.
+4. Applies `baseModules`, unless `--no-baseline` is set: their files first,
+   then their modules' commands. A failing command stops the run here, before
+   the provider starts. See [Baseline modules](#baseline-modules).
 5. Mounts an existing `files/` directory for interactive CLI providers and
    renders its absolute path into the blueprint prompt.
 6. Resolves the base tool set plus de-duplicated `allowedTools` additions.

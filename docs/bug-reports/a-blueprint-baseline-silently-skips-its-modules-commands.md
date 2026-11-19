@@ -10,7 +10,23 @@ affects: mori://shinzui/seihou
 affectedVersion: 0.16.0.0
 origin: mori://tan/tan-seihou-modules
 severity: degraded
-status: reported
+status: fixed
+fixedVersion: unreleased
+resolution: >-
+  `applyBaseline` in `seihou-cli/src-exe/Seihou/CLI/AgentRun.hs` now runs the composition's
+  commands after its files, seeds and checkout links, with `seihou run`'s ordering, rendering,
+  working directories and receipt contract (ADR 0023, amended): the expected receipts are
+  published with the generation manifest and withdrawn from this application alone if the
+  phase fails or throws. A failing command exits 1 before the provider launches, records no new
+  blueprint provenance, and names the command, its module, its directory, the ordinary rerun,
+  and `--no-baseline`. The phase reports only on standard error, and the embedded system prompt
+  tells the agent the commands already ran. Writing the receipts also stops a baseline run from
+  erasing those an earlier `seihou run` of the primary module recorded. Regression:
+  `seihou-cli/test/Seihou/CLI/BaselineCommandE2ESpec.hs` ("blueprint baseline commands"), which
+  failed against 0.16.0.2 and passes with the fix. Plan:
+  mori://shinzui/seihou/plans/125-run-blueprint-baseline-commands-before-launching-the-agent.
+  Producers that worked around this by telling the agent to run the commands should remove the
+  workaround once consumers run a fixed release.
 generated:
   by: process:claude-code
   at: "2026-11-14T05:05:00Z"
@@ -35,7 +51,7 @@ reproduction:
   - Run `seihou run proto-stack --no-save-prompted --var ...` and observe `cmd.log` is created.
   - In a fresh project, add `.seihou/modules/proto-bp/blueprint.dhall` with `baseModules = [ S.Dependency::{ module = "proto-stack" } ]`.
   - Run `seihou agent --debug run proto-bp --var ...` and observe the seed file is created and `.seihou/manifest.json` records the baseline, but `cmd.log` does not exist.
-timestamp: "2026-11-14T05:05:00Z"
+timestamp: "2026-11-19T03:00:00Z"
 ---
 
 # Bug Report: A Blueprint Baseline Silently Skips Its Modules' Commands

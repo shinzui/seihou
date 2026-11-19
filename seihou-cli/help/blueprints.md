@@ -79,6 +79,20 @@ BASELINE MODULES
   agent runner records the applied blueprint in `.seihou/manifest.json` after
   a successful run, including baseline provenance.
 
+  Applying the baseline matches `seihou run` of its modules: files first,
+  then each module's commands in composition order, all before the provider
+  starts. Every `seihou agent run` applies it again, so its commands run
+  again too. A failing command exits 1 without starting the agent and names
+  the command, its module, and how to retry; `--no-baseline` starts the
+  agent without applying the baseline. Parent `--debug` still applies the
+  baseline, including its commands, and skips only the provider. The command
+  phase reports on standard error. Baseline commands run as Seihou's own
+  processes; `allowedTools` governs only the agent.
+
+  Releases through 0.16.0.2 skipped baseline commands. Once consumers run a
+  fixed release, remove any prompt text or `allowedTools` entries that only
+  existed to make the agent run them, or each command runs twice.
+
   Baseline seed steps create project-owned starters once and preserve edits or
   deliberate deletion on rerun, including force. Agents extend those files as
   authorized project work. Status/diff do not compare their contents. Commit seed

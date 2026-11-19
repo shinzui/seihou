@@ -232,13 +232,15 @@ seihou agent run BLUEPRINT [PROMPT] [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `--var KEY=VALUE` | Variable override; repeatable |
-| `--no-baseline` | Skip applying the blueprint's base modules before rendering the prompt |
+| `--no-baseline` | Skip applying the blueprint's base modules, both their files and their commands, before rendering the prompt |
 | `--namespace NS` | Override namespace for config lookup |
 | `--context CTX`, `-c CTX` | Override context for config lookup |
 | `--verbose`, `-v` | Show detailed progress messages |
 | `--allow-downgrade` | Proceed even when the blueprint or a baseline module installed locally is older than, or from a different source than, `.seihou/manifest.json` records |
 
 Resolves the named blueprint, prompts for required variables, optionally applies its baseline modules, renders the blueprint prompt, and starts the configured provider. A successful run records applied-blueprint provenance in `.seihou/manifest.json`; a `--debug` run does so too, after printing the prompt.
+
+Applying the baseline matches `seihou run` of its modules: files, seeds, and checkout links first, then each module's commands in composition order. Every run applies it again, so the commands run again too. A failing command stops the phase and exits 1 before the provider starts; the files and the effects of earlier commands remain, the receipts published for the phase are withdrawn, and the error names the command, its module, its directory, and two ways forward: rerun the same command after correcting the failure, or pass `--no-baseline` to start the agent without applying the baseline again. The command phase reports only on standard error, so standard output remains the provider's response under `--batch` and the rendered prompt under `--debug`. Baseline commands run as Seihou's own processes; the blueprint's `allowedTools` governs only the provider's agent and does not need to list them.
 
 With `claude-cli` or `codex-cli`, omitting PROMPT or supplying empty or
 whitespace-only text starts the first turn automatically with
@@ -248,9 +250,9 @@ including whitespace. API providers (`anthropic`, `openai`) keep optional input
 unchanged. Automatic startup preserves provider tool approvals.
 
 `seihou agent --debug run api-service` shows the effective initial instruction
-without contacting a provider. Blueprint debug still applies baseline modules
-and records blueprint provenance; it is not a dry run. The manifest records
-the original PROMPT, including omission or blank text.
+without contacting a provider. Blueprint debug still applies baseline modules,
+runs their commands, and records blueprint provenance; it is not a dry run. The
+manifest records the original PROMPT, including omission or blank text.
 
 ### agent migrate
 
