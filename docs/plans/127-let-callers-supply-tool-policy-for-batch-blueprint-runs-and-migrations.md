@@ -10,6 +10,18 @@ provenance:
     model: "gpt-6.2-astra"
     harness: "codex-cli"
     at: 2026-11-21T13:18:14Z
+  reviews:
+    - model: "claude-fable-5-2"
+      harness: "claude-code"
+      at: 2026-11-21T14:24:19Z
+      verdict: "changes-requested"
+      note: "Repo claims verified; hook-denial reporting unproven, comma-joined rules, undefined terms, and debug flag handling needed fixing"
+  revisions:
+    - model: "claude-fable-5-2"
+      harness: "claude-code"
+      at: 2026-11-21T14:24:19Z
+      mode: "update"
+      note: "Applied review findings: native probe with stop condition, argv rule passing, definitions, debug and migrate flag rules"
 ---
 
 # Let callers supply tool policy for batch blueprint runs and migrations
@@ -40,8 +52,10 @@ seihou agent migrate keiro-upgrade --from=0.22.0.0 --to=0.25.0.0 --batch --setti
 seihou agent --debug run fix-nix-haskell-flake-customizations
 ```
 
-The first example grants the inspection command. The other refused commands from the pilot still require
-their own approvals. Existing projects adopt the receipt format through the normal command. A fresh
+The first example grants the inspection command. The pilot run described under Context and Orientation
+was refused ten commands, and the other nine still require their own approvals. An existing project
+adopts the receipt format when a policy-bearing run upgrades its manifest in place, or ahead of time
+through `seihou manifest upgrade`. A fresh
 clone needs the same installed blueprint and caller inputs as the original checkout. Reading or
 replaying a receipt must never grant tools to a subsequent run.
 
@@ -76,6 +90,13 @@ its adoption check must use an actual batch run for an applied-blueprint claim.
 [BUG-5](../bug-reports/a-debug-blueprint-run-records-the-blueprint-as-applied.md) ·
 [Campaign plan](mori://shinzui/shikigami/plans/132-modernize-the-keiro-services-with-a-declared-campaign-playbook)
 
+On 2026-11-21, after review, probe Claude directly before writing milestone 2's code. Seihou fails a run
+only on refusals listed in `permission_denials`, and nobody has observed whether a hook's deny decision
+appears there. If it does not, a run whose gate blocked a command would still earn a receipt. Closing
+that gap would be a new guarantee, so the plan stops for a scope decision in that case and does not pick
+a detection mechanism in advance.
+[ADR 0026](../adr/0026-a-batch-blueprint-run-fails-on-reported-tool-refusals.md)
+
 
 ## Outcomes & Retrospective
 
@@ -88,6 +109,18 @@ called an edge. A transition can include edges owned by another blueprint. A rec
 entry for the completed run or edge. Batch mode is selected by `--batch` or by standard input being
 disconnected from a terminal. Select the provider after resolving the blueprint's declared launch
 configuration and caller overrides.
+
+Several names recur below. Baikai is the library Seihou uses to call model providers. Its Claude CLI
+provider builds the `claude -p` command line. Shikigami is the orchestrator that raised IR-23. It runs
+blueprints across many repositories (a campaign), approves each command its agents run through a Claude
+`PreToolUse` hook, and writes a Claude settings file for every attempt. The pilot is that campaign's
+first run, on 2026-11-16, of the `fix-nix-haskell-flake-customizations` blueprint. It exited 1 after
+Claude refused ten Bash calls the blueprint's guidance asked for. A cohort is the set of blueprints one
+migration loads: the invoked blueprint and each blueprint that owns an edge in the window. A manifest
+capability is a named feature with the oldest schema version that can record it, listed in
+`minimumManifestVersion` in `seihou-core/src/Seihou/Manifest/Types.hs`. The artifact guard
+(`enforceAgentArtifactGuard`) stops a run whose installed blueprint or baseline module is older than, or
+from a different source than, the manifest records.
 
 On 2026-11-21 the installed `seihou v0.16.0.1 (4540d20)` discovered the pilot blueprint at 0.2.0. In an
 empty temporary Git project, a substitute `claude` returning a refusal for
@@ -115,6 +148,14 @@ sets `acceptEdits` and adds limited Mori discovery grants.
 records success. Preserve the distinction between ordinary runs, which accept older result formats, and
 migrations, which require positive completion and permission evidence. The caller supplies requests for
 preapproval. Claude still decides whether a particular operation is permitted.
+
+Three facts about this path shape the work. `claudeAccessArgs` joins every tool rule with commas into a
+single `--allowedTools` value, so a rule containing a comma is not yet known to survive. Baikai's
+`claudeCliCommand` appends `--` and the prompt after the extra arguments, so a variadic flag cannot
+consume the prompt. A batch run also inherits the operator's own Claude hooks and global instructions.
+Commands those prompt are refused and listed in the same `permission_denials` array, and they fail the
+run like any other refusal. Seihou reads refusals only from that array. Whether Claude lists a command
+there when a `PreToolUse` hook denies it has not been observed.
 [ADR 0026](../adr/0026-a-batch-blueprint-run-fails-on-reported-tool-refusals.md) ·
 [ADR 0019](../adr/0019-non-terminal-blueprint-migrations-require-validated-batch-results.md)
 
@@ -157,7 +198,10 @@ first occurrence of each exact rule. Record the ordered, deduplicated caller inp
 the blueprint also declares. Reject blank values and option-shaped input before launch. Use provider
 argument boundaries that preserve spaces and valid Claude rule syntax, including punctuation inside a
 pattern. A single supplied pattern must never introduce another CLI option or consume the prompt.
-Exercise the actual renderer with a quoted Bash rule. Only Claude CLI batch execution supports these
+Today's comma join does not meet this. Pass each rule as its own argument after `--allowedTools`, which
+Claude documents as a list, unless the native probe in Concrete Steps shows the joined form keeps a
+comma-bearing rule intact. Exercise the actual renderer with a quoted Bash rule and with a rule that
+contains a comma. Only Claude CLI batch execution supports these
 flags. Reject an interactive launch or a resolved Codex/API provider before prompts, baseline writes or
 provider launch. Name the incompatible flag and show how to retry with `--batch --provider claude-cli`
 or omit the caller policy. Check the resolved provider, including defaults and blueprint declarations.
@@ -206,11 +250,15 @@ it reads have their own lifetimes and contents.
 
 Keep Claude's existing permission checks and validate provider results exactly as in milestone 1.
 Preserve the migration permission mode when adding settings there. Accept settings for rules and hooks
-without adding a permission-bypass launch mode. Check the native interaction with a real Claude Code
-session early, using the bounded probe in Concrete Steps. Confirm a positive hook decision ran the
-command and recorded the hook event. Check separately that a blocking hook prevents execution even
-alongside a matching static grant. Where the provider reports a refusal, verify Seihou fails closed. The
-deterministic CLI suite must work without credentials and independently exercise both outcomes.
+without adding a permission-bypass launch mode. Before writing any settings code, run the native probe
+in Concrete Steps. It calls `claude` directly, so it needs no Seihou change. Confirm a positive hook
+decision ran the command and recorded the hook event. Check separately that a blocking hook prevents
+execution even alongside a matching static grant, and note whether that blocked command appears in
+`permission_denials`. If it does, Seihou already fails closed and the fixture models the hook's refusal
+with that array. If it does not, a run whose hook blocked a command can exit 0 and earn a receipt. In
+that case stop and ask for a scope decision before continuing, because detecting hook refusals would be
+a new guarantee. Record the observed behavior in Surprises & Discoveries either way. The deterministic
+CLI suite must work without credentials and independently exercise both outcomes.
 [Claude CLI reference](https://code.claude.com/docs/en/cli-reference) ·
 [Claude hook decisions](https://code.claude.com/docs/en/hooks#pretooluse-decision-control)
 
@@ -218,7 +266,9 @@ deterministic CLI suite must work without credentials and independently exercise
 
 Add both flags to `agent migrate`. Resolve one invocation's caller rules and settings path and digest
 before version probing or launching an edge. Reject policy flags with `--mark-applied` in the existing
-early conflict check. At each pending edge, combine that owner's tools and the migration-only grants
+early conflict check (`rejectConflictingMarkApplied`). Apply milestone 1's provider and batch rule here
+too. A migration can run in batch on Codex CLI or interactively, and both must reject the flags before
+the first edge. At each pending edge, combine that owner's tools and the migration-only grants
 with the caller's additions. Render the migration permission paragraph from the same effective list used
 to launch the provider. When a settings file supplies a hook, tell the agent that the caller's hook also
 decides requests, so the current instruction to execute only statically listed commands does not
@@ -241,16 +291,19 @@ applied. Skip baseline acquisition/application, command execution, the mutating-
 provider launch and manifest publication during debug. Preserve variable resolution needed for a correct
 prompt. Pass an explicit preview baseline status to `formatBaselineStatus` in
 `seihou-cli/src/Seihou/CLI/AgentLaunch.hs`. Keep the ordinary run's guard, baseline and provider order.
-When batch policy is explicitly previewed for Claude, show the static grants and whether settings were
-supplied without running the hook. Preserve `agent --debug migrate` behavior.
+Debug accepts the policy flags with or without `--batch`, because it never launches a provider. It
+applies the same provider check and the same rule and settings-file validation as a real run, then shows
+the effective static grants and whether settings were supplied. It does not run the hook or print the
+file's contents. Preserve `agent --debug migrate` behavior.
 
 Test both an absent manifest and an existing one with noncanonical whitespace, a baseline module that
 writes a marker via a command, and a provider stub that records launches. Repeated debug renders must
 print the prompt, leave the original bytes or absence intact and create neither marker nor provider
 record. Move tests that intentionally apply baselines in debug to ordinary batch runs with a successful
 local provider stub. Inspect `seihou-cli/test/Seihou/CLI/BaselineCommandE2ESpec.hs`,
-`seihou-cli/test/Seihou/CLI/SeedRunE2ESpec.hs`, `seihou-cli/test/Seihou/CLI/UpgradeRunnablesE2ESpec.hs`
-and `seihou-cli/test/Seihou/CLI/AgentGuardE2ESpec.hs` so that preview and actual generation each keep
+`seihou-cli/test/Seihou/CLI/SeedRunE2ESpec.hs`, `seihou-cli/test/Seihou/CLI/UpgradeRunnablesE2ESpec.hs`,
+`seihou-cli/test/Seihou/CLI/AgentGuardE2ESpec.hs` and the `agent --debug run` cases in
+`seihou-cli/test/Seihou/CLI/AgentMigrateE2ESpec.hs` so that preview and actual generation each keep
 meaningful coverage.
 
 Update the two subcommand help screens, `seihou-cli/help/agent.md`, `seihou-cli/help/blueprints.md`,
@@ -259,7 +312,9 @@ Update the two subcommand help screens, `seihou-cli/help/agent.md`, `seihou-cli/
 with its hook, both receipt locations, and the failure/retry procedure. Update the existing refusal
 diagnostic and distinguish provider tools from baseline commands that Seihou executes itself. Explain
 the receipt schema in `docs/cli/manifest.md` and `docs/user/manifest-upgrade.md`. Update the debug and
-caller-policy clauses of ADRs 0003, 0019 and 0026 and the changelog with the behavior change. Verify the
+caller-policy clauses of ADRs 0003, 0019 and 0026 and the changelog with the behavior change. Set the
+status of IR-23 and BUG-5 in their records and add an entry to `docs/improvement-requests/log.md` and
+`docs/bug-reports/log.md`, as plan 125 did for BUG-4. Verify the
 invoking campaign can substitute a normal batch command for its render-and-apply workaround in a
 disposable consumer. Record the tested Seihou executable and revision, Claude version, blueprint version
 and delivery state. Track published and installed acceptance separately from source acceptance if
@@ -268,13 +323,12 @@ release work is pending.
 
 ## Concrete Steps
 
-From the Seihou repository root, use the project's development environment. Build the executable before
-running the CLI tests. The CLI test binary locates its sibling executable and expects fixture paths
-relative to `seihou-cli/`. Run the cases while working on their respective milestones, then run the
-suites and the embedded help audit.
+From the Seihou repository root, enter the project's development environment with `nix develop` and run
+the rest in that shell. Build the executable before running the CLI tests. The CLI test binary locates
+its sibling executable and expects fixture paths relative to `seihou-cli/`. Run the cases while working
+on their respective milestones, then run the suites and the embedded help audit.
 
 ```bash
-nix develop
 cabal build seihou-cli:exe:seihou seihou-cli:test:seihou-cli-test seihou-core:test:seihou-core-test
 seihou_candidate="$(cabal list-bin seihou-cli:exe:seihou)"
 (cd seihou-cli && "$(cabal list-bin seihou-cli-test)" -p '/Agent migrate end-to-end/ || /blueprint baseline commands/ || /agent path artifact guard/')
@@ -325,8 +379,33 @@ PYTHON
 cat > 'caller settings.json' <<'JSON'
 {"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"python3 policy-gate.py"}]}]}}
 JSON
-"$seihou_candidate" --version
 claude --version
+```
+
+That much needs no Seihou change. Run the native probe now, before milestone 2's code, from the same
+directory. Its arguments mirror the command line Seihou builds.
+
+```bash
+probe_prompt='Call the Bash tool with exactly ./policy-probe once. Report its output.'
+claude -p --output-format json --no-session-persistence --settings "$PWD/caller settings.json" \
+  --allowedTools 'Read' -- "$probe_prompt" | jq '{is_error, permission_denials}'
+cat probe-runs hook-decisions
+sed -i.bak 's/"allow" if/"deny" if/; s/else "deny"/else "allow"/' policy-gate.py
+claude -p --output-format json --no-session-persistence --settings "$PWD/caller settings.json" \
+  --allowedTools 'Read' 'Bash(./policy-probe)' -- "$probe_prompt" | jq '{is_error, permission_denials}'
+cat probe-runs hook-decisions
+mv policy-gate.py.bak policy-gate.py
+rm -f probe-runs hook-decisions
+```
+
+The first call should add one `ran` line and one `allow ./policy-probe` decision with no denials. The
+second inverts the hook, so it should add a `deny ./policy-probe` decision and no `ran` line despite the
+static grant. Its `permission_denials` value answers the open question in milestone 2. Then continue
+with the candidate executable once the flags exist. The debug line and the manifest check after it pass
+only after milestone 4.
+
+```bash
+"$seihou_candidate" --version
 "$seihou_candidate" agent --debug run policy-check
 test ! -e .seihou/manifest.json
 "$seihou_candidate" agent run policy-check --batch --provider claude-cli --allowed-tool 'Bash(./policy-probe)'
@@ -340,7 +419,10 @@ Expect two lines containing `ran`, a hook decision of `allow ./policy-probe`, an
 an empty caller rule list and a digest equal to `shasum`'s first column. To exercise a deny decision in
 the same test project, change the hook's decision for that command to `deny` and run the last batch
 command with the rule flag also present. Compare the number of marker lines, the hook decision and the
-provider's actual refusal evidence. Record any provider-specific limitations. Run the credential-free
+provider's actual refusal evidence. Record any provider-specific limitations. A refusal that names any
+command other than `./policy-probe` comes from the operator's own hooks or global instructions. The
+pilot met one, a `rex session rename` that a session hook requests. Record it and rerun where that hook
+is quiet. Do not widen the probe's grants to hide it. Run the credential-free
 fixture tests for absent-rule failures even on machines with a personal allow rule. For the
 campaign-shaped check, substitute the installed pilot blueprint in a disposable consumer using the
 caller's settings fixture and a recording provider stub. Verify that the intended arguments, working
@@ -422,3 +504,12 @@ Schema 15 and earlier encode receipts without the new field. Extend the existing
 `seihou-cli/src/Seihou/CLI/AppliedBlueprintMigration.hs`. Neither receipt participates in provider
 permission resolution. Claude owns hook execution and permission precedence. Seihou owns invocation
 setup, validating the provider result and writing the corresponding receipt.
+
+
+## Revision Notes
+
+2026-11-21: Revised after a review against the working tree. Defined the recurring names, recorded the
+comma join in `claudeAccessArgs` and the unobserved reporting of hook denials, added a native Claude
+probe that runs before milestone 2's code with a stop condition, stated how debug treats the policy
+flags, extended the provider rule to migrations, and added the IR-23 and BUG-5 record updates. The file
+paths, symbols, schema version and test names the plan cites were confirmed unchanged.
