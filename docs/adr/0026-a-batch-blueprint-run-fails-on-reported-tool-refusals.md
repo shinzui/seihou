@@ -53,6 +53,13 @@ is deliberately looser than ADR 0019's fail-closed migration rules.
 `codex-cli` batch runs keep Baikai's stock provider. Codex has no per-tool
 allow list, and its failed-item events include ordinary failing commands.
 
+For a future policy-bearing Codex run, Baikai owns native hook review checks and
+app-server refusal evidence. Seihou owns the decision to record an applied blueprint
+or migration. Codex 0.171.0 reports a synchronous pre-tool veto as `blocked` even when
+the turn completes successfully. A batch request cannot authorize unreviewed hooks.
+[Plan 127](../plans/127-let-callers-supply-tool-policy-for-batch-blueprint-runs-and-migrations.md)
+· [Baikai IR-14](mori://shinzui/baikai/okf/improvement-requests/concepts/IR-14)
+
 `seihou validate-blueprint` warns, without failing, about a blueprint that
 declares no `allowedTools` or an empty list.
 

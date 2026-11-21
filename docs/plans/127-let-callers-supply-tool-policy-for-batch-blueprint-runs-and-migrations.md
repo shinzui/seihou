@@ -27,6 +27,11 @@ provenance:
       at: 2026-11-21T15:39:14Z
       mode: "implement"
       note: "Run provider integration probes and implement Claude policy receipts and read-only rendering."
+    - model: "gpt-6.2-astra"
+      harness: "codex-cli"
+      at: 2026-11-21T16:25:41Z
+      mode: "implement"
+      note: "Verify the Codex app-server path and make its inventory check and denial decoder reusable in Baikai."
 ---
 
 # Let callers supply tool policy for batch blueprint runs and migrations
@@ -48,15 +53,13 @@ render it in the target checkout without applying anything.
 
 Start in the consuming repository with the blueprint installed and Claude Code configured. For a missing
 rule, run one command. For a playbook that already produces a settings file, supply that file directly.
-The same options work on a migration. A caller that runs Codex CLI supplies Codex's own files through
-separate flags, because Codex has no per-tool allow list. The Codex command below remains a proposed interface pending the milestone 4 decision.
-Each invocation is scoped to its own process.
+The same Claude options work on a migration. Each invocation resolves its own policy.
+The proposed Codex hooks option depends on Baikai providing the reviewed-hook workflow in milestone 4.
 
 ```bash
 seihou agent run fix-nix-haskell-flake-customizations --batch --allowed-tool 'Bash(grep *)'
 seihou agent run fix-nix-haskell-flake-customizations --batch --settings ./campaign/claude-settings.json
 seihou agent migrate keiro-upgrade --from=0.22.0.0 --to=0.25.0.0 --batch --settings ./campaign/claude-settings.json
-seihou agent run fix-nix-haskell-flake-customizations --batch --provider codex-cli --codex-hooks ./campaign/codex-hooks.json
 seihou agent --debug run fix-nix-haskell-flake-customizations
 ```
 
@@ -73,8 +76,9 @@ replaying a receipt must never grant tools to a subsequent run.
 - [x] (2026-11-21) A caller can add a rule to a batch blueprint run, see that exact rule in its receipt, and observe failure when the required rule is omitted.
 - [x] (2026-11-21) A caller can supply a settings file containing a working Claude hook and identify the exact file contents used by their digest.
 - [x] (2026-11-21) Batch migrations apply the policy to each pending edge and record it under the blueprint that owns that edge.
-- [ ] A caller can give a Codex CLI batch run or migration its own rules and hooks files, see each file's digest in the receipt, and observe a blocked command fail the run.
-- [ ] Debug rendering, help and public consumer acceptance. Source checks for read-only debug and both Claude commands passed on 2026-11-21. Installed acceptance and Codex scope remain open.
+- [x] (2026-11-21) Investigated the Baikai integration against Codex 0.171.0. A real app-server with a local model fixture distinguished reviewed, unreviewed and modified hooks, emitted a structured denial and kept ordinary exit 7 separate. The reusable inventory check and notification decoder are in the Baikai source tree.
+- [ ] Baikai offers a normal reviewed-hook workflow and reports policy evidence through both unattended surfaces. Seihou can then accept a Codex hooks file on a batch run or migration and record its digest after success. Caller rules files are deferred.
+- [ ] Debug rendering, help and public consumer acceptance. Source checks for read-only debug and both Claude commands passed on 2026-11-21. Installed acceptance remains open.
 
 
 ## Surprises & Discoveries
@@ -102,6 +106,19 @@ layers. No per-invocation rules-file input was verified. The probe reached
 milestone 4's scope-decision condition. See [FRIC-21](../friction-log/21-codex-exec-omits-hook-denials-from-its-json-event-stream.md).
 
 
+Codex app-server v2 accepts native hook declarations for a single thread and reports
+`trusted`, `untrusted` and `modified` for the same handler key as its review state changes.
+A synchronous native deny emits a `hook/completed` notification whose pre-tool status is
+`blocked` even when the turn succeeds. The positive experiment used a fixed, pre-reviewed
+test configuration. In the same run an operator hook still executed and an unrelated unreviewed
+hook stayed untrusted. A second thread in the same process had no caller gate. Its command
+wrote the marker and exited 7. Stable notifications identify the thread, turn and hook run.
+Exact command attribution was visible in experimental raw function-call events, with the
+call ID encoded in the current implementation's opaque hook run ID. The stable protocol
+does not promise that join. Codex hashes the normalized handler declaration, including
+the command text, and does not hash the contents of executables referenced by it.
+[Baikai investigation and runnable probe](mori://shinzui/baikai/okf/improvement-requests/concepts/IR-14)
+
 ## Decision Log
 
 On 2026-11-21, select both invocation-level mechanisms in IR-23. One missing command is cheap to grant
@@ -128,24 +145,16 @@ that gap would be a new guarantee, so the plan stops for a scope decision in tha
 a detection mechanism in advance.
 [ADR 0026](../adr/0026-a-batch-blueprint-run-fails-on-reported-tool-refusals.md)
 
-On 2026-11-21, at the user's direction, extend the plan to Codex CLI and keep rejecting the policy flags
-on the API providers. A Codex caller supplies Codex's native files, an execpolicy rules file and a hooks
-file, through Codex-only flags. Seihou does not translate Claude rules. A Claude rule permits a tool call,
-while a Codex `allow` rule runs a command outside the sandbox, so a translation would be lossy and would
-widen access silently. The `openai` and `anthropic` providers send one completion and run no tools, so a
-tool policy has nothing to govern there. Giving those providers tools would be a separate feature. No
-change to Baikai is required. Its Codex renderer already forwards extra arguments and Seihou's adapter
-runs the process itself.
-[Baikai OpenAI provider](mori://shinzui/baikai/packages/baikai-openai)
-
-On 2026-11-21, treat Seihou's rendering of provider policy arguments and its parsing of refusal output
-as interim. Other tools that run agents unattended need the same two things, and Baikai's unattended-run
-layer is where they belong. Baikai IR-14 requests them. This plan does not wait for it. Keep the
-provider-specific code in `seihou-cli/src/Seihou/CLI/AgentCompletion.hs` so a later move to Baikai
-touches one module, and attach both probes' results to that request. The receipt, the file digests and
-the flags stay in Seihou.
+On 2026-11-21 the user expanded milestone 4 to investigate an integration and authorized
+shared support in Baikai. Baikai owns provider policy transport, preflight and refusal
+evidence for all consumers. Seihou owns its flags, baseline ordering, decision to fail,
+per-owner receipts and policy digests. The existing Claude adapter can continue to serve
+batch runs while Baikai adds those capabilities. Use the app-server for reviewed Codex
+hooks. Preserve native trust review. Ordinary batch execution may read review state and
+must never grant it. Defer `--codex-rules`: the released loader searches the rules
+directories of enabled, directory-backed layers, and a thread override has no directory.
+API providers remain outside this workflow.
 [Baikai IR-14](mori://shinzui/baikai/okf/improvement-requests/concepts/IR-14)
-
 
 ## Outcomes & Retrospective
 
@@ -169,10 +178,14 @@ a later refusal and recorded the retry's new settings digest only on the
 pending edge. Both provider probe reports were attached to
 [Baikai IR-14](mori://shinzui/baikai/okf/improvement-requests/concepts/IR-14).
 
-Milestone 4 awaits a scope decision about the missing Codex refusal evidence.
-The Claude and debug changes do not depend on that decision. FRIC-21 remains
-logged while the decision is open.
-
+The Codex investigation is complete on 0.171.0. Baikai's source package exposes a reviewed-hook
+inventory check and a decoder for pre-tool completions. A Haskell consumer exercised both
+against the real inventories and events from the credential-free probe. All 357 OpenAI
+package tests passed with one test worker. Under default parallelism the separate Responses
+trace cancellation test twice exceeded its deadline. A normal Baikai first-use
+review, complete run-level evidence and Seihou adoption are still open. No Codex flag is
+available in Seihou. FRIC-21 was promoted to Baikai IR-14.
+[Baikai provider package](mori://shinzui/baikai/packages/baikai-openai)
 
 ## Context and Orientation
 
@@ -376,43 +389,32 @@ shared caller policy, and the existing migration grants. The earlier receipt sur
 edge gets none. A changed settings file on retry gives only the newly executed edges its new digest. Use
 the existing cohort and protocol fixtures in `seihou-cli/test/Seihou/CLI/AgentMigrateE2ESpec.hs`.
 
-### Milestone 4. Give a Codex batch run the caller's rules and hooks
+### Milestone 4. Consume reviewed Codex hooks through Baikai
 
-This milestone starts with a prototype, because Codex documents no way to load either file for one run.
-Run the Codex probe in Concrete Steps before writing code. It must answer four questions. Can a hooks
-file be supplied to one `codex exec` run without writing into the project or the user's `$CODEX_HOME`?
-Does a `PreToolUse` deny stop the command, and how does the `--json` event stream show it? Can a rules
-file be supplied the same way? Can the stream tell a blocked command from one that ran and failed?
-Record the answers in Surprises & Discoveries. Promote an input only if it loads for a single run and
-leaves both the checkout and `$CODEX_HOME` untouched. If hooks cannot meet that, stop and ask for a
-scope decision. If only rules cannot, drop `--codex-rules` from this plan and record that it needs a
-change in Codex itself. If a blocked command cannot be told from a failed one, ask for a scope decision
-before choosing how the run fails.
+The investigated workflow starts with an installed blueprint, Codex configured for the
+consumer and the caller's native hooks file. The target ordinary command is
+`seihou agent run NAME --batch --provider codex-cli --codex-hooks FILE`, with the same
+option on a batch migration. A reviewed file should need one command on a repeat run.
+If an operator has never reviewed the handler, or it changed, the command must explain
+how to review that exact file using the shared Baikai workflow. Prove this first-use
+path from an empty review store before advertising either command.
 
-Add `--codex-hooks FILE` and `--codex-rules FILE` to `agent run` and `agent migrate`. They are valid
-only for a batch run whose resolved provider is Codex CLI. Reject them elsewhere with the same early,
-named error as the Claude flags, and reject a mix of Claude and Codex flags. Validate each file before
-any mutating phase: a readable regular file, a JSON object for hooks, and a rules file that
-`codex execpolicy check` parses. Check how that command reports a parse failure, since its exit status
-alone may not show one. Hash each file's bytes and apply milestone 2's stability checks before each
-launch and before the receipt.
+Baikai should resolve supported synchronous PreToolUse declarations, start an ephemeral
+app-server thread with the consumer's cwd and sandbox, and inspect that thread's effective
+hook inventory before a model turn. Verify every required handler, its identity, enabled
+state and native review. Preserve operator hooks, grants and restrictions. Limit the
+caller input to supported hook declarations. Keep enrollment outside ordinary execution.
+Reject unsupported or unreviewed policy before baseline mutation. Require complete,
+attributed turn evidence. A structured denial fails the attempt even if the agent returns
+success. Interruptions, failed gates and protocol failures cannot justify a receipt.
+Baikai owns transport lifecycle, concurrent thread attribution and cancellation. Seihou
+continues to validate its migration response, hash stable input bytes and preserve receipts
+for completed owners. Adopt the shared API after it is consumable in a normal build.
+[Baikai IR-14](mori://shinzui/baikai/okf/improvement-requests/concepts/IR-14)
 
-Pass the inputs through the mechanism the probe promoted, as extra arguments after `codexAccessArgs`.
-A caller's hook has not been through Codex's trust review, so pass `--dangerously-bypass-hook-trust`
-only when `--codex-hooks` is present, and say in help that the caller vouches for that file. Keep
-`--sandbox workspace-write`. An `allow` rule lets a command leave the sandbox, which is the caller's
-stated choice. Document that plainly beside the flag.
-
-Send a policy-bearing Codex `agent run` through `registerValidatedCli`, as migrations already do, so
-Seihou can read the event stream. Fail the run on the blocked-command evidence the probe identified and
-write no receipt. Leave a Codex run without these flags on the stock provider with today's behavior.
-For migrations, add the same arguments to the existing Codex adapter call and keep
-`validateMigrationOutput` as it is. Tell the migration agent that the caller's hook or rules may block
-commands, without listing or inferring them.
-
-Extend the suite's fake `codex` so its event stream depends on the arguments it receives. Cover a
-blocked command, the same command passing once the caller's file admits it, both flags together, a
-migration with two owners, and the rejections above.
+Defer caller rules files pending a native per-invocation input. A static rules check
+only evaluates a command supplied to the checker. Existing Codex runs without a caller
+policy retain their current transport.
 
 ### Milestone 5. Make debug rendering read-only and verify the caller workflow
 
@@ -425,8 +427,8 @@ prompt. Pass an explicit preview baseline status to `formatBaselineStatus` in
 `seihou-cli/src/Seihou/CLI/AgentLaunch.hs`. Keep the ordinary run's guard, baseline and provider order.
 Debug accepts the policy flags with or without `--batch`, because it never launches a provider. It
 applies the same provider check and the same rule and settings-file validation as a real run, then shows
-the effective static grants and whether settings were supplied, or for Codex which of the two files
-were supplied. It does not run a hook or print a file's contents. Preserve `agent --debug migrate` behavior.
+the effective static grants and whether settings were supplied. When Codex hooks ship, show
+whether the caller supplied a hooks file. It does not run a hook or print a file's contents. Preserve `agent --debug migrate` behavior.
 
 Test both an absent manifest and an existing one with noncanonical whitespace, a baseline module that
 writes a marker via a command, and a provider stub that records launches. Repeated debug renders must
@@ -561,45 +563,20 @@ caller's settings fixture and a recording provider stub. Verify that the intende
 directory and hook input reach the subprocess. Record live-provider evidence separately.
 
 
-The Codex probe for milestone 4 uses the same disposable project and an authenticated `codex`. Its hook
-blocks the probe command and stays silent otherwise, because Codex treats a bare `allow` as an error.
-The rules check calls no model. The `-c` form below is the first candidate for supplying hooks to one
-run and is not documented. If Codex rejects or ignores it, try the other routes Codex offers and record
-which one worked.
+From the Baikai checkout, run the investigation against the installed Codex app-server.
+The probe uses loopback responses, separate temporary configuration directories and a
+fixed review fixture. No login or remote model is required.
 
 ```bash
-codex --version
-cat > codex-gate.py <<'PYTHON'
-import json
-import sys
-
-event = json.load(sys.stdin)
-command = event["tool_input"].get("command", "")
-with open("codex-hook-decisions", "a") as log:
-    print(command, file=log)
-if "policy-probe" in command:
-    print(json.dumps({"hookSpecificOutput": {
-        "hookEventName": "PreToolUse", "permissionDecision": "deny",
-        "permissionDecisionReason": "blocked by the caller's gate"
-    }}))
-PYTHON
-printf '%s\n' 'prefix_rule(pattern=["./policy-probe"], decision="forbidden")' > caller.rules
-codex execpolicy check --rules caller.rules --pretty ./policy-probe
-rm -f probe-runs
-codex exec --json --ephemeral --skip-git-repo-check --sandbox workspace-write \
-  --dangerously-bypass-hook-trust \
-  -c 'hooks.PreToolUse=[{matcher="Bash",hooks=[{type="command",command="python3 codex-gate.py"}]}]' \
-  -- 'Run the shell command ./policy-probe once. Report its output.' > codex-events.jsonl
-cat codex-hook-decisions
-test ! -e probe-runs && echo blocked
-jq -c 'select(.type | startswith("item")) | .item | {type, status, command}' codex-events.jsonl
+python3 scripts/probe-codex-hook-policy.py
+TASTY_NUM_THREADS=1 cabal test baikai-openai-test
 ```
 
-The rules check should print a `forbidden` decision. If the hook loaded, `codex-hook-decisions` names
-the probe command, `blocked` is printed, and the last command shows how the stream reports the blocked
-item. Compare that with the item a command that runs and exits 1 produces. Repeat the run without the
-`-c` argument while looking for a way to load `caller.rules` for one run.
-
+Expect fresh and changed gates to require review before any model request, a reviewed
+gate to block the fixture with the marker absent, and a fresh thread to run the command
+and report exit 7. The fixture never enrolls a production hook. For the implementation,
+evidence and exact repository-local paths see
+[Baikai IR-14](mori://shinzui/baikai/okf/improvement-requests/concepts/IR-14).
 
 ## Validation and Acceptance
 
@@ -622,12 +599,14 @@ supplied to its provider, and a denial, bad protocol result, manually marked edg
 acquire false provenance. Exercise both `MigrationApplied` and `MigrationNotApplicable` with real
 fixture receipts. The original owner and retry rules still determine which edge runs.
 
-Milestone 4 passes when the probe's four answers are recorded and each promoted flag works end to end
-against the fake `codex`. A run whose stream reports the blocked command exits 1 with no receipt. The
-same run exits 0 once the caller's file admits the command, and its receipt carries digests equal to
-`shasum -a 256` of the supplied files. Neither the checkout nor `$CODEX_HOME` holds a file Seihou wrote.
-Codex flags on Claude CLI, on an API provider, in an interactive session, or mixed with Claude flags
-stop before any baseline write. A Codex batch run without the flags behaves exactly as before.
+Milestone 4 delivery requires a fresh operator review and a successful repeat run through
+the public commands, in addition to the credential-free provider probe. An attempted use
+of a changed or unreviewed gate must stop before a baseline write. A denied tool must
+fail the turn for receipt purposes even when Codex reports a successful turn. Verify
+the hooks digest on a successful run and on each executed migration edge. Exercise
+receipt preservation on denial, missing evidence, cancellation, retry and mixed policy
+or provider inputs. Verify that starting a batch run changes neither project policy nor
+operator configuration, and that a run without policy keeps its existing behavior.
 
 Milestone 5 passes when ordinary debug output includes the rendered guidance and effective initial
 instruction while a byte comparison of the existing manifest succeeds, a fresh checkout still lacks a
@@ -659,7 +638,7 @@ hook logs cannot produce a false pass.
 Represent the raw CLI inputs (an ordered list of rule strings and an optional file path), the resolved
 launch inputs, and the small serializable receipt as distinct values. Thread them only through the two
 blueprint batch entry points. Other users of the shared completion or prompt helpers can continue with
-empty caller inputs. Use the existing Baikai renderer's extra-argument facility. In the examined source
+empty caller inputs. For the existing Claude adapter use the Baikai renderer's extra-argument facility. In the examined source
 the renderer adds the option terminator and positional prompt after the extra arguments. No dependency
 pin or blueprint descriptor change is required.
 [Baikai Claude provider](mori://shinzui/baikai/packages/baikai-claude)
@@ -701,3 +680,7 @@ API providers still reject the policy flags because they run no tools.
 
 2026-11-21: Recorded that the provider-specific rendering and refusal parsing are interim pending Baikai
 IR-14, which was drafted alongside this revision.
+
+2026-11-21: Replaced the proposed Codex trust bypass with a Baikai-owned app-server
+integration after comparative transport trials. Deferred caller rules files and separated
+the verified notification decoder from first-use enrollment and consumer delivery.

@@ -6,13 +6,18 @@ generated:
   by: "codex-cli/gpt-6.2-astra"
   at: "2026-11-21T15:39:15Z"
 frictionId: FRIC-21
-status: logged
+status: "promoted"
 impact: blocked
 kind: interface
 origin: "mori://shinzui/seihou"
 affects: "https://github.com/openai/codex"
 affectedVersion: "0.171.0"
 plan: "docs/plans/127-let-callers-supply-tool-policy-for-batch-blueprint-runs-and-migrations.md"
+promotedTo: "mori://shinzui/baikai/okf/improvement-requests/concepts/IR-14"
+amended:
+  - by: "codex-cli/gpt-6.2-astra"
+    at: "2026-11-21T16:22:19Z"
+    change: "Baikai IR-14 owns the app-server path that reports a blocked pre-tool hook and verifies existing review before a turn."
 ---
 # Codex exec omits hook denials from its JSON event stream
 

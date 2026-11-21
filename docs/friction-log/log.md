@@ -1,6 +1,9 @@
 # Bundle Update Log
 
 ## 2026-11-21
+
+* **Update**: FRIC-21 promoted: Baikai IR-14 owns the app-server path that reports a blocked pre-tool hook and verifies existing review before a turn.
+
 * **Addition**: FRIC-21 records blocked interface friction with https://github.com/openai/codex: Codex exec omits hook denials from its JSON event stream
 
 ## 2026-11-15
