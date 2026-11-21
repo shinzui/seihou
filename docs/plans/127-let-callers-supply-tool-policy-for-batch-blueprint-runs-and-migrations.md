@@ -43,12 +43,15 @@ render it in the target checkout without applying anything.
 
 Start in the consuming repository with the blueprint installed and Claude Code configured. For a missing
 rule, run one command. For a playbook that already produces a settings file, supply that file directly.
-The same options work on a migration. These are alternative invocations, each scoped to its own process.
+The same options work on a migration. A caller that runs Codex CLI supplies Codex's own files through
+separate flags, because Codex has no per-tool allow list. These are alternative invocations, each scoped
+to its own process.
 
 ```bash
 seihou agent run fix-nix-haskell-flake-customizations --batch --allowed-tool 'Bash(grep *)'
 seihou agent run fix-nix-haskell-flake-customizations --batch --settings ./campaign/claude-settings.json
 seihou agent migrate keiro-upgrade --from=0.22.0.0 --to=0.25.0.0 --batch --settings ./campaign/claude-settings.json
+seihou agent run fix-nix-haskell-flake-customizations --batch --provider codex-cli --codex-hooks ./campaign/codex-hooks.json
 seihou agent --debug run fix-nix-haskell-flake-customizations
 ```
 
@@ -65,6 +68,7 @@ replaying a receipt must never grant tools to a subsequent run.
 - [ ] A caller can add a rule to a batch blueprint run, see that exact rule in its receipt, and observe failure when the required rule is omitted.
 - [ ] A caller can supply a settings file containing a working Claude hook and identify the exact file contents used by their digest.
 - [ ] Batch migrations apply the policy to each pending edge and record it under the blueprint that owns that edge.
+- [ ] A caller can give a Codex CLI batch run or migration its own rules and hooks files, see each file's digest in the receipt, and observe a blocked command fail the run.
 - [ ] Debug rendering is read-only in the target checkout, help describes both workflows, and the public commands pass consumer acceptance.
 
 
@@ -96,6 +100,24 @@ appears there. If it does not, a run whose gate blocked a command would still ea
 that gap would be a new guarantee, so the plan stops for a scope decision in that case and does not pick
 a detection mechanism in advance.
 [ADR 0026](../adr/0026-a-batch-blueprint-run-fails-on-reported-tool-refusals.md)
+
+On 2026-11-21, at the user's direction, extend the plan to Codex CLI and keep rejecting the policy flags
+on the API providers. A Codex caller supplies Codex's native files, an execpolicy rules file and a hooks
+file, through Codex-only flags. Seihou does not translate Claude rules. A Claude rule permits a tool call,
+while a Codex `allow` rule runs a command outside the sandbox, so a translation would be lossy and would
+widen access silently. The `openai` and `anthropic` providers send one completion and run no tools, so a
+tool policy has nothing to govern there. Giving those providers tools would be a separate feature. No
+change to Baikai is required. Its Codex renderer already forwards extra arguments and Seihou's adapter
+runs the process itself.
+[Baikai OpenAI provider](mori://shinzui/baikai/packages/baikai-openai)
+
+On 2026-11-21, treat Seihou's rendering of provider policy arguments and its parsing of refusal output
+as interim. Other tools that run agents unattended need the same two things, and Baikai's unattended-run
+layer is where they belong. Baikai IR-14 requests them. This plan does not wait for it. Keep the
+provider-specific code in `seihou-cli/src/Seihou/CLI/AgentCompletion.hs` so a later move to Baikai
+touches one module, and attach both probes' results to that request. The receipt, the file digests and
+the flags stay in Seihou.
+[Baikai IR-14](mori://shinzui/baikai/okf/improvement-requests/concepts/IR-14)
 
 
 ## Outcomes & Retrospective
@@ -156,6 +178,26 @@ consume the prompt. A batch run also inherits the operator's own Claude hooks an
 Commands those prompt are refused and listed in the same `permission_denials` array, and they fail the
 run like any other refusal. Seihou reads refusals only from that array. Whether Claude lists a command
 there when a `PreToolUse` hook denies it has not been observed.
+
+Codex CLI works differently, and milestone 4 depends on these facts. Seihou launches a Codex batch run
+as `codex exec --json --sandbox workspace-write` (`codexAccessArgs`). Commands run inside that sandbox
+without asking, so there is no allow list to widen. Codex 0.171.0 offers two policy inputs. An
+execpolicy rules file holds lines such as `prefix_rule(pattern=["git", "push"], decision="forbidden")`.
+A pattern is an exact prefix of the command's arguments, `forbidden` blocks the command, and `allow`
+runs it outside the sandbox. A hooks file has the same outline as Claude's. Its `PreToolUse` event can
+block a command but cannot approve one. A separate `PermissionRequest` event can approve, and it fires
+only when Codex would otherwise ask. Codex skips a hook nobody has reviewed unless the run passes
+`--dangerously-bypass-hook-trust`. Codex's documentation names fixed locations for both inputs: the
+user's `$CODEX_HOME` and a trusted project's `.codex/` directory. It documents no flag that loads either
+file for one run, and it does not say whether hooks run under `codex exec`. `-c key=value` overrides any
+configuration key for one run, and hooks can be declared in configuration under `[hooks]`.
+`codex execpolicy check --rules FILE COMMAND...` parses a rules file and prints its decision without
+calling a model. An ordinary Codex batch run goes through Baikai's stock provider, which validates
+nothing. A Codex migration already goes through Seihou's adapter, and `validateMigrationOutput` fails it
+on a `declined` or `failed` item. ADR 0026 left ordinary Codex runs unvalidated because a failed item
+can be an ordinary failing command.
+[Codex rules](https://developers.openai.com/codex/rules) ·
+[Codex hooks](https://developers.openai.com/codex/hooks)
 [ADR 0026](../adr/0026-a-batch-blueprint-run-fails-on-reported-tool-refusals.md) ·
 [ADR 0019](../adr/0019-non-terminal-blueprint-migrations-require-validated-batch-results.md)
 
@@ -202,9 +244,10 @@ Today's comma join does not meet this. Pass each rule as its own argument after 
 Claude documents as a list, unless the native probe in Concrete Steps shows the joined form keeps a
 comma-bearing rule intact. Exercise the actual renderer with a quoted Bash rule and with a rule that
 contains a comma. Only Claude CLI batch execution supports these
-flags. Reject an interactive launch or a resolved Codex/API provider before prompts, baseline writes or
+flags. Reject an interactive launch or any other resolved provider before prompts, baseline writes or
 provider launch. Name the incompatible flag and show how to retry with `--batch --provider claude-cli`
-or omit the caller policy. Check the resolved provider, including defaults and blueprint declarations.
+or omit the caller policy. On Codex CLI, point to the Codex flags of milestone 4 once they exist. On an
+API provider, say that the provider runs no tools. Check the resolved provider, including defaults and blueprint declarations.
 
 Add receipt support to `AppliedBlueprint` and `AppliedBlueprintMigration` in
 `seihou-core/src/Seihou/Core/Types.hs`. The manifest schema in this tree is 15. Add a capability for
@@ -267,8 +310,8 @@ CLI suite must work without credentials and independently exercise both outcomes
 Add both flags to `agent migrate`. Resolve one invocation's caller rules and settings path and digest
 before version probing or launching an edge. Reject policy flags with `--mark-applied` in the existing
 early conflict check (`rejectConflictingMarkApplied`). Apply milestone 1's provider and batch rule here
-too. A migration can run in batch on Codex CLI or interactively, and both must reject the flags before
-the first edge. At each pending edge, combine that owner's tools and the migration-only grants
+too. A migration can run in batch on Codex CLI or interactively, and both must reject these Claude flags
+before the first edge. At each pending edge, combine that owner's tools and the migration-only grants
 with the caller's additions. Render the migration permission paragraph from the same effective list used
 to launch the provider. When a settings file supplies a hook, tell the agent that the caller's hook also
 decides requests, so the current instruction to execute only statically listed commands does not
@@ -282,7 +325,45 @@ shared caller policy, and the existing migration grants. The earlier receipt sur
 edge gets none. A changed settings file on retry gives only the newly executed edges its new digest. Use
 the existing cohort and protocol fixtures in `seihou-cli/test/Seihou/CLI/AgentMigrateE2ESpec.hs`.
 
-### Milestone 4. Make debug rendering read-only and verify the caller workflow
+### Milestone 4. Give a Codex batch run the caller's rules and hooks
+
+This milestone starts with a prototype, because Codex documents no way to load either file for one run.
+Run the Codex probe in Concrete Steps before writing code. It must answer four questions. Can a hooks
+file be supplied to one `codex exec` run without writing into the project or the user's `$CODEX_HOME`?
+Does a `PreToolUse` deny stop the command, and how does the `--json` event stream show it? Can a rules
+file be supplied the same way? Can the stream tell a blocked command from one that ran and failed?
+Record the answers in Surprises & Discoveries. Promote an input only if it loads for a single run and
+leaves both the checkout and `$CODEX_HOME` untouched. If hooks cannot meet that, stop and ask for a
+scope decision. If only rules cannot, drop `--codex-rules` from this plan and record that it needs a
+change in Codex itself. If a blocked command cannot be told from a failed one, ask for a scope decision
+before choosing how the run fails.
+
+Add `--codex-hooks FILE` and `--codex-rules FILE` to `agent run` and `agent migrate`. They are valid
+only for a batch run whose resolved provider is Codex CLI. Reject them elsewhere with the same early,
+named error as the Claude flags, and reject a mix of Claude and Codex flags. Validate each file before
+any mutating phase: a readable regular file, a JSON object for hooks, and a rules file that
+`codex execpolicy check` parses. Check how that command reports a parse failure, since its exit status
+alone may not show one. Hash each file's bytes and apply milestone 2's stability checks before each
+launch and before the receipt.
+
+Pass the inputs through the mechanism the probe promoted, as extra arguments after `codexAccessArgs`.
+A caller's hook has not been through Codex's trust review, so pass `--dangerously-bypass-hook-trust`
+only when `--codex-hooks` is present, and say in help that the caller vouches for that file. Keep
+`--sandbox workspace-write`. An `allow` rule lets a command leave the sandbox, which is the caller's
+stated choice. Document that plainly beside the flag.
+
+Send a policy-bearing Codex `agent run` through `registerValidatedCli`, as migrations already do, so
+Seihou can read the event stream. Fail the run on the blocked-command evidence the probe identified and
+write no receipt. Leave a Codex run without these flags on the stock provider with today's behavior.
+For migrations, add the same arguments to the existing Codex adapter call and keep
+`validateMigrationOutput` as it is. Tell the migration agent that the caller's hook or rules may block
+commands, without listing or inferring them.
+
+Extend the suite's fake `codex` so its event stream depends on the arguments it receives. Cover a
+blocked command, the same command passing once the caller's file admits it, both flags together, a
+migration with two owners, and the rejections above.
+
+### Milestone 5. Make debug rendering read-only and verify the caller workflow
 
 In `handleAgentRun`, separate rendering from applying the baseline and recording success. Render the
 resolved blueprint, references and initial user instruction against the current project context.
@@ -293,8 +374,8 @@ prompt. Pass an explicit preview baseline status to `formatBaselineStatus` in
 `seihou-cli/src/Seihou/CLI/AgentLaunch.hs`. Keep the ordinary run's guard, baseline and provider order.
 Debug accepts the policy flags with or without `--batch`, because it never launches a provider. It
 applies the same provider check and the same rule and settings-file validation as a real run, then shows
-the effective static grants and whether settings were supplied. It does not run the hook or print the
-file's contents. Preserve `agent --debug migrate` behavior.
+the effective static grants and whether settings were supplied, or for Codex which of the two files
+were supplied. It does not run a hook or print a file's contents. Preserve `agent --debug migrate` behavior.
 
 Test both an absent manifest and an existing one with noncanonical whitespace, a baseline module that
 writes a marker via a command, and a provider stub that records launches. Repeated debug renders must
@@ -402,7 +483,7 @@ The first call should add one `ran` line and one `allow ./policy-probe` decision
 second inverts the hook, so it should add a `deny ./policy-probe` decision and no `ran` line despite the
 static grant. Its `permission_denials` value answers the open question in milestone 2. Then continue
 with the candidate executable once the flags exist. The debug line and the manifest check after it pass
-only after milestone 4.
+only after milestone 5.
 
 ```bash
 "$seihou_candidate" --version
@@ -429,6 +510,46 @@ caller's settings fixture and a recording provider stub. Verify that the intende
 directory and hook input reach the subprocess. Record live-provider evidence separately.
 
 
+The Codex probe for milestone 4 uses the same disposable project and an authenticated `codex`. Its hook
+blocks the probe command and stays silent otherwise, because Codex treats a bare `allow` as an error.
+The rules check calls no model. The `-c` form below is the first candidate for supplying hooks to one
+run and is not documented. If Codex rejects or ignores it, try the other routes Codex offers and record
+which one worked.
+
+```bash
+codex --version
+cat > codex-gate.py <<'PYTHON'
+import json
+import sys
+
+event = json.load(sys.stdin)
+command = event["tool_input"].get("command", "")
+with open("codex-hook-decisions", "a") as log:
+    print(command, file=log)
+if "policy-probe" in command:
+    print(json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PreToolUse", "permissionDecision": "deny",
+        "permissionDecisionReason": "blocked by the caller's gate"
+    }}))
+PYTHON
+printf '%s\n' 'prefix_rule(pattern=["./policy-probe"], decision="forbidden")' > caller.rules
+codex execpolicy check --rules caller.rules --pretty ./policy-probe
+rm -f probe-runs
+codex exec --json --ephemeral --skip-git-repo-check --sandbox workspace-write \
+  --dangerously-bypass-hook-trust \
+  -c 'hooks.PreToolUse=[{matcher="Bash",hooks=[{type="command",command="python3 codex-gate.py"}]}]' \
+  -- 'Run the shell command ./policy-probe once. Report its output.' > codex-events.jsonl
+cat codex-hook-decisions
+test ! -e probe-runs && echo blocked
+jq -c 'select(.type | startswith("item")) | .item | {type, status, command}' codex-events.jsonl
+```
+
+The rules check should print a `forbidden` decision. If the hook loaded, `codex-hook-decisions` names
+the probe command, `blocked` is printed, and the last command shows how the stream reports the blocked
+item. Compare that with the item a command that runs and exits 1 produces. Repeat the run without the
+`-c` argument while looking for a way to load `caller.rules` for one run.
+
+
 ## Validation and Acceptance
 
 Milestone 1 passes when the fixture reports the exact missing tool on exit 1, succeeds on exit 0 with
@@ -450,7 +571,14 @@ supplied to its provider, and a denial, bad protocol result, manually marked edg
 acquire false provenance. Exercise both `MigrationApplied` and `MigrationNotApplicable` with real
 fixture receipts. The original owner and retry rules still determine which edge runs.
 
-Milestone 4 passes when ordinary debug output includes the rendered guidance and effective initial
+Milestone 4 passes when the probe's four answers are recorded and each promoted flag works end to end
+against the fake `codex`. A run whose stream reports the blocked command exits 1 with no receipt. The
+same run exits 0 once the caller's file admits the command, and its receipt carries digests equal to
+`shasum -a 256` of the supplied files. Neither the checkout nor `$CODEX_HOME` holds a file Seihou wrote.
+Codex flags on Claude CLI, on an API provider, in an interactive session, or mixed with Claude flags
+stop before any baseline write. A Codex batch run without the flags behaves exactly as before.
+
+Milestone 5 passes when ordinary debug output includes the rendered guidance and effective initial
 instruction while a byte comparison of the existing manifest succeeds, a fresh checkout still lacks a
 manifest, and baseline and provider markers are absent. Verify the same fixture still applies its
 baseline before a real provider launch. Run both `--help` screens and `seihou help agent` from the built
@@ -487,14 +615,15 @@ pin or blueprint descriptor change is required.
 
 At schema 16 require a `callerToolPolicy` key on each existing blueprint or migration receipt. JSON null
 means no caller-supplied policy was recorded, including historical, default and manually marked records.
-A non-null object requires `allowedTools` (a list of nonblank caller patterns) and `settingsSha256` (a
-lowercase 64-digit hexadecimal SHA-256, or null). At least one caller input must be present in a
-non-null object. Store caller rule literals without expanding machine paths. Document the settings-file
+A non-null object requires four keys: `allowedTools` (a list of nonblank caller patterns),
+`settingsSha256`, `codexHooksSha256` and `codexRulesSha256` (each a lowercase 64-digit hexadecimal
+SHA-256, or null). The first two belong to a Claude CLI run and the last two to a Codex CLI run, so one
+receipt never carries both pairs. At least one caller input must be present in a non-null object. Store caller rule literals without expanding machine paths. Document the settings-file
 form for machine-specific or sensitive policy. Keep settings paths, hook contents and provider defaults
 out of the record. For a rule-only run the receipt contains this object.
 
 ```json
-{"callerToolPolicy":{"allowedTools":["Bash(grep *)"],"settingsSha256":null}}
+{"callerToolPolicy":{"allowedTools":["Bash(grep *)"],"settingsSha256":null,"codexHooksSha256":null,"codexRulesSha256":null}}
 ```
 
 Schema 15 and earlier encode receipts without the new field. Extend the existing SHA-256 support in
@@ -513,3 +642,11 @@ comma join in `claudeAccessArgs` and the unobserved reporting of hook denials, a
 probe that runs before milestone 2's code with a stop condition, stated how debug treats the policy
 flags, extended the provider rule to migrations, and added the IR-23 and BUG-5 record updates. The file
 paths, symbols, schema version and test names the plan cites were confirmed unchanged.
+
+2026-11-21: Extended to Codex CLI at the user's direction. Added milestone 4, which begins with a Codex
+probe and promotion criteria, the `--codex-hooks` and `--codex-rules` flags, two receipt keys, and the
+Codex facts in Context and Orientation. The debug and documentation milestone is now milestone 5. The
+API providers still reject the policy flags because they run no tools.
+
+2026-11-21: Recorded that the provider-specific rendering and refusal parsing are interim pending Baikai
+IR-14, which was drafted alongside this revision.
