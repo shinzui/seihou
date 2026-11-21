@@ -62,7 +62,8 @@ mkReceiptWithOutcome origin blueprintName fromVersion toVersion appliedAt outcom
       toVersion = toVersion,
       outcome = outcome,
       appliedAt = appliedAt,
-      agentSessionId = Nothing
+      agentSessionId = Nothing,
+      callerToolPolicy = Nothing
     }
 
 readManifestFile :: FilePath -> IO Manifest

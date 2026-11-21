@@ -412,9 +412,8 @@ including whitespace. API providers (`anthropic`, `openai`) keep optional input
 unchanged. Automatic startup preserves provider tool approvals.
 
 `seihou agent --debug run api-service` shows the effective initial instruction
-without contacting a provider. Blueprint debug still applies baseline modules
-and records blueprint provenance; it is not a dry run. The manifest records
-the original PROMPT, including omission or blank text.
+and previews the declared baseline. Debug leaves project files and the manifest untouched.
+A successful execution records the original PROMPT, including omission or blank text.
 
 Use `run` for blueprints. The runner resolves blueprint variables, optionally
 applies baseline modules, renders the blueprint prompt, and records the
@@ -532,3 +531,13 @@ fails, reports a permission denial, or returns incomplete output, no receipt is
 written for that edge. Inspect partial edits, repair the reported problem, and
 rerun the same command; completed edges are skipped. Receipts do not verify that
 the migrated project builds or passes tests.
+
+## Caller tool policy
+
+A Claude CLI batch run or migration accepts repeatable `--allowed-tool PATTERN` and
+`--settings FILE`. For example, `--allowed-tool 'Bash(grep *)'` adds one static
+grant. Pass an existing Claude settings file with `--settings ./campaign/claude-settings.json`
+to use its permission rules and hooks. Both flags apply only to this invocation.
+Baseline commands run directly under Seihou before the agent starts.
+
+[Caller policy examples and receipts](blueprints.md#caller-policy-for-claude-batch-sessions)

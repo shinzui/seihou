@@ -251,6 +251,20 @@ including whitespace. API providers (anthropic, openai) keep optional input
 unchanged. Automatic startup preserves provider tool approvals.
 
 seihou agent --debug run api-service shows the effective initial instruction
-without contacting a provider. Blueprint debug still applies baseline modules
-and records blueprint provenance; it is not a dry run. The manifest records
-the original PROMPT, including omission or blank text.
+and previews the declared baseline. Debug leaves project files and the manifest untouched.
+A successful execution records the original PROMPT, including omission or blank text.
+
+CALLER TOOL POLICY
+
+A Claude CLI batch run or migration accepts repeatable --allowed-tool PATTERN and
+--settings FILE. For example, --allowed-tool 'Bash(grep *)' adds one static
+grant. Pass an existing Claude settings file with --settings ./campaign/claude-settings.json
+to use its permission rules and hooks. Both flags apply only to this invocation.
+Baseline commands run directly under Seihou before the agent starts.
+
+  seihou agent run fix-nix-haskell-flake-customizations --batch --allowed-tool 'Bash(grep *)'
+  seihou agent migrate keiro-upgrade --from 0.22.0.0 --to 0.25.0.0 --batch --settings ./campaign/claude-settings.json
+
+Inspect the working diff after a refusal and retry with the intended rule or gate.
+The manifest records inputs in blueprint.callerToolPolicy or each executed
+blueprintMigrations entry. Rules are literal. Files are identified by SHA-256.

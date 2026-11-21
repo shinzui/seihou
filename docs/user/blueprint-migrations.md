@@ -755,3 +755,15 @@ edge finds nothing to do — or skip it deliberately by widening `--from`.
 - [`seihou agent`](../cli/agent.md) — the command reference.
 - [`seihou status`](../cli/status.md) — reading recorded project state.
 - [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md) — publishing the blueprint.
+
+## Caller tool policy
+
+A Claude CLI batch run or migration accepts repeatable `--allowed-tool PATTERN` and
+`--settings FILE`. For example, `--allowed-tool 'Bash(grep *)'` adds one static
+grant. Pass an existing Claude settings file with `--settings ./campaign/claude-settings.json`
+to use its permission rules and hooks. Both flags apply only to this invocation.
+Baseline commands run directly under Seihou before the agent starts.
+
+Use the same policy for all pending edges. A manual `--mark-applied` receipt has no provider policy.
+
+[Caller policy examples and receipts](blueprints.md#caller-policy-for-claude-batch-sessions)

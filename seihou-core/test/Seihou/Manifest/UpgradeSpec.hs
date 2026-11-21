@@ -63,6 +63,13 @@ fileField _ _ _ = Nothing
 
 spec :: Spec
 spec = do
+  it "adds null caller evidence to both schema-15 receipt forms and preserves producer fields" $ do
+    let receipt fields = Aeson.object (("producer" Aeson..= True) : fields)
+        doc version r = Aeson.object ["version" Aeson..= (version :: Int), "blueprint" Aeson..= r, "blueprintMigrations" Aeson..= [r], "unrelated" Aeson..= True]
+        old = doc 15 (receipt [])
+        upgraded = doc 16 (receipt ["callerToolPolicy" Aeson..= Aeson.Null])
+    fmap snd (upgradeDocumentLosslessly (v 16) old) `shouldBe` Right upgraded
+    upgradeDocumentLosslessly (v 16) (doc 15 (receipt ["callerToolPolicy" Aeson..= True])) `shouldSatisfy` either (const True) (const False)
   it "adds an empty judgement list at schema 15 and refuses a forged one" $ do
     let document = Aeson.object ["version" Aeson..= (14 :: Int), "producerField" Aeson..= True]
         expected = Aeson.object ["version" Aeson..= (15 :: Int), "producerField" Aeson..= True, "judgements" Aeson..= ([] :: [Aeson.Value])]

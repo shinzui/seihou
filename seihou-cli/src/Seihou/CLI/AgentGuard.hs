@@ -61,15 +61,7 @@ import System.Directory (getCurrentDirectory)
 -- nothing to do with it; that is the line ADR 0003 draws for @seihou run@ and
 -- this holds it for the agent path.
 --
--- Whether @--debug@ exempts a command from this check is the caller's
--- decision, and the two agent commands answer differently because @--debug@
--- means different things to them. It is a true dry run for @seihou agent
--- migrate@, which prints its pending prompts and writes nothing, so that
--- command skips the check and stays usable for inspecting a prompt on a
--- machine that has never installed the artifact. It is not a dry run for
--- @seihou agent run@, which still applies the blueprint's baseline and still
--- records applied-blueprint provenance under debug, so that command checks
--- unconditionally.
+-- Both blueprint debug commands skip this guard for read-only inspection.
 enforceAgentArtifactGuard ::
   -- | @--allow-downgrade@
   Bool ->

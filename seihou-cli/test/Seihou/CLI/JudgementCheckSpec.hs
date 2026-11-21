@@ -29,7 +29,7 @@ import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.ManifestStore (writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Manifest.Judgement (definitionDigest)
-import Seihou.Manifest.Types (emptyManifest, manifestFromJSON)
+import Seihou.Manifest.Types (currentManifestVersion, emptyManifest, manifestFromJSON)
 import Seihou.Prelude
 import System.Directory (createDirectoryIfMissing, doesFileExist, executable, getPermissions)
 import System.FilePath (takeDirectory)
@@ -212,7 +212,7 @@ tests = testSpec "judgement check, adoption and hooks" $ do
     it "ships the bundled security-review with the unqualified gate off" $ do
       Right d <- evalJudgementFromFile "data/judgements/security-review/judgement.dhall"
       map (^. #useGate) (toList (d ^. #checks)) `shouldBe` [False, False]
-    it "records the snapshot at schema 15 and installs the hook, idempotently" $ withRepo $ \dir -> do
+    it "records the snapshot on a new manifest and installs the hook, idempotently" $ withRepo $ \dir -> do
       sc <- findScanner
       case sc of
         Nothing -> pendingWith "gitleaks is not on PATH"
@@ -220,7 +220,7 @@ tests = testSpec "judgement check, adoption and hooks" $ do
           Right plan <- planAdoption dir (AdoptionInputs route (Just ApprovedRemote) sc Nothing) (Just ApprovedRemote) DirectAdoption BundledJudgement docsJudgement
           applyAdoption plan `shouldReturn` Right ()
           Right m <- manifestFromJSON . LBS.fromStrict <$> BS.readFile (dir </> ".seihou" </> "manifest.json")
-          m ^. #version `shouldBe` ManifestSchemaVersion 15
+          m ^. #version `shouldBe` currentManifestVersion
           map (^. #definition . #name) (m ^. #judgements) `shouldBe` ["docs-review"]
           TIO.readFile (dir </> ".git" </> "hooks" </> "pre-commit") >>= (`shouldSatisfy` T.isInfixOf hookMarker)
           Right again <- planAdoption dir (AdoptionInputs route (Just ApprovedRemote) sc Nothing) (Just ApprovedRemote) DirectAdoption BundledJudgement docsJudgement

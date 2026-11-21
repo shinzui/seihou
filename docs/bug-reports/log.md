@@ -1,5 +1,9 @@
 # Bundle Update Log
 
+## 2026-11-21
+
+* **Update**: BUG-5 is fixed in source. Repeated debug renders preserve manifest bytes or absence and leave baseline and provider markers absent.
+
 ## 2026-11-18
 
 * **Update**: BUG-4 status reported -> fixed, fixedVersion unreleased. A blueprint baseline now runs its modules' commands after their files and before the provider, with run's receipt publication and withdrawal; a failing command stops the run before launch. Still present in 0.16.0.2 (`1fb1610`); regression in `seihou-cli/test/Seihou/CLI/BaselineCommandE2ESpec.hs` (mori://shinzui/seihou/plans/125-run-blueprint-baseline-commands-before-launching-the-agent).

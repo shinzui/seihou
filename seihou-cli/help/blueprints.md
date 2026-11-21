@@ -84,8 +84,8 @@ BASELINE MODULES
   starts. Every `seihou agent run` applies it again, so its commands run
   again too. A failing command exits 1 without starting the agent and names
   the command, its module, and how to retry; `--no-baseline` starts the
-  agent without applying the baseline. Parent `--debug` still applies the
-  baseline, including its commands, and skips only the provider. The command
+  agent without applying the baseline. Parent `--debug` previews the
+  baseline and prompt without writing files or starting processes for the baseline or provider. The command
   phase reports on standard error. Baseline commands run as Seihou's own
   processes; `allowedTools` governs only the agent.
 
@@ -229,3 +229,18 @@ fails, reports a permission denial, or returns incomplete output, no receipt is
 written for that edge. Inspect partial edits, repair the reported problem, and
 rerun the same command; completed edges are skipped. Receipts do not verify that
 the migrated project builds or passes tests.
+
+CALLER TOOL POLICY
+
+A Claude CLI batch run or migration accepts repeatable --allowed-tool PATTERN and
+--settings FILE. For example, --allowed-tool 'Bash(grep *)' adds one static
+grant. Pass an existing Claude settings file with --settings ./campaign/claude-settings.json
+to use its permission rules and hooks. Both flags apply only to this invocation.
+Baseline commands run directly under Seihou before the agent starts.
+
+  seihou agent run fix-nix-haskell-flake-customizations --batch --allowed-tool 'Bash(grep *)'
+  seihou agent migrate keiro-upgrade --from 0.22.0.0 --to 0.25.0.0 --batch --settings ./campaign/claude-settings.json
+
+Inspect the working diff after a refusal and retry with the intended rule or gate.
+The manifest records inputs in blueprint.callerToolPolicy or each executed
+blueprintMigrations entry. Rules are literal. Files are identified by SHA-256.

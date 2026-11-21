@@ -8,6 +8,7 @@ module Seihou.Manifest.Types
     sharedWriteModeToText,
     sharedWriteModeFromText,
     manifestToJSON,
+    blueprintToJSON,
     manifestFromJSON,
     writeAppliedBlueprint,
     writeAppliedBlueprintMigration,
@@ -90,7 +91,7 @@ import System.FilePath (takeFileName)
 -- Schema 15 records active judgements: a definition snapshot, its digest and
 -- the project policy. 14 -> 15 adds an empty judgement list.
 currentManifestVersion :: ManifestSchemaVersion
-currentManifestVersion = ManifestSchemaVersion 15
+currentManifestVersion = ManifestSchemaVersion 16
 
 -- | The oldest schema the ordinary decoder reads. Anything older records
 -- machine-specific absolute paths and must go through the explicit
@@ -111,6 +112,7 @@ minimumManifestVersion SeedOwnerClaims = ManifestSchemaVersion 11
 minimumManifestVersion CheckoutLocalOutputs = ManifestSchemaVersion 9
 minimumManifestVersion CheckoutLocalCommands = ManifestSchemaVersion 10
 minimumManifestVersion JudgementState = ManifestSchemaVersion 15
+minimumManifestVersion CallerToolPolicyEvidence = ManifestSchemaVersion 16
 
 -- | Whether a manifest's schema can express everything a capability needs.
 -- A decoded schema-6 manifest answers 'False' for
@@ -160,8 +162,8 @@ writeAppliedBlueprint ab m =
     }
 
 -- | Insert or replace one exact blueprint migration receipt. Replacement is
--- performed in place, while adding a v5-only receipt upgrades the manifest
--- version and preserves every unrelated field.
+-- performed in place. The publisher prepares the manifest schema before
+-- attaching the receipt.
 --
 -- The receipt's 'outcome' is deliberately excluded from the edge comparison,
 -- which is the one place it is left out of one. An edge that reported itself
@@ -170,7 +172,7 @@ writeAppliedBlueprint ab m =
 writeAppliedBlueprintMigration :: AppliedBlueprintMigration -> Manifest -> Manifest
 writeAppliedBlueprintMigration receipt manifest =
   Manifest
-    { version = currentManifestVersion,
+    { version = manifest ^. #version,
       genAt = manifest ^. #genAt,
       modules = manifest ^. #modules,
       vars = manifest ^. #vars,
@@ -238,13 +240,13 @@ instance ToJSON Manifest where
         "variables" .= varsToJSON (m ^. #vars),
         "files" .= filesToJSON (m ^. #version) (m ^. #files),
         "applications" .= map (applicationToJSON (m ^. #version)) (m ^. #applications),
-        "blueprintMigrations" .= (m ^. #blueprintMigrations)
+        "blueprintMigrations" .= map (blueprintMigrationToJSON (m ^. #version)) (m ^. #blueprintMigrations)
       ]
         ++ ["checkoutOutputs" .= Map.map checkoutToJSON (m ^. #checkoutOutputs) | m ^. #version >= ManifestSchemaVersion 9]
         ++ ["seeds" .= Map.map (seedToJSON (m ^. #version)) (m ^. #seeds) | m ^. #version >= ManifestSchemaVersion 8]
         ++ ["judgements" .= map activeJudgementToJSON (m ^. #judgements) | manifestSupports JudgementState m]
         ++ maybe [] (\r -> ["recipe" .= r]) (m ^. #recipe)
-        ++ maybe [] (\b -> ["blueprint" .= b]) (m ^. #blueprint)
+        ++ maybe [] (\b -> ["blueprint" .= blueprintToJSON (m ^. #version) b]) (m ^. #blueprint)
 
 -- | The version is read and checked before anything else, because the
 -- file-record representation depends on it.
@@ -263,8 +265,8 @@ instance FromJSON Manifest where
         <*> (if v >= ManifestSchemaVersion 9 then Map.traverseWithKey (\_ -> parseCheckout) =<< o .: "checkoutOutputs" else pure Map.empty)
         <*> (o Aeson..:? "applications" Aeson..!= [] >>= mapM (parseApplication v))
         <*> o Aeson..:? "recipe"
-        <*> o Aeson..:? "blueprint"
-        <*> o Aeson..:? "blueprintMigrations" Aeson..!= []
+        <*> (o Aeson..:? "blueprint" >>= traverse (parseBlueprint v))
+        <*> (o Aeson..:? "blueprintMigrations" Aeson..!= [] >>= traverse (parseBlueprintMigration v))
         <*> (if v >= minimumManifestVersion JudgementState then mapM parseActiveJudgement =<< o .: "judgements" else pure [])
     let judgementNames = map (^. #definition . #name) (manifest ^. #judgements)
     unless (Set.size (Set.fromList judgementNames) == length judgementNames) $ fail "manifest records the same judgement name more than once"
@@ -546,30 +548,67 @@ instance FromJSON AppliedRecipe where
       <$> o Aeson..:? "version"
       <*> o .: "appliedAt"
 
-instance ToJSON AppliedBlueprint where
-  toJSON ab =
-    Aeson.object $
-      [ "name" .= (ab ^. #name . #unModuleName),
-        "origin" .= (ab ^. #origin),
-        "appliedAt" .= (ab ^. #appliedAt),
-        "baselineModules" .= map (^. #unModuleName) (ab ^. #baselineModules),
-        "noBaseline" .= (ab ^. #noBaseline)
+instance ToJSON CallerToolPolicy where
+  toJSON policy =
+    Aeson.object
+      [ "allowedTools" .= (policy ^. #allowedTools),
+        "settingsSha256" .= (policy ^. #settingsSha256),
+        "codexHooksSha256" .= (policy ^. #codexHooksSha256),
+        "codexRulesSha256" .= (policy ^. #codexRulesSha256)
       ]
-        ++ maybe [] (\v -> ["version" .= v]) (ab ^. #blueprintVersion)
-        ++ maybe [] (\p -> ["userPrompt" .= p]) (ab ^. #userPrompt)
-        ++ maybe [] (\s -> ["agentSessionId" .= s]) (ab ^. #agentSessionId)
+
+instance FromJSON CallerToolPolicy where
+  parseJSON = Aeson.withObject "CallerToolPolicy" $ \o -> do
+    rules <- o .: "allowedTools"
+    settings <- o .: "settingsSha256"
+    hooks <- o .: "codexHooksSha256"
+    policyRules <- o .: "codexRulesSha256"
+    when (any (T.null . T.strip) rules) $ fail "caller tool rules must be nonblank"
+    forM_ [settings, hooks, policyRules] $ mapM_ $ \(SHA256 digest) ->
+      unless (T.length digest == 64 && T.all isHexDigit digest && T.toLower digest == digest) $
+        fail "caller policy digests must be lowercase SHA-256"
+    when ((not (null rules) || isJust settings) == (isJust hooks || isJust policyRules)) $
+      fail "callerToolPolicy must identify inputs for exactly one provider"
+    pure (CallerToolPolicy rules settings hooks policyRules)
+
+parseCallerToolPolicy :: ManifestSchemaVersion -> Aeson.Object -> Aeson.Parser (Maybe CallerToolPolicy)
+parseCallerToolPolicy version o
+  | version >= minimumManifestVersion CallerToolPolicyEvidence = o .: "callerToolPolicy"
+  | KM.member "callerToolPolicy" o = fail "callerToolPolicy requires manifest schema 16"
+  | otherwise = pure Nothing
+
+instance ToJSON AppliedBlueprint where
+  toJSON = blueprintToJSON currentManifestVersion
+
+blueprintToJSON :: ManifestSchemaVersion -> AppliedBlueprint -> Aeson.Value
+blueprintToJSON version ab =
+  Aeson.object $
+    [ "name" .= (ab ^. #name . #unModuleName),
+      "origin" .= (ab ^. #origin),
+      "appliedAt" .= (ab ^. #appliedAt),
+      "baselineModules" .= map (^. #unModuleName) (ab ^. #baselineModules),
+      "noBaseline" .= (ab ^. #noBaseline)
+    ]
+      ++ ["callerToolPolicy" .= (ab ^. #callerToolPolicy) | version >= minimumManifestVersion CallerToolPolicyEvidence]
+      ++ maybe [] (\v -> ["version" .= v]) (ab ^. #blueprintVersion)
+      ++ maybe [] (\p -> ["userPrompt" .= p]) (ab ^. #userPrompt)
+      ++ maybe [] (\s -> ["agentSessionId" .= s]) (ab ^. #agentSessionId)
 
 instance FromJSON AppliedBlueprint where
-  parseJSON = Aeson.withObject "AppliedBlueprint" $ \o -> do
-    name <- ModuleName <$> o .: "name"
-    origin <- legacyLocalOrigin (name ^. #unModuleName) <$> o Aeson..:? "origin"
-    AppliedBlueprint name origin
-      <$> o Aeson..:? "version"
-      <*> o .: "appliedAt"
-      <*> (map ModuleName <$> o Aeson..:? "baselineModules" Aeson..!= [])
-      <*> o Aeson..:? "noBaseline" Aeson..!= False
-      <*> o Aeson..:? "userPrompt"
-      <*> o Aeson..:? "agentSessionId"
+  parseJSON = parseBlueprint currentManifestVersion
+
+parseBlueprint :: ManifestSchemaVersion -> Aeson.Value -> Aeson.Parser AppliedBlueprint
+parseBlueprint version = Aeson.withObject "AppliedBlueprint" $ \o -> do
+  name <- ModuleName <$> o .: "name"
+  origin <- legacyLocalOrigin (name ^. #unModuleName) <$> o Aeson..:? "origin"
+  AppliedBlueprint name origin
+    <$> o Aeson..:? "version"
+    <*> o .: "appliedAt"
+    <*> (map ModuleName <$> o Aeson..:? "baselineModules" Aeson..!= [])
+    <*> o Aeson..:? "noBaseline" Aeson..!= False
+    <*> o Aeson..:? "userPrompt"
+    <*> o Aeson..:? "agentSessionId"
+    <*> parseCallerToolPolicy version o
 
 -- | A nested object with a discriminator, matching 'ArtifactOrigin', because
 -- the not-applicable case carries a reason and a bare string would have
@@ -598,32 +637,40 @@ unstatedReason :: Text
 unstatedReason = "(no reason recorded)"
 
 instance ToJSON AppliedBlueprintMigration where
-  toJSON receipt =
-    Aeson.object $
-      [ "name" .= (receipt ^. #name . #unModuleName),
-        "origin" .= (receipt ^. #origin),
-        "from" .= (receipt ^. #fromVersion),
-        "to" .= (receipt ^. #toVersion),
-        "outcome" .= (receipt ^. #outcome),
-        "appliedAt" .= (receipt ^. #appliedAt)
-      ]
-        ++ maybe [] (\version -> ["version" .= version]) (receipt ^. #blueprintVersion)
-        ++ maybe [] (\sessionId -> ["agentSessionId" .= sessionId]) (receipt ^. #agentSessionId)
+  toJSON = blueprintMigrationToJSON currentManifestVersion
+
+blueprintMigrationToJSON :: ManifestSchemaVersion -> AppliedBlueprintMigration -> Aeson.Value
+blueprintMigrationToJSON version receipt =
+  Aeson.object $
+    [ "name" .= (receipt ^. #name . #unModuleName),
+      "origin" .= (receipt ^. #origin),
+      "from" .= (receipt ^. #fromVersion),
+      "to" .= (receipt ^. #toVersion),
+      "outcome" .= (receipt ^. #outcome),
+      "appliedAt" .= (receipt ^. #appliedAt)
+    ]
+      ++ ["callerToolPolicy" .= (receipt ^. #callerToolPolicy) | version >= minimumManifestVersion CallerToolPolicyEvidence]
+      ++ maybe [] (\version -> ["version" .= version]) (receipt ^. #blueprintVersion)
+      ++ maybe [] (\sessionId -> ["agentSessionId" .= sessionId]) (receipt ^. #agentSessionId)
 
 instance FromJSON AppliedBlueprintMigration where
-  parseJSON = Aeson.withObject "AppliedBlueprintMigration" $ \o -> do
-    name <- ModuleName <$> o .: "name"
-    origin <- legacyLocalOrigin (name ^. #unModuleName) <$> o Aeson..:? "origin"
-    AppliedBlueprintMigration name origin
-      <$> o Aeson..:? "version"
-      <*> o .: "from"
-      <*> o .: "to"
-      -- A receipt written before the field existed records an edge whose
-      -- session returned, which is exactly what 'MigrationApplied' means, so
-      -- reading it that way preserves its meaning rather than inventing one.
-      <*> o Aeson..:? "outcome" Aeson..!= MigrationApplied
-      <*> o .: "appliedAt"
-      <*> o Aeson..:? "agentSessionId"
+  parseJSON = parseBlueprintMigration currentManifestVersion
+
+parseBlueprintMigration :: ManifestSchemaVersion -> Aeson.Value -> Aeson.Parser AppliedBlueprintMigration
+parseBlueprintMigration version = Aeson.withObject "AppliedBlueprintMigration" $ \o -> do
+  name <- ModuleName <$> o .: "name"
+  origin <- legacyLocalOrigin (name ^. #unModuleName) <$> o Aeson..:? "origin"
+  AppliedBlueprintMigration name origin
+    <$> o Aeson..:? "version"
+    <*> o .: "from"
+    <*> o .: "to"
+    -- A receipt written before the field existed records an edge whose
+    -- session returned, which is exactly what 'MigrationApplied' means, so
+    -- reading it that way preserves its meaning rather than inventing one.
+    <*> o Aeson..:? "outcome" Aeson..!= MigrationApplied
+    <*> o .: "appliedAt"
+    <*> o Aeson..:? "agentSessionId"
+    <*> parseCallerToolPolicy version o
 
 instance ToJSON AppliedModule where
   toJSON am =
@@ -948,6 +995,7 @@ manifestEncodingLoss manifest =
     <> ["removal commands cannot declare checkout setup" | applied <- manifest ^. #modules, removal <- maybe [] pure (applied ^. #removal), any ((== CheckoutCommandLifecycle) . (^. #lifecycle)) (removal ^. #commands)]
     <> ["checkout commands require manifest schema 10" | manifest ^. #version < ManifestSchemaVersion 10, any (not . null . (^. #checkoutCommands)) (manifest ^. #applications)]
     <> ["checkout outputs require manifest schema 9" | manifest ^. #version < ManifestSchemaVersion 9, not (Map.null (manifest ^. #checkoutOutputs))]
+    <> ["caller tool policy requires manifest schema 16" | not (manifestSupports CallerToolPolicyEvidence manifest), isJust ((^. #callerToolPolicy) =<< manifest ^. #blueprint) || any (isJust . (^. #callerToolPolicy)) (manifest ^. #blueprintMigrations)]
     <> ["judgements require manifest schema 15" | not (manifestSupports JudgementState manifest), not (null (manifest ^. #judgements))]
     <> ["seed receipts require manifest schema 8" | manifest ^. #version < ManifestSchemaVersion 8, not (Map.null (manifest ^. #seeds))]
 

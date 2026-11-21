@@ -231,6 +231,8 @@ seihou agent run BLUEPRINT [PROMPT] [OPTIONS]
 
 | Option | Description |
 |--------|-------------|
+| `--allowed-tool PATTERN` | Add one Claude CLI batch grant for this invocation (repeatable) |
+| `--settings FILE` | Supply a Claude CLI settings file for this batch invocation |
 | `--var KEY=VALUE` | Variable override; repeatable |
 | `--no-baseline` | Skip applying the blueprint's base modules, both their files and their commands, before rendering the prompt |
 | `--namespace NS` | Override namespace for config lookup |
@@ -238,7 +240,7 @@ seihou agent run BLUEPRINT [PROMPT] [OPTIONS]
 | `--verbose`, `-v` | Show detailed progress messages |
 | `--allow-downgrade` | Proceed even when the blueprint or a baseline module installed locally is older than, or from a different source than, `.seihou/manifest.json` records |
 
-Resolves the named blueprint, prompts for required variables, optionally applies its baseline modules, renders the blueprint prompt, and starts the configured provider. A successful run records applied-blueprint provenance in `.seihou/manifest.json`; a `--debug` run does so too, after printing the prompt.
+Resolves the named blueprint, prompts for required variables, optionally applies its baseline modules, renders the blueprint prompt, and starts the configured provider. A successful run records applied-blueprint provenance in `.seihou/manifest.json`. Debug previews the prompt and baseline without writing a receipt.
 
 Applying the baseline matches `seihou run` of its modules: files, seeds, and checkout links first, then each module's commands in composition order. Every run applies it again, so the commands run again too. A failing command stops the phase and exits 1 before the provider starts; the files and the effects of earlier commands remain, the receipts published for the phase are withdrawn, and the error names the command, its module, its directory, and two ways forward: rerun the same command after correcting the failure, or pass `--no-baseline` to start the agent without applying the baseline again. The command phase reports only on standard error, so standard output remains the provider's response under `--batch` and the rendered prompt under `--debug`. Baseline commands run as Seihou's own processes; the blueprint's `allowedTools` governs only the provider's agent and does not need to list them.
 
@@ -250,9 +252,8 @@ including whitespace. API providers (`anthropic`, `openai`) keep optional input
 unchanged. Automatic startup preserves provider tool approvals.
 
 `seihou agent --debug run api-service` shows the effective initial instruction
-without contacting a provider. Blueprint debug still applies baseline modules,
-runs their commands, and records blueprint provenance; it is not a dry run. The
-manifest records the original PROMPT, including omission or blank text.
+and previews the declared baseline. Debug leaves project files and the manifest untouched.
+A successful execution records the original PROMPT, including omission or blank text.
 
 ### agent migrate
 
@@ -284,6 +285,8 @@ seihou agent migrate BLUEPRINT [--from VERSION] [--to VERSION] [PROMPT] [OPTIONS
 |--------|-------------|
 | `--from VERSION` | Current library version, dotted numeric. Defaults to the highest version this project's receipts record for the blueprint |
 | `--to VERSION` | Target library version, dotted numeric. Defaults to the output of the blueprint's declared `versionProbe` |
+| `--allowed-tool PATTERN` | Add one Claude CLI batch grant for this invocation (repeatable) |
+| `--settings FILE` | Supply a Claude CLI settings file for this batch invocation |
 | `--var KEY=VALUE` | Variable override; repeatable |
 | `--namespace NS` | Override namespace for config lookup |
 | `--context CTX`, `-c CTX` | Override context for config lookup |
@@ -445,9 +448,7 @@ migrate`, which writes nothing, so no check runs and a prompt can be inspected
 on any machine. `--mark-applied` does not reach the guard by a different route:
 it is refused alongside `--debug`, and on its own it runs the guard in full
 before recording anything, because a receipt written against a substituted
-blueprint would match nothing. It is not a dry run for `agent run`, which still applies the
-baseline and still records provenance under `--debug`, so the check runs there
-regardless.
+blueprint would match nothing. Both blueprint debug commands skip this guard when rendering prompts.
 
 ## Requirements
 
@@ -470,3 +471,31 @@ seihou prompt run review-changes --provider codex-cli
 ```
 
 See [`seihou prompt`](prompt.md) and [First-Class Prompts](../user/prompts.md).
+
+### Caller policy and receipts
+
+Give one batch invocation the approvals it needs. For example:
+
+```bash
+seihou agent run fix-nix-haskell-flake-customizations --batch --allowed-tool 'Bash(grep *)'
+seihou agent migrate keiro-upgrade --from 0.22.0.0 --to 0.25.0.0 --batch --settings ./campaign/claude-settings.json
+```
+
+An orchestrator can pass its existing Claude settings file with `--settings`. For
+example, a campaign with an executable gate can use this settings file:
+
+```json
+{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"./campaign/gate"}]}]}}
+```
+
+Use a file you trust and keep it stable until the command finishes. Relative
+settings paths resolve from the invoking directory. You can combine both flags.
+A hook can refuse a statically granted command. When Claude reports a refusal,
+Seihou exits 1. Inspect the working diff, correct the intended rule or gate, and
+retry. A migration resumes at pending edges. Seihou executes baseline commands
+before launching Claude, outside the provider's tool policy.
+
+See `blueprint.callerToolPolicy` or `blueprintMigrations[].callerToolPolicy` in
+`.seihou/manifest.json` for the ordered caller rules and SHA-256 of the settings
+bytes. A later run requires its own flags. Prefer settings files for sensitive or
+machine-specific rules because rule literals from `--allowed-tool` are recorded.

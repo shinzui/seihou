@@ -20,7 +20,7 @@ import Seihou.CLI.UpdateSpec
   )
 import Seihou.Core.Types
 import Seihou.Manifest.Hash (hashContent)
-import Seihou.Manifest.Types (emptyManifest, manifestFromJSON)
+import Seihou.Manifest.Types (currentManifestVersion, emptyManifest, manifestFromJSON)
 import System.Directory (doesFileExist, removeDirectoryRecursive, withCurrentDirectory)
 import System.Environment (lookupEnv, setEnv, unsetEnv)
 import System.FilePath ((</>))
@@ -294,7 +294,7 @@ spec = do
         case manifestFromJSON written of
           Left err -> expectationFailure err
           Right upgraded -> do
-            (upgraded ^. #version) `shouldBe` ManifestSchemaVersion 15
+            (upgraded ^. #version) `shouldBe` currentManifestVersion
             (^. #sharedWriteMode) <$> Map.lookup ".gitignore" (upgraded ^. #files)
               `shouldBe` Just SharedWriteAdditiveOnly
         TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` gitignoreBefore

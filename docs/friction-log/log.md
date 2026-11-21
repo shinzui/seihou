@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-11-21
+* **Addition**: FRIC-21 records blocked interface friction with https://github.com/openai/codex: Codex exec omits hook denials from its JSON event stream
+
 ## 2026-11-15
 
 * **Update**: FRIC-20 resolved: Use the complete development environment for the full suite.

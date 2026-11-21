@@ -22,6 +22,11 @@ provenance:
       at: 2026-11-21T14:24:19Z
       mode: "update"
       note: "Applied review findings: native probe with stop condition, argv rule passing, definitions, debug and migrate flag rules"
+    - model: "gpt-6.2-astra"
+      harness: "codex-cli"
+      at: 2026-11-21T15:39:14Z
+      mode: "implement"
+      note: "Run provider integration probes and implement Claude policy receipts and read-only rendering."
 ---
 
 # Let callers supply tool policy for batch blueprint runs and migrations
@@ -44,8 +49,8 @@ render it in the target checkout without applying anything.
 Start in the consuming repository with the blueprint installed and Claude Code configured. For a missing
 rule, run one command. For a playbook that already produces a settings file, supply that file directly.
 The same options work on a migration. A caller that runs Codex CLI supplies Codex's own files through
-separate flags, because Codex has no per-tool allow list. These are alternative invocations, each scoped
-to its own process.
+separate flags, because Codex has no per-tool allow list. The Codex command below remains a proposed interface pending the milestone 4 decision.
+Each invocation is scoped to its own process.
 
 ```bash
 seihou agent run fix-nix-haskell-flake-customizations --batch --allowed-tool 'Bash(grep *)'
@@ -65,14 +70,36 @@ replaying a receipt must never grant tools to a subsequent run.
 
 ## Progress
 
-- [ ] A caller can add a rule to a batch blueprint run, see that exact rule in its receipt, and observe failure when the required rule is omitted.
-- [ ] A caller can supply a settings file containing a working Claude hook and identify the exact file contents used by their digest.
-- [ ] Batch migrations apply the policy to each pending edge and record it under the blueprint that owns that edge.
+- [x] (2026-11-21) A caller can add a rule to a batch blueprint run, see that exact rule in its receipt, and observe failure when the required rule is omitted.
+- [x] (2026-11-21) A caller can supply a settings file containing a working Claude hook and identify the exact file contents used by their digest.
+- [x] (2026-11-21) Batch migrations apply the policy to each pending edge and record it under the blueprint that owns that edge.
 - [ ] A caller can give a Codex CLI batch run or migration its own rules and hooks files, see each file's digest in the receipt, and observe a blocked command fail the run.
-- [ ] Debug rendering is read-only in the target checkout, help describes both workflows, and the public commands pass consumer acceptance.
+- [ ] Debug rendering, help and public consumer acceptance. Source checks for read-only debug and both Claude commands passed on 2026-11-21. Installed acceptance and Codex scope remain open.
 
 
 ## Surprises & Discoveries
+
+Claude Code 2.1.330 returned an array of events in the live fixture. Its final
+result reported an empty denial list when the supplied hook admitted the probe.
+With the same hook denying the command and a matching static grant present, the
+command produced no marker, the result still reported success, and
+`permission_denials` named the exact command. Seihou's existing validator
+recognized this refusal. Separate argv entries also passed a native command
+pattern containing a comma, `Bash(./policy-probe one,two)`.
+
+On Codex CLI 0.171.0 a single-run configuration override loaded the caller's
+PreToolUse hook under the invocation-wide hook trust bypass. An ephemeral
+workspace-write control with an isolated configuration directory kept the
+operator's installed hook definitions out of the experiment. The gate logged
+Bash and blocked the command. Codex exited 0 and the JSON stream emitted no
+command item or refusal event. Its stderr diagnostic named the command. Both
+the blocked session and a control running `false` emitted trust warnings as
+JSON error items. Only the control emitted a completed command item with
+status failed and exit code 1. The warnings cannot identify a refusal.
+`codex execpolicy check --rules` parsed the forbidden rule, but `codex exec`
+rejected `--rules`. Codex documents loading rules beside active configuration
+layers. No per-invocation rules-file input was verified. The probe reached
+milestone 4's scope-decision condition. See [FRIC-21](../friction-log/21-codex-exec-omits-hook-denials-from-its-json-event-stream.md).
 
 
 ## Decision Log
@@ -121,6 +148,30 @@ the flags stay in Seihou.
 
 
 ## Outcomes & Retrospective
+
+The local Cabal executable reported `seihou v0.16.0.2 (cd6c0f8)` while
+testing the modified working tree. A recording Claude substitute in a fresh
+Git consumer ran the installed `fix-nix-haskell-flake-customizations` 0.2.0
+blueprint with the supplied settings argument in the correct directory. Its
+digest matched the manifest. In a separate live `policy-check` consumer, Claude
+2.1.330 admitted the probe with settings alone. A subsequent hook denial
+returned exit 1 and preserved the preceding receipt byte for byte. A
+pseudo-terminal verified that both run and migrate reject caller policy
+without batch mode. The installed `seihou v0.16.0.1 (4540d20)` rejects
+`--allowed-tool`. Release and installed acceptance remain open.
+
+Final source acceptance passed `cabal test all` and `just audit-cli-docs`
+with a single, stable candidate binary. The run and migration option screens
+and `seihou help agent` advertise the new flags. The audit exercised 19 help
+topics, 37 command help pages plus agent run, six example modules and eight
+prompt renders. The migration fixture preserved the first owner's receipt on
+a later refusal and recorded the retry's new settings digest only on the
+pending edge. Both provider probe reports were attached to
+[Baikai IR-14](mori://shinzui/baikai/okf/improvement-requests/concepts/IR-14).
+
+Milestone 4 awaits a scope decision about the missing Codex refusal evidence.
+The Claude and debug changes do not depend on that decision. FRIC-21 remains
+logged while the decision is open.
 
 
 ## Context and Orientation

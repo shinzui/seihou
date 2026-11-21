@@ -33,6 +33,7 @@ module Seihou.CLI.ManifestCapabilityUpgrade
     prepareRecipeInheritance,
     prepareRemovalPolicies,
     prepareJudgementState,
+    prepareCallerToolPolicy,
     gatherSeedOwnershipEvidence,
     CertificationScope (..),
     EvidencePolicy (..),
@@ -560,3 +561,13 @@ prepareJudgementState manifest = do
     first renderManifestUpgradeError $
       upgradeDocumentLosslessly (max (manifest ^. #version) (minimumManifestVersion JudgementState)) (Aeson.toJSON manifest)
   first T.pack (manifestFromJSON (Aeson.encode document))
+
+-- | Stage the lossless receipt upgrade before publishing any new evidence.
+prepareCallerToolPolicy :: Manifest -> Either Text Manifest
+prepareCallerToolPolicy manifest
+  | manifest ^. #version >= minimumManifestVersion CallerToolPolicyEvidence = Right manifest
+  | otherwise = do
+      (_, document) <-
+        first renderManifestUpgradeError $
+          upgradeDocumentLosslessly (minimumManifestVersion CallerToolPolicyEvidence) (Aeson.toJSON manifest)
+      first T.pack (manifestFromJSON (Aeson.encode document))

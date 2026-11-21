@@ -25,7 +25,7 @@ setup, and bootstrap, using `resolveAgentInitialPrompt` at the provider request
 boundary. Resolve only execution and display input: command options and the
 manifest keep the raw optional user input. Do not move the default into parsing,
 templates, or persistent state. Blueprint debug shows the effective instruction
-but retains its existing baseline and provenance effects. See
+as a read-only preview. See
 [plan 126](../plans/126-start-interactive-blueprint-runs-with-an-initial-message.md).
 
 Claude batch migrations use `--permission-mode acceptEdits` for workspace
@@ -39,6 +39,11 @@ needs assistant text, no reported failures or denials, and terminal turn
 completion. Malformed or truncated protocol fails closed. Unknown well-formed
 fields and events may coexist with the required evidence. This boundary is
 separate from ordinary text completions.
+
+A caller can supply Claude rules or a Claude settings file per invocation.
+Every pending edge receives its owner's grants and the shared caller inputs.
+A validated outcome records the caller inputs under the edge's owner, including
+when an edge reports that it does not apply. Manually marked edges record null.
 
 Only validated runs may consume outcome signals and create receipts. A failed
 run clears its signal, leaves earlier receipts intact, and instructs the user

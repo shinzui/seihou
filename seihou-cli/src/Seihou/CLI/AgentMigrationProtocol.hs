@@ -8,6 +8,8 @@
 module Seihou.CLI.AgentMigrationProtocol
   ( validateMigrationOutput,
     validateBatchRunOutput,
+    validateBatchRunOutputWithDetails,
+    validateMigrationOutputWithDetails,
     batchRunRefusals,
     renderPermissionDenials,
   )
@@ -27,7 +29,12 @@ import Data.Text qualified as T
 import Data.Vector qualified as V
 
 validateMigrationOutput :: Bool -> ByteString -> Either Text Text
-validateMigrationOutput claude bytes = case validate of
+validateMigrationOutput = validateMigrationOutputWithDetails True
+
+-- Provider error text can quote a settings file or its hook. Only return that
+-- detail when the caller did not supply private settings.
+validateMigrationOutputWithDetails :: Bool -> Bool -> ByteString -> Either Text Text
+validateMigrationOutputWithDetails includeDetails claude bytes = case validate of
   Left err -> Left (err <> " Inspect partial edits, check provider permissions/protocol support, then retry the same migration.")
   Right body -> Right body
   where
@@ -45,6 +52,7 @@ validateMigrationOutput claude bytes = case validate of
           require (field "is_error" value == Just (Bool False)) ("Claude reported an error or omitted is_error. " <> detail value)
           case field "permission_denials" value of
             Just (Array denials) | V.null denials -> pure ()
+            Just (Array denials) -> Left ("Claude reported permission denials: " <> renderPermissionDenials (V.toList denials))
             _ -> Left ("Claude reported permission denials or omitted permission evidence. " <> detail value)
           textField "result" value >>= nonblank
       | otherwise = do
@@ -53,6 +61,7 @@ validateMigrationOutput claude bytes = case validate of
           require (any (\event -> field "type" event == Just (String "turn.completed")) events) "Codex has no successful terminal turn result."
           let messages = [body | event <- events, field "type" event == Just (String "item.completed"), Just item <- [field "item" event], field "type" item == Just (String "agent_message"), Just (String body) <- [field "text" item]]
           nonblank (T.intercalate "\n" messages)
+    detail _ | not includeDetails = "Check the caller settings and provider configuration."
     detail value = case field "result" value of
       Just (String body) -> T.take 2000 body
       _ -> "Check the Claude CLI authentication and configuration."
@@ -100,7 +109,10 @@ validateMigrationOutput claude bytes = case validate of
 -- is blank. Everything else the older provider accepted is still accepted: a
 -- missing @permission_denials@, @type@ or @subtype@ is not an error.
 validateBatchRunOutput :: ByteString -> Either Text Text
-validateBatchRunOutput bytes = do
+validateBatchRunOutput = validateBatchRunOutputWithDetails True
+
+validateBatchRunOutputWithDetails :: Bool -> ByteString -> Either Text Text
+validateBatchRunOutputWithDetails includeDetails bytes = do
   events <- decodeClaudeEvents bytes
   maybe (Right ()) Left (refusalsIn events)
   let result = NE.last events
@@ -110,6 +122,7 @@ validateBatchRunOutput bytes = do
     Just (String body) -> nonblank body
     _ -> Left "Provider returned no assistant text."
   where
+    resultDetail _ | not includeDetails = "Check the caller settings and inspect the working diff before retrying."
     resultDetail value = case field "result" value of
       Just (String body) | not (T.null (T.strip body)) -> T.take 2000 body
       _ -> "Claude gave no detail. Check the Claude CLI authentication and configuration, then retry."
@@ -133,7 +146,7 @@ refusalsIn events = case concatMap denialsOf (NE.toList events) of
             <> noun
             <> " during this unattended run: "
             <> renderPermissionDenials denials
-            <> ". An unattended run cannot approve tools. Declare the commands the blueprint needs in its allowedTools, or run it interactively, then retry."
+            <> ". An unattended run cannot approve tools. Inspect the working diff. Retry with --allowed-tool for the missing rule, pass --settings for your gate, or update the blueprint's allowedTools."
   where
     denialsOf event = case field "permission_denials" event of
       Just (Array values) -> V.toList values

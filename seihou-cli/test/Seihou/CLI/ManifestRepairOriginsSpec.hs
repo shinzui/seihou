@@ -44,7 +44,7 @@ manifestWithLocalPaths =
          ]
     & #applications .~ [betaApplication]
     & #recipe ?~ AppliedRecipe (RecipeName "stack") (origin (localPath <> "/") "stack") (Just "1.0.0") testTime
-    & #blueprint ?~ AppliedBlueprint "service" (origin localPath "service") (Just "2.0.0") testTime [] False Nothing Nothing
+    & #blueprint ?~ AppliedBlueprint "service" (origin localPath "service") (Just "2.0.0") testTime [] False Nothing Nothing Nothing
     & #blueprintMigrations .~ [receipt]
   where
     betaApplication =
@@ -64,7 +64,7 @@ manifestWithLocalPaths =
           recipeChain = Nothing
         }
     receipt =
-      AppliedBlueprintMigration "service" (origin localPath "service") (Just "2.0.0") "1.0.0" "2.0.0" MigrationApplied testTime Nothing
+      AppliedBlueprintMigration "service" (origin localPath "service") (Just "2.0.0") "1.0.0" "2.0.0" MigrationApplied testTime Nothing Nothing
 
 sitesFor :: Manifest -> [OriginSite]
 sitesFor manifest = concat (Map.elems (localOriginUrls manifest))

@@ -42,13 +42,13 @@ import Control.Lens ((&), (.~), (^.))
 import Data.ByteString (ByteString)
 import Data.Generics.Labels ()
 import Data.List (nub)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isNothing)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TE
 import Data.Vector qualified as V
 import GHC.Generics (Generic)
-import Seihou.CLI.AgentMigrationProtocol (batchRunRefusals, validateBatchRunOutput, validateMigrationOutput)
+import Seihou.CLI.AgentMigrationProtocol (batchRunRefusals, validateBatchRunOutputWithDetails, validateMigrationOutputWithDetails)
 import Seihou.CLI.KitConfig (seihouKitConfig)
 import System.Directory (getCurrentDirectory)
 import System.Exit (ExitCode (..))
@@ -268,8 +268,8 @@ runAgentCompletion = runAgentCompletionWith registerAgentProviders
 -- unattended run cannot approve tools, so a refusal is work the blueprint
 -- expected and did not get. Its response carries zero usage, so a trace of
 -- such a run has no token counts. Other providers are unchanged.
-runAgentCompletionWithCliAccess :: [FilePath] -> [String] -> AgentCompletionRequest -> IO (Either Text Text)
-runAgentCompletionWithCliAccess extraDirs tools req =
+runAgentCompletionWithCliAccess :: Maybe FilePath -> [FilePath] -> [String] -> AgentCompletionRequest -> IO (Either Text Text)
+runAgentCompletionWithCliAccess settings extraDirs tools req =
   case req ^. #modelConfig . #provider of
     AgentProviderClaudeCli ->
       runAgentCompletionUsing
@@ -277,10 +277,10 @@ runAgentCompletionWithCliAccess extraDirs tools req =
         ( registerValidatedCli
             Baikai.AnthropicMessagesCli
             AgentProviderClaudeCli
-            (claudeAccessArgs extraDirs tools)
+            (claudeSettingsArgs settings <> claudeAccessArgs extraDirs tools)
             []
             batchRunExitFailure
-            validateBatchRunOutput
+            (validateBatchRunOutputWithDetails (isNothing settings))
         )
         req
     _ -> runAgentCompletionWith (registerAgentProvidersWithCliAccess extraDirs tools) req
@@ -289,7 +289,7 @@ runAgentCompletionWithCliAccess extraDirs tools req =
     -- more useful explanation, so report them when stdout has any.
     batchRunExitFailure exe n out err =
       fromMaybe
-        (Text.pack exe <> " exited " <> Text.pack (show n) <> ": " <> Text.take 2000 (Text.strip (Text.pack err <> Text.pack out)))
+        (Text.pack exe <> " exited " <> Text.pack (show n) <> maybe (": " <> Text.take 2000 (Text.strip (Text.pack err <> Text.pack out))) (const ". Check the caller settings and inspect partial edits before retrying.") settings)
         (batchRunRefusals (TE.encodeUtf8 (Text.pack out)))
 
 -- | The shared implementation behind 'runAgentCompletion' and
@@ -375,11 +375,14 @@ registerAgentProvidersWithCliAccess extraDirs tools = do
   ClaudeApi.register
   OpenAIApi.register
 
+claudeSettingsArgs :: Maybe FilePath -> [Text]
+claudeSettingsArgs = maybe [] (\path -> ["--settings", Text.pack path])
+
 claudeAccessArgs :: [FilePath] -> [String] -> [Text]
 claudeAccessArgs extraDirs tools =
   ( if null tools
       then []
-      else ["--allowedTools", Text.intercalate "," (map Text.pack tools)]
+      else "--allowedTools" : map Text.pack tools
   )
     <> concatMap (\dir -> ["--add-dir", Text.pack dir]) extraDirs
 
@@ -404,8 +407,8 @@ resolveAgentInitialPrompt provider prompt = case provider of
 -- | A migration must retain raw process/protocol failures until classification.
 -- Register this narrow adapter behind the usual trace wrapper, so it emits to
 -- the command's existing sink and ordinary completion callers remain unchanged.
-runAgentMigrationCompletionWithCliAccess :: [FilePath] -> [String] -> AgentCompletionRequest -> IO (Either Text Text)
-runAgentMigrationCompletionWithCliAccess dirs tools req =
+runAgentMigrationCompletionWithCliAccess :: Maybe FilePath -> [FilePath] -> [String] -> AgentCompletionRequest -> IO (Either Text Text)
+runAgentMigrationCompletionWithCliAccess settings dirs tools req =
   case provider of
     AgentProviderClaudeCli -> runStrict Baikai.AnthropicMessagesCli
     AgentProviderCodexCli -> runStrict Baikai.OpenAICompletionsCli
@@ -419,14 +422,15 @@ runAgentMigrationCompletionWithCliAccess dirs tools req =
         ( registerValidatedCli
             api
             provider
-            (["--permission-mode", "acceptEdits"] <> claudeAccessArgs dirs (migrationAllowedTools tools))
+            (["--permission-mode", "acceptEdits"] <> claudeSettingsArgs settings <> claudeAccessArgs dirs (migrationAllowedTools tools))
             (codexAccessArgs dirs <> sessionArgs)
             migrationExitFailure
-            (validateMigrationOutput (provider == AgentProviderClaudeCli))
+            (validateMigrationOutputWithDetails (isNothing settings) (provider == AgentProviderClaudeCli))
         )
         req
-    migrationExitFailure exe n out err =
-      Text.pack exe <> " exited " <> Text.pack (show n) <> ": " <> Text.take 2000 (Text.pack err <> Text.pack out) <> ". Inspect partial edits, fix the provider error, then retry."
+    migrationExitFailure exe n out err
+      | provider == AgentProviderClaudeCli, Just refusal <- batchRunRefusals (TE.encodeUtf8 (Text.pack out)) = refusal
+      | otherwise = Text.pack exe <> " exited " <> Text.pack (show n) <> ": " <> maybe (Text.take 2000 (Text.pack err <> Text.pack out)) (const "check caller settings") settings <> ". Inspect partial edits, fix the provider error, then retry."
 
 -- | Register a narrow adapter for a local CLI provider that runs the process
 -- itself and validates its raw stdout, so evidence Baikai's stock provider

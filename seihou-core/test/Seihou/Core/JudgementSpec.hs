@@ -83,7 +83,7 @@ tests = testSpec "judgement policy" $ do
   describe "manifest state" $ do
     let def = definition (mkCheck "a" Yes strictBand :| [mkCheck "b" No lenientBand])
         active = ActiveJudgement BundledJudgement def (definitionDigest def) (defaultPolicy ApprovedRemote False def & #checks . ix "b" . #enforcement .~ Advisory) [DirectAdoption, ApplicationOwner (ApplicationId "app-1")]
-        manifest = emptyManifest (UTCTime (fromGregorian 2026 11 11) 0) & #judgements .~ [active]
+        manifest = emptyManifest (UTCTime (fromGregorian 2026 11 11) 0) & #version .~ ManifestSchemaVersion 15 & #judgements .~ [active]
         reencode :: (Aeson.Value -> Aeson.Value) -> Either String Manifest
         reencode f = manifestFromJSON . Aeson.encode . f =<< Aeson.eitherDecode (manifestToJSON manifest)
     it "round-trips the definition snapshot, digest and per-check policy at schema 15" $ do

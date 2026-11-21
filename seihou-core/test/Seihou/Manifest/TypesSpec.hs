@@ -40,7 +40,8 @@ mkBlueprintMigrationReceipt blueprintName fromVersion toVersion appliedAt =
       toVersion = toVersion,
       outcome = MigrationApplied,
       appliedAt = appliedAt,
-      agentSessionId = Nothing
+      agentSessionId = Nothing,
+      callerToolPolicy = Nothing
     }
 
 -- | The identity the @payments@ blueprint carries in the receipt cases below.
@@ -177,7 +178,8 @@ manifestWithEveryStringPosition =
               baselineModules = [ModuleName "haskell-base"],
               noBaseline = False,
               userPrompt = Just "build a service",
-              agentSessionId = Just "session-abc"
+              agentSessionId = Just "session-abc",
+              callerToolPolicy = Nothing
             }
         )
     & #blueprintMigrations .~ [mkBlueprintMigrationReceipt "service-blueprint" "1.0.0" "2.0.0" fixedTime2]
@@ -641,7 +643,8 @@ spec = do
                 baselineModules = [ModuleName "nix-flake", ModuleName "haskell-base"],
                 noBaseline = False,
                 userPrompt = Just "set this up for a payments microservice",
-                agentSessionId = Nothing
+                agentSessionId = Nothing,
+                callerToolPolicy = Nothing
               }
       Aeson.eitherDecode (Aeson.encode ab) `shouldBe` Right ab
 
@@ -655,7 +658,8 @@ spec = do
                 baselineModules = [],
                 noBaseline = True,
                 userPrompt = Nothing,
-                agentSessionId = Nothing
+                agentSessionId = Nothing,
+                callerToolPolicy = Nothing
               }
       Aeson.eitherDecode (Aeson.encode ab) `shouldBe` Right ab
 
@@ -671,6 +675,7 @@ spec = do
               False
               Nothing
               Nothing
+              Nothing
           ab2 =
             AppliedBlueprint
               (ModuleName "second")
@@ -680,6 +685,7 @@ spec = do
               [ModuleName "x"]
               False
               (Just "do the thing")
+              Nothing
               Nothing
           m1 = writeAppliedBlueprint ab1 m0
           m2 = writeAppliedBlueprint ab2 m1
@@ -698,6 +704,7 @@ spec = do
               MigrationApplied
               fixedTime
               (Just "session-123")
+              Nothing
       Aeson.eitherDecode (Aeson.encode receipt) `shouldBe` Right receipt
 
     it "round-trips a not-applicable receipt with its reason" $ do
@@ -710,6 +717,7 @@ spec = do
               "2.0.0"
               (MigrationNotApplicable "the project has not adopted the bundle")
               fixedTime
+              Nothing
               Nothing
       Aeson.eitherDecode (Aeson.encode receipt) `shouldBe` Right receipt
 
@@ -731,6 +739,7 @@ spec = do
               MigrationApplied
               fixedTime2
               (Just "rerun")
+              Nothing
           manifest1 = writeAppliedBlueprintMigration unrelated (writeAppliedBlueprintMigration first (emptyManifest fixedTime))
           manifest2 = writeAppliedBlueprintMigration replacement manifest1
       (manifest2 ^. #blueprintMigrations) `shouldBe` [replacement, unrelated]
@@ -752,7 +761,7 @@ spec = do
     it "treats equivalent public GitHub transports as one receipt identity, both ways" $ do
       let ssh = RemoteOrigin "git@github.com:acme/payments.git" "payments" Nothing
           https = RemoteOrigin "https://github.com/acme/payments.git" "payments" Nothing
-          edgeFrom origin at = AppliedBlueprintMigration (ModuleName "payments") origin (Just "0.5.0") "1.0.0" "2.0.0" MigrationApplied at Nothing
+          edgeFrom origin at = AppliedBlueprintMigration (ModuleName "payments") origin (Just "0.5.0") "1.0.0" "2.0.0" MigrationApplied at Nothing Nothing
       forM_ [(ssh, https), (https, ssh)] $ \(recorded, installed) -> do
         let original = edgeFrom recorded fixedTime
             manifest1 = writeAppliedBlueprintMigration original (emptyManifest fixedTime)
@@ -796,7 +805,7 @@ spec = do
               }
           fileRecord = FileRecord (SHA256 "hash") "base" Template fixedTime Nothing mempty SharedWriteUnknown
           recipe = AppliedRecipe "recipe" (LocalOrigin "recipe") (Just "1.0.0") fixedTime
-          normalBlueprint = AppliedBlueprint "payments" (LocalOrigin "payments") (Just "0.4.0") fixedTime [] False Nothing Nothing
+          normalBlueprint = AppliedBlueprint "payments" (LocalOrigin "payments") (Just "0.4.0") fixedTime [] False Nothing Nothing Nothing
           seed =
             ( (emptyManifest fixedTime)
                 & #modules .~ [appliedModule]
@@ -929,6 +938,30 @@ spec = do
       case manifestFromJSON (LBS8.pack (schema7Json ",\"additiveOnly\":true")) of
         Right _ -> expectationFailure "schema 7 requires sharedWriteMode even when additiveOnly is present"
         Left err -> err `shouldSatisfy` isInfixOf "sharedWriteMode"
+
+  describe "caller tool policy receipts" $ do
+    it "requires the policy key at schema 16 and rejects it on receipts labeled schema 15" $ do
+      let run = AppliedBlueprint "demo" (LocalOrigin "demo") Nothing fixedTime [] False Nothing Nothing Nothing
+          edge = mkBlueprintMigrationReceipt "demo" "1" "2" fixedTime
+          base = emptyManifest fixedTime
+          checkVersion m (encoded, labeled) = do
+            let value = Aeson.toJSON (m & #version .~ ManifestSchemaVersion encoded)
+            case value of
+              Aeson.Object fields -> do
+                let mislabeled = Aeson.encode (Aeson.Object (KeyMap.insert "version" (Aeson.toJSON (labeled :: Int)) fields))
+                manifestFromJSON mislabeled `shouldSatisfy` either (isInfixOf "callerToolPolicy") (const False)
+              _ -> expectationFailure "expected a manifest object"
+      forM_ [base & #blueprint .~ Just run, base & #blueprintMigrations .~ [edge]] $ \m ->
+        mapM_ (checkVersion m) [(15, 16), (16, 15)]
+
+    it "validates nullability, provider exclusivity, and exact lowercase digests" $ do
+      let evidence rules settings hooks = Aeson.object ["allowedTools" Aeson..= (rules :: [T.Text]), "settingsSha256" Aeson..= (settings :: Maybe T.Text), "codexHooksSha256" Aeson..= (hooks :: Maybe T.Text), "codexRulesSha256" Aeson..= Aeson.Null]
+          digest = Just (T.replicate 64 "a")
+          invalid value = case Aeson.fromJSON @CallerToolPolicy value of Aeson.Error _ -> True; _ -> False
+      mapM_
+        (\value -> value `shouldSatisfy` invalid)
+        [Aeson.object [], evidence [] Nothing Nothing, evidence ["  "] Nothing Nothing, evidence ["Read"] Nothing digest, evidence [] (Just "abcd") Nothing, evidence [] (Just (T.replicate 64 "F")) Nothing]
+      Aeson.fromJSON (evidence ["Read"] digest Nothing) `shouldBe` Aeson.Success (CallerToolPolicy ["Read"] (SHA256 <$> digest) Nothing Nothing)
 
   describe "manifest capabilities" $ do
     it "requires schema 7 for targeted additive shared-path updates" $

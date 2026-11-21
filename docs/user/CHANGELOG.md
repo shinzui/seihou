@@ -6,6 +6,9 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 ## [Unreleased]
 
+- Claude CLI batch blueprint runs and migrations accept repeatable `--allowed-tool` and a native `--settings` file. Schema 16 records the caller inputs on each successful receipt.
+- `seihou agent --debug run` previews the prompt in the current checkout without applying the baseline, launching the provider, or writing a receipt.
+
 ## [0.16.0.2] - 2026-11-18
 
 ### Fixed

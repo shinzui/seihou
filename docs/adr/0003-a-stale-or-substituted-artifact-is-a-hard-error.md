@@ -131,12 +131,9 @@ discovery has found it, still before any session starts. The scoping rule is
 unchanged: a cohort member that no selected edge entails is never consulted, so
 it can be missing or stale without blocking anything.
 
-A dry run is exempt; a command that merely skips one step is not. `seihou agent
-migrate --debug` writes nothing at all, so it performs no check and stays usable
-for inspecting a prompt on a machine that has never installed the artifact.
-`seihou agent run --debug` skips only the provider call — it still applies the
-baseline and still records applied-blueprint provenance — so it is checked like
-any other run. The rule is that the check follows the writes, not the flag.
+Both `seihou agent --debug run` and `seihou agent --debug migrate` are
+read-only previews and skip the artifact guard. A real run checks every artifact
+it will use before applying the baseline or launching the provider.
 
 Advisory consumers never block. `seihou status` and pending-migration detection
 report what they cannot resolve and carry on, so a developer with one missing

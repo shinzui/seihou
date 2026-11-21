@@ -1,5 +1,9 @@
 # Bundle Update Log
 
+## 2026-11-21
+
+* **Update**: IR-23 is in progress. Claude batch runs and migration edges accept caller rules and native settings and record their evidence. Release and installed checks remain open.
+
 ## 2026-11-16
 
 * **Addition**: IR-23 proposes letting a caller supply the tool policy of a batch blueprint run (extra allowed-tool rules or a provider settings file with its own hook), because `fix-nix-haskell-flake-customizations` cannot run unattended under its own allowedTools, and asks that `seihou agent --debug` stop writing a blueprint record. Raised from mori://shinzui/shikigami/plans/132-modernize-the-keiro-services-with-a-declared-campaign-playbook.

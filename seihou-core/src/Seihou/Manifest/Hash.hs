@@ -1,5 +1,6 @@
 module Seihou.Manifest.Hash
   ( hashContent,
+    hashBytes,
     baselineRefForContent,
     baselineRefFromText,
   )
@@ -17,11 +18,10 @@ import Seihou.Prelude
 -- | Compute the SHA256 hash of text content, returning a hex-encoded digest.
 -- The text is UTF-8 encoded before hashing.
 hashContent :: Text -> SHA256
-hashContent t =
-  let bytes = TE.encodeUtf8 t
-      digest = SHA256.hash bytes
-      hex = Base16.encode digest
-   in SHA256 (TE.decodeUtf8 hex)
+hashContent = hashBytes . TE.encodeUtf8
+
+hashBytes :: BS.ByteString -> SHA256
+hashBytes = SHA256 . TE.decodeUtf8 . Base16.encode . SHA256.hash
 
 -- | Hash generated content into its content-addressed baseline reference.
 baselineRefForContent :: Text -> BaselineRef

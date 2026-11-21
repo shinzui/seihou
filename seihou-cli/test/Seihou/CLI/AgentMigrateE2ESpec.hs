@@ -1,6 +1,8 @@
 module Seihou.CLI.AgentMigrateE2ESpec (tests) where
 
 import Control.Lens (to, (^.))
+import Data.Aeson qualified as Aeson
+import Data.Aeson.KeyMap qualified as KM
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
 import Data.List (sort)
@@ -13,10 +15,12 @@ import Seihou.CLI.SeihouBinary (seihouBinary)
 import Seihou.Core.Types
   ( AppliedBlueprint (..),
     AppliedBlueprintMigration (..),
+    CallerToolPolicy (..),
     Manifest (..),
     MigrationOutcome (..),
     ModuleName (..),
   )
+import Seihou.Manifest.Hash (hashContent)
 import Seihou.Manifest.Types (manifestFromJSON)
 import System.Directory
   ( canonicalizePath,
@@ -140,6 +144,79 @@ tests = testSpec "Agent migrate end-to-end" $ do
       -- The blueprint run must not receive the migration-only grants.
       launchArgs `shouldNotSatisfy` elem "--permission-mode"
       launchArgs `shouldNotSatisfy` any (T.isInfixOf "mori registry")
+
+  it "grants only the supplied invocation and records its caller inputs" $
+    withBatchBlueprintScript policyReply $ \fixture -> do
+      let run = fixture ^. #runSeihou
+          base = ["agent", "run", "batch-blueprint", "Check the marker"]
+          grant = "Bash(nix build .#docs)"
+          comma = "Bash(echo a,b)"
+          manifest = fixture ^. #manifestPath
+      (denied, msg, _) <- run base
+      denied `shouldBe` ExitFailure 1
+      msg `shouldSatisfy` T.isInfixOf "nix build .#docs"
+      doesFileExist manifest `shouldReturn` False
+      (code, out, err) <- run (base <> ["--batch", "--allowed-tool", grant, "--allowed-tool", "Read", "--allowed-tool", comma, "--allowed-tool", grant])
+      expectSuccess "one-shot grants" code out err
+      argv <- T.lines <$> TIO.readFile (fixture ^. #launchLog)
+      mapM_ (\arg -> length (filter (== T.pack arg) argv) `shouldBe` 1) [grant, "Read", comma]
+      argv `shouldSatisfy` elem "Check the marker"
+      before <- LBS.readFile manifest
+      case manifestFromJSON before of
+        Right m -> ((^. #callerToolPolicy) =<< m ^. #blueprint) `shouldBe` Just (CallerToolPolicy (map T.pack [grant, "Read", comma]) Nothing Nothing Nothing)
+        Left e -> expectationFailure e
+      (again, _, _) <- run base
+      again `shouldBe` ExitFailure 1
+      LBS.readFile manifest `shouldReturn` before
+
+  it "upgrades the on-disk schema-15 document after the provider has edited it" $
+    withBatchBlueprintScript (T.unlines ["if [ -f agent-document ]; then cp agent-document .seihou/manifest.json; fi", policyReply]) $ \fixture -> do
+      let path = fixture ^. #manifestPath
+          project = takeDirectory (takeDirectory path)
+          run = (fixture ^. #runSeihou) ["agent", "run", "batch-blueprint", "--batch", "--allowed-tool", "Bash(nix build .#docs)"]
+      (initial, out, err) <- run
+      expectSuccess "fresh receipt" initial out err
+      Right (Aeson.Object fresh) <- Aeson.eitherDecode <$> LBS.readFile path
+      let oldReceipt = case KM.lookup "blueprint" fresh of
+            Just (Aeson.Object record) -> Aeson.Object (KM.delete "callerToolPolicy" record)
+            _ -> Aeson.Null
+          old = KM.insert "version" (Aeson.Number 15) (KM.insert "blueprint" oldReceipt fresh)
+          agentEdits = KM.insert "producerExtension" (Aeson.String "edited during this run") old
+      LBS.writeFile path (Aeson.encode (Aeson.Object old))
+      LBS.writeFile (project </> "agent-document") (Aeson.encode (Aeson.Object agentEdits))
+      (upgraded, out2, err2) <- run
+      expectSuccess "upgrade current on-disk state" upgraded out2 err2
+      Right (Aeson.Object final) <- Aeson.eitherDecode <$> LBS.readFile path
+      KM.lookup "version" final `shouldBe` Just (Aeson.Number 16)
+      KM.lookup "producerExtension" final `shouldBe` Just (Aeson.String "edited during this run")
+      TIO.writeFile (project </> "agent-document") "{corrupt"
+      (failed, msg, errors) <- run
+      failed `shouldBe` ExitFailure 1
+      (msg <> errors) `shouldSatisfy` T.isInfixOf "agent may already have edited files"
+      TIO.readFile path `shouldReturn` "{corrupt"
+
+  it "hashes the exact settings bytes and rejects a changed input before recording" $
+    withBatchBlueprintScript settingsReply $ \fixture -> do
+      let manifest = fixture ^. #manifestPath
+          settings = takeDirectory (takeDirectory manifest) </> "caller settings.json"
+          contents = "{ \"hooks\": { \"PreToolUse\": [{\"hooks\":[{\"type\":\"command\",\"command\":\"private-gate-script\"}]}] } }\n"
+          run args = (fixture ^. #runSeihou) (["agent", "run", "batch-blueprint", "--batch", "--settings", "caller settings.json"] <> args)
+      TIO.writeFile settings contents
+      (code, out, err) <- run []
+      expectSuccess "settings only" code out err
+      before <- LBS.readFile manifest
+      case manifestFromJSON before of
+        Right m -> ((^. #callerToolPolicy) =<< m ^. #blueprint) `shouldBe` Just (CallerToolPolicy [] (Just (hashContent contents)) Nothing Nothing)
+        Left e -> expectationFailure e
+      (failed, providerOut, providerErr) <- run ["--allowed-tool", "Bash(provider-error)", "--trace", "file"]
+      failed `shouldBe` ExitFailure 1
+      (providerOut <> providerErr) `shouldNotSatisfy` T.isInfixOf "private-gate-script"
+      TIO.readFile (takeDirectory manifest </> "trace.jsonl") >>= (`shouldNotSatisfy` T.isInfixOf "private-gate-script")
+      TIO.readFile manifest >>= (`shouldNotSatisfy` T.isInfixOf "private-gate-script")
+      (changed, stdoutText, stderrText) <- run ["--allowed-tool", "Bash(change-input)"]
+      changed `shouldBe` ExitFailure 1
+      (stdoutText <> stderrText) `shouldSatisfy` T.isInfixOf "--settings changed"
+      LBS.readFile manifest `shouldReturn` before
 
   -- IR-18: an unattended run cannot approve tools, so a session that ended
   -- normally after Claude refused a command is a failed run, not a pass.
@@ -368,7 +445,9 @@ tests = testSpec "Agent migrate end-to-end" $ do
               "--to",
               "3.0.0",
               "--var",
-              "library.name=baikai"
+              "library.name=baikai",
+              "--allowed-tool",
+              "Bash(check *)"
             ]
 
       (firstExit, firstOutput, firstError) <- runProcessText binary args (Just root) (Just environment)
@@ -380,6 +459,10 @@ tests = testSpec "Agent migrate end-to-end" $ do
       -- The signal is transient state, consumed by the run that read it.
       doesFileExist signalPath `shouldReturn` False
 
+      bytes <- LBS.readFile manifestPath
+      case manifestFromJSON bytes of
+        Right m -> map (^. #callerToolPolicy) (m ^. #blueprintMigrations) `shouldBe` replicate 2 (Just (CallerToolPolicy ["Bash(check *)"] Nothing Nothing Nothing))
+        Left e -> expectationFailure e
       afterFirst <- readReceipts manifestPath
       afterFirst
         `shouldBe` [ ("1.0.0", "2.0.0", MigrationNotApplicable reason),
@@ -409,11 +492,12 @@ tests = testSpec "Agent migrate end-to-end" $ do
 
   it "keeps the first receipt, stops on a failed owner, and resumes only pending work" $
     withCohortProject $ \root run -> do
-      let args = ["agent", "migrate", "keiro-upgrade", "--from", "2.4.0", "--to", "3.0.0", "Keep my explicit instruction", "--model", "migration-model", "--effort", "high", "--trace", "file"]
+      let args = ["agent", "migrate", "keiro-upgrade", "--from", "2.4.0", "--to", "3.0.0", "Keep my explicit instruction", "--model", "migration-model", "--effort", "high", "--trace", "file", "--allowed-tool", "Bash(check *)", "--settings", "caller settings.json"]
           script = root </> "bin/claude"
           logPath = root </> "agent-launch.log"
           manifestPath = root </> ".seihou/manifest.json"
           success = "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"permission_denials\":[],\"result\":\"done\"}"
+      TIO.writeFile (root </> "caller settings.json") "{}"
       TIO.writeFile
         (root </> ".seihou/modules/kiroku-upgrade/blueprint.dhall")
         (T.replace "allowedTools = None (List Text)" "allowedTools = Some [ \"Bash(kiroku *)\" ]" (kirokuBlueprintDhall "1.9.0"))
@@ -424,7 +508,7 @@ tests = testSpec "Agent migrate end-to-end" $ do
         T.unlines
           [ "#!/bin/sh",
             "printf '%s\\0' \"$*\" >> \"$SEIHOU_FAKE_AGENT_LOG\"",
-            "if [ -f first-done ] && [ ! -f retry-ready ]; then printf reason > .seihou/.migrate-signal; echo provider-failure >&2; exit 9; fi",
+            "if [ -f first-done ] && [ ! -f retry-ready ]; then printf reason > .seihou/.migrate-signal; echo '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"refused\",\"permission_denials\":[{\"tool_name\":\"Bash\"}]}'; exit 0; fi",
             "touch first-done",
             "cat <<'RESULT'",
             success,
@@ -432,7 +516,7 @@ tests = testSpec "Agent migrate end-to-end" $ do
           ]
       (failed, _, failure) <- run args
       failed `shouldSatisfy` (/= ExitSuccess)
-      failure `shouldSatisfy` T.isInfixOf "provider-failure"
+      failure `shouldSatisfy` T.isInfixOf "permission denials"
       receipts <- readReceipts manifestPath
       receipts `shouldBe` [("1.9.0", "2.0.0", MigrationApplied)]
       doesFileExist (root </> ".seihou/.migrate-signal") `shouldReturn` False
@@ -446,11 +530,26 @@ tests = testSpec "Agent migrate end-to-end" $ do
       last launches `shouldSatisfy` T.isInfixOf "Bash(keiro *)"
       last launches `shouldSatisfy` T.isInfixOf "--model migration-model"
       last launches `shouldSatisfy` T.isInfixOf "--effort high"
+      mapM_
+        ( \argsText -> do
+            argsText `shouldSatisfy` T.isInfixOf "Bash(check *)"
+            argsText `shouldSatisfy` T.isInfixOf "--permission-mode acceptEdits"
+            argsText `shouldSatisfy` T.isInfixOf "--settings"
+            argsText `shouldSatisfy` T.isInfixOf "caller settings.json"
+        )
+        launches
+      TIO.writeFile (root </> "caller settings.json") "{ }"
       TIO.writeFile (root </> "retry-ready") ""
       (resumed, output, errors) <- run args
       expectSuccess "resume after failed second owner" resumed output errors
       completed <- readReceipts manifestPath
       length completed `shouldBe` 2
+      bytes <- LBS.readFile manifestPath
+      case manifestFromJSON bytes of
+        Right m ->
+          [(r ^. #name, r ^. #callerToolPolicy) | r <- m ^. #blueprintMigrations]
+            `shouldBe` [(name, Just (CallerToolPolicy ["Bash(check *)"] (Just (hashContent contents)) Nothing Nothing)) | (name, contents) <- [("kiroku-upgrade", "{}"), ("keiro-upgrade", "{ }")]]
+        Left e -> expectationFailure e
       allLaunches <- filter (not . T.null) . T.splitOn "\0" <$> TIO.readFile logPath
       length allLaunches `shouldBe` 3
       last allLaunches `shouldNotSatisfy` T.isInfixOf (T.pack (root </> ".seihou/modules/kiroku-upgrade/files"))
@@ -696,6 +795,10 @@ tests = testSpec "Agent migrate end-to-end" $ do
 
       -- The fake provider appends to this log whenever it is invoked, so its
       -- absence is the proof that no session started.
+      bytes <- LBS.readFile manifestPath
+      case manifestFromJSON bytes of
+        Right m -> map (^. #callerToolPolicy) (m ^. #blueprintMigrations) `shouldBe` [Nothing]
+        Left e -> expectationFailure e
       doesFileExist launchLog `shouldReturn` False
 
       -- A marked receipt is an ordinary applied receipt.
@@ -1178,7 +1281,33 @@ migrationBlueprintDhall =
 -- argv, writes a workspace file, and prints @reply@ as its JSON result. The
 -- callback receives the project root and a runner for seihou commands.
 withBatchBlueprintRun :: T.Text -> (BatchRunFixture -> IO a) -> IO a
-withBatchBlueprintRun reply action =
+withBatchBlueprintRun reply = withBatchBlueprintScript (T.unlines ["cat <<'RESULT'", reply, "RESULT"])
+
+policyReply, settingsReply :: T.Text
+policyReply =
+  T.unlines
+    [ "for arg do",
+      "  if [ \"$arg\" = 'Bash(nix build .#docs)' ]; then echo '{\"result\":\"ok\"}'; exit; fi",
+      "done",
+      "cat <<'RESULT'",
+      refusedReply,
+      "RESULT"
+    ]
+settingsReply =
+  T.unlines
+    [ "for arg do",
+      "  if [ \"$arg\" = 'Bash(provider-error)' ]; then echo '{\"result\":\"invalid hook private-gate-script\",\"is_error\":true}'; exit 0; fi",
+      "  if [ \"$arg\" = 'Bash(change-input)' ]; then echo '{}' > 'caller settings.json'; fi",
+      "done",
+      "while [ \"$#\" -gt 0 ]; do",
+      "  if [ \"$1\" = '--settings' ] && [ \"$2\" = \"$PWD/caller settings.json\" ]; then echo '{\"result\":\"ok\"}'; exit; fi",
+      "  shift",
+      "done",
+      "exit 1"
+    ]
+
+withBatchBlueprintScript :: T.Text -> (BatchRunFixture -> IO a) -> IO a
+withBatchBlueprintScript replyScript action =
   withSystemTempDirectory "seihou-agent-run-batch" $ \root -> do
     binary <- seihouBinary
     let blueprintDir = root </> ".seihou" </> "modules" </> "batch-blueprint"
@@ -1200,9 +1329,7 @@ withBatchBlueprintRun reply action =
         [ "#!/bin/sh",
           "printf '%s\\n' \"$@\" > \"$SEIHOU_FAKE_AGENT_LOG\"",
           "printf 'edited\\n' > \"$SEIHOU_FAKE_WORKSPACE_FILE\"",
-          "cat <<'RESULT'",
-          reply,
-          "RESULT"
+          replyScript
         ]
     permissions <- getPermissions fakeClaude
     -- Permissions comes from `directory` and has no Generic instance, so it

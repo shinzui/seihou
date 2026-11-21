@@ -430,9 +430,7 @@ manifest are left byte-identical. Run the command the message prints, or pass
 under a `! Proceeding anyway` heading rather than falling silent, because a
 deliberate downgrade still changes shared state.
 
-`--debug` does not exempt `agent run` from this check. Unlike `agent migrate`,
-a debug run still applies the baseline, including its commands, and still
-records provenance; it skips only the provider call.
+Both blueprint debug commands skip the artifact guard so you can inspect the prompt against the current checkout.
 
 ## Reference files
 
@@ -478,6 +476,34 @@ anything else as it is asked for. In a batch run Claude refuses it, and the run
 fails. `seihou validate-blueprint` warns about such a blueprint and still
 exits 0.
 
+### Caller policy for Claude batch sessions
+
+Give one batch invocation the approvals it needs. For example:
+
+```bash
+seihou agent run fix-nix-haskell-flake-customizations --batch --allowed-tool 'Bash(grep *)'
+seihou agent migrate keiro-upgrade --from 0.22.0.0 --to 0.25.0.0 --batch --settings ./campaign/claude-settings.json
+```
+
+An orchestrator can pass its existing Claude settings file with `--settings`. For
+example, a campaign with an executable gate can use this settings file:
+
+```json
+{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"./campaign/gate"}]}]}}
+```
+
+Use a file you trust and keep it stable until the command finishes. Relative
+settings paths resolve from the invoking directory. You can combine both flags.
+A hook can refuse a statically granted command. When Claude reports a refusal,
+Seihou exits 1. Inspect the working diff, correct the intended rule or gate, and
+retry. A migration resumes at pending edges. Seihou executes baseline commands
+before launching Claude, outside the provider's tool policy.
+
+See `blueprint.callerToolPolicy` or `blueprintMigrations[].callerToolPolicy` in
+`.seihou/manifest.json` for the ordered caller rules and SHA-256 of the settings
+bytes. A later run requires its own flags. Prefer settings files for sensitive or
+machine-specific rules because rule literals from `--allowed-tool` are recorded.
+
 ## Running a blueprint
 
 Run blueprints through the agent command:
@@ -495,9 +521,8 @@ including whitespace. API providers (`anthropic`, `openai`) keep optional input
 unchanged. Automatic startup preserves provider tool approvals.
 
 `seihou agent --debug run api-service` shows the effective initial instruction
-without contacting a provider. Blueprint debug still applies baseline modules,
-runs their commands, and records blueprint provenance; it is not a dry run. The manifest records
-the original PROMPT, including omission or blank text.
+and previews the declared baseline. Debug leaves project files and the manifest untouched.
+A successful execution records the original PROMPT, including omission or blank text.
 
 Pass `--batch` for non-interactive automation. Seihou also selects batch mode
 automatically when stdin is not a terminal:

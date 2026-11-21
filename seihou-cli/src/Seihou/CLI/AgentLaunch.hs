@@ -222,6 +222,7 @@ data BaselineStatus
     BaselineSkipped
   | -- | The blueprint declared no @baseModules@; nothing to apply.
     BaselineEmpty
+  | BaselinePreview [ModuleName]
   | -- | Baseline modules were applied. Each entry is the module's name and (optional) version.
     BaselineApplied [(ModuleName, Maybe Text)]
   deriving stock (Eq, Show)
@@ -241,6 +242,8 @@ formatBlueprintIdentity bp =
 formatBaselineStatus :: BaselineStatus -> Text
 formatBaselineStatus BaselineSkipped =
   "(no baseline applied — `--no-baseline` was passed)"
+formatBaselineStatus (BaselinePreview modules) =
+  "Preview only. A real run applies these baseline modules: " <> T.intercalate ", " (map (^. #unModuleName) modules)
 formatBaselineStatus BaselineEmpty =
   "(this blueprint declares no base modules)"
 formatBaselineStatus (BaselineApplied entries) =

@@ -11,7 +11,9 @@ affects: mori://shinzui/seihou
 affectedVersion: 0.16.0.1
 origin: mori://shinzui/shikigami
 severity: degraded
-status: reported
+status: fixed
+fixedVersion: unreleased
+resolution: Debug renders the prompt before baseline acquisition, agent launch, and manifest writes.
 generated:
   by: process:claude-code
   at: "2026-11-16T01:45:00Z"
@@ -39,7 +41,7 @@ reproduction:
   - Run `seihou agent --debug run fix-nix-haskell-flake-customizations` (seihou-modules 0.2.0 installed); it prints the resolved prompt and exits 0 without contacting a provider.
   - Run `git status --porcelain` again and see ` M .seihou/manifest.json`; `jq .blueprint .seihou/manifest.json` shows the blueprint with an `appliedAt` timestamp.
   - For contrast, run `seihou agent --debug migrate <blueprint> --from=<v1> --to=<v2>` and see the manifest unchanged.
-timestamp: "2026-11-16T01:45:00Z"
+timestamp: "2026-11-21T15:49:46Z"
 ---
 
 # Bug Report: `seihou agent --debug run` records the blueprint as applied

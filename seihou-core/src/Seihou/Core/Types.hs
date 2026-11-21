@@ -68,6 +68,7 @@ module Seihou.Core.Types
     AppliedRecipeNode (..),
     AppliedModule (..),
     AppliedRecipe (..),
+    CallerToolPolicy (..),
     AppliedBlueprint (..),
     MigrationOutcome (..),
     AppliedBlueprintMigration (..),
@@ -681,6 +682,7 @@ data ManifestCapability
   | CheckoutLocalCommands
   | -- | Active judgement definitions and their policy (schema 15).
     JudgementState
+  | CallerToolPolicyEvidence
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
 
 -- | What the manifest knows about how the owners of a path write it.
@@ -864,6 +866,16 @@ data AppliedRecipe = AppliedRecipe
   }
   deriving stock (Eq, Show, Generic)
 
+-- | Invocation inputs attested by the provider's run or migration receipt.
+-- File paths and hook contents stay local to the caller.
+data CallerToolPolicy = CallerToolPolicy
+  { allowedTools :: ![Text],
+    settingsSha256 :: !(Maybe SHA256),
+    codexHooksSha256 :: !(Maybe SHA256),
+    codexRulesSha256 :: !(Maybe SHA256)
+  }
+  deriving stock (Eq, Show, Generic)
+
 -- | Blueprint provenance recorded in the manifest after a successful
 -- @seihou agent run@ invocation. The agent owns file output, so this
 -- entry describes the *invocation* (which blueprint, which baseline, the
@@ -892,7 +904,8 @@ data AppliedBlueprint = AppliedBlueprint
     baselineModules :: ![ModuleName],
     noBaseline :: !Bool,
     userPrompt :: !(Maybe Text),
-    agentSessionId :: !(Maybe Text)
+    agentSessionId :: !(Maybe Text),
+    callerToolPolicy :: !(Maybe CallerToolPolicy)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -940,7 +953,8 @@ data AppliedBlueprintMigration = AppliedBlueprintMigration
     toVersion :: !Text,
     outcome :: !MigrationOutcome,
     appliedAt :: !UTCTime,
-    agentSessionId :: !(Maybe Text)
+    agentSessionId :: !(Maybe Text),
+    callerToolPolicy :: !(Maybe CallerToolPolicy)
   }
   deriving stock (Eq, Show, Generic)
 

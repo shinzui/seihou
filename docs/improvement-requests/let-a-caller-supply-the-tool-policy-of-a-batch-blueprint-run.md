@@ -9,9 +9,10 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-11-16T01:25:00Z"
-timestamp: 2026-11-16T01:25:00Z
+timestamp: "2026-11-21T15:49:46Z"
 requestId: IR-23
-status: proposed
+status: in-progress
+targetPlan: docs/plans/127-let-callers-supply-tool-policy-for-batch-blueprint-runs-and-migrations.md
 origin: mori://shinzui/shikigami
 ---
 
@@ -19,7 +20,7 @@ origin: mori://shinzui/shikigami
 
 ## Status
 
-Proposed. It builds on IR-18
+Claude support has passed source-level consumer acceptance. Release and installed acceptance are pending. It builds on IR-18
 ([fail a batch blueprint run whose agent was refused tools](fail-a-batch-blueprint-run-whose-agent-was-refused-tools.md)),
 whose fail-closed exit is what surfaced the problem, and is complementary to IR-20
 ([tell off-plan refusals from missing tools](tell-off-plan-refusals-from-missing-tools-in-batch-runs.md))

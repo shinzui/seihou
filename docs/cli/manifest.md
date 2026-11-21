@@ -66,6 +66,9 @@ steps in order, one at a time, and prints each one:
 | 10 -> 11 | Wraps old application-only seed owners as explicit legacy evidence without inventing instance claims. | lossless |
 | 11 -> 12 | Adds unknown saved recipe inputs without manufacturing answers. | lossless |
 | 12 -> 13 | Adds unknown recipe-chain history without inferring prior composition. | lossless |
+| 13 -> 14 | Records removal policies. | lossless |
+| 14 -> 15 | Adds an empty active judgement list. | lossless |
+| 15 -> 16 | Adds null caller tool policy to existing blueprint and migration receipts. | lossless |
 
 `--to VERSION` stops after the step that reaches that version. A version newer
 than this build, or older than the manifest, is refused. The document's
@@ -447,3 +450,18 @@ Operations that need exact legacy owners obtain evidence from the recorded
 releases and saved inputs; unavailable evidence gives an error naming the path.
 Receipts contain no content hashes or baselines. Seihou 0.11.0.0 implements the
 complete seed lifecycle; the older declaration/receipt-only releases do not.
+
+
+## Caller tool policy (schema 16)
+
+`blueprint.callerToolPolicy` and each `blueprintMigrations[].callerToolPolicy`
+record the inputs to that particular invocation. Null means no caller policy was
+recorded, including historical and manually marked receipts. A Claude policy
+object stores the ordered, deduplicated `allowedTools` literals and a nullable
+`settingsSha256` over the exact file bytes. Its `codexHooksSha256` and
+`codexRulesSha256` fields are null. The settings digest identifies the settings
+file only. Referenced programs can change independently.
+
+The first policy-bearing run upgrades a portable manifest as part of writing its
+receipt. To upgrade in advance, run `seihou manifest upgrade`. Reading receipts
+requires no local settings files and grants no permissions.

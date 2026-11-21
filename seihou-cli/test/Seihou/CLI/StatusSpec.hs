@@ -145,7 +145,8 @@ mkBlueprint name mver baselines noBL prompt =
       baselineModules = map ModuleName baselines,
       noBaseline = noBL,
       userPrompt = prompt,
-      agentSessionId = Nothing
+      agentSessionId = Nothing,
+      callerToolPolicy = Nothing
     }
 
 withManifestBlueprint :: Maybe AppliedBlueprint -> Manifest -> Manifest
@@ -166,7 +167,8 @@ mkBlueprintMigrationReceiptWith blueprintName artifactVersion fromVersion toVers
       toVersion = toVersion,
       outcome = outcome,
       appliedAt = fixedTime,
-      agentSessionId = Nothing
+      agentSessionId = Nothing,
+      callerToolPolicy = Nothing
     }
 
 spec :: Spec

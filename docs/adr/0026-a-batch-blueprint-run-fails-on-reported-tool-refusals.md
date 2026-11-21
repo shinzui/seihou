@@ -33,6 +33,12 @@ runs `claude` itself and validates its JSON output. The adapter passes the
 same `--allowedTools` and `--add-dir` arguments as before, and none of the
 migration-only arguments: no `--permission-mode` and no Mori grants.
 
+The caller may add static rules or supply a native settings file for one batch
+invocation. Claude Code 2.1.330 reports a blocking PreToolUse decision in
+`permission_denials` even when a static grant matches. Seihou records caller
+rules and the settings digest only after success. Future runs resolve fresh
+permissions independently of the manifest.
+
 The run fails on any reported refusal, whatever caused it: the blueprint's
 allow list, a provider guard, or the user's own hooks. Seihou cannot tell
 these apart, and an unattended run cannot grant any of them. The error names

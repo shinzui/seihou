@@ -25,7 +25,7 @@ import Test.Tasty.Hspec (testSpec)
 
 invoke binary root args = do
   inherited <- getEnvironment
-  let overrides = [("HOME", root </> "home"), ("XDG_CONFIG_HOME", root </> "config"), ("XDG_CACHE_HOME", root </> "cache")]
+  let overrides = [("PATH", (root </> "bin") <> ":" <> maybe "" id (lookup "PATH" inherited)), ("HOME", root </> "home"), ("XDG_CONFIG_HOME", root </> "config"), ("XDG_CACHE_HOME", root </> "cache")]
   readCreateProcessWithExitCode (proc binary args) {cwd = Just root, env = Just (overrides <> filter (\(key, _) -> key `notElem` map fst overrides) inherited)} ""
 
 success binary root args = do
@@ -171,14 +171,19 @@ tests = testSpec "seed run end-to-end" $ do
       let blueprint = root </> ".seihou/modules/seed-blueprint"
       D.createDirectoryIfMissing True blueprint
       TIO.writeFile (blueprint </> "blueprint.dhall") "let S = ../demo/schema/package.dhall in S.Blueprint::{name=\"seed-blueprint\",version=Some \"1.0.0\",prompt=\"Describe the accepted baseline.\", baseModules = [ S.Dependency::{ module = \"demo\" } ]}"
-      _ <- success binary root ["agent", "--debug", "run", "seed-blueprint", "--force"]
+      let provider = root </> "bin/claude"
+      D.createDirectoryIfMissing True (takeDirectory provider)
+      TIO.writeFile provider "#!/bin/sh\necho '{\"result\":\"done\"}'\n"
+      permissions <- D.getPermissions provider
+      D.setPermissions provider (permissions {D.executable = True})
+      _ <- success binary root ["agent", "run", "seed-blueprint", "--batch", "--provider", "claude-cli", "--force"]
       first <- readManifest root
       Map.member "nested/start.txt" (first ^. #seeds) `shouldBe` True
       TIO.writeFile (root </> "nested/start.txt") "agent project changes\n"
-      _ <- success binary root ["agent", "--debug", "run", "seed-blueprint", "--force"]
+      _ <- success binary root ["agent", "run", "seed-blueprint", "--batch", "--provider", "claude-cli", "--force"]
       TIO.readFile (root </> "nested/start.txt") `shouldReturn` "agent project changes\n"
       D.removeFile (root </> "nested/start.txt")
-      _ <- success binary root ["agent", "--debug", "run", "seed-blueprint", "--force"]
+      _ <- success binary root ["agent", "run", "seed-blueprint", "--batch", "--provider", "claude-cli", "--force"]
       D.doesPathExist (root </> "nested/start.txt") `shouldReturn` False
   it "reports receipts without drift and retires a seed-only owner without a removal specification" $
     withSystemTempDirectory "seed-remove" $ \root -> do

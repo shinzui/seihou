@@ -667,7 +667,7 @@ spec = do
                   Nothing -> expectationFailure "expected a manifest preparation"
                   Just preparation -> do
                     (preparation ^. #fromVersion) `shouldBe` ManifestSchemaVersion 6
-                    (preparation ^. #toVersion) `shouldBe` currentManifestVersion
+                    (preparation ^. #toVersion) `shouldBe` ManifestSchemaVersion 15
                     (preparation ^. #modeChanges)
                       `shouldBe` Map.singleton ".gitignore" (SharedWriteUnknown, SharedWriteAdditiveOnly)
                 map (^. #applicationId) (plan ^. #applications) `shouldBe` [fixture ^. #alphaApplicationId]
@@ -691,7 +691,7 @@ spec = do
       withSystemTempDirectory "seihou-update-schema-5" $ \root -> do
         fixture <- prepareSharedPathFixture CoOwnerAppends root
         manifestText <- TIO.readFile (fixture ^. #manifestPath)
-        TIO.writeFile (fixture ^. #manifestPath) (T.replace "\"version\":15" "\"version\":5" manifestText)
+        TIO.writeFile (fixture ^. #manifestPath) (T.replace "\"version\":16" "\"version\":5" manifestText)
         withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
           withCurrentDirectory (fixture ^. #projectRoot) $ do
             forM_ [NamedUpdateTargets ["alpha"], AllRecordedApplications] $ \selection -> do

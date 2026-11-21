@@ -133,16 +133,12 @@ spec = do
       doesFileExist (fixture ^. #launchLog) `shouldReturn` False
       gitStatus fixture `shouldReturn` ""
 
-  it "still checks under agent --debug run, which is not a dry run" $
+  it "can preview a stale blueprint without writing a receipt" $
     withStaleBlueprint $ \fixture -> do
       before <- LBS.readFile (fixture ^. #manifestPath)
-      (code, out, err) <- runSeihou fixture ["agent", "--debug", "run", "upgrade-helper"]
-      code `shouldSatisfy` (/= ExitSuccess)
-      (out <> err) `shouldSatisfy` T.isInfixOf "seihou upgrade upgrade-helper"
-
-      -- Without the check this run would still have applied the baseline and
-      -- rewritten the manifest to name the older blueprint: --debug skips the
-      -- provider call on this path, not the writes.
+      (code, out, _) <- runSeihou fixture ["agent", "--debug", "run", "upgrade-helper"]
+      code `shouldBe` ExitSuccess
+      out `shouldSatisfy` T.isInfixOf "upgrade-helper"
       LBS.readFile (fixture ^. #manifestPath) `shouldReturn` before
       gitStatus fixture `shouldReturn` ""
 

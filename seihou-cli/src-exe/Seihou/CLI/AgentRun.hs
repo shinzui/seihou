@@ -18,7 +18,7 @@ import Data.FileEmbed (embedFile)
 import Data.Generics.Labels ()
 import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, maybeToList)
+import Data.Maybe (fromMaybe, isJust, maybeToList)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
@@ -60,6 +60,7 @@ import Seihou.CLI.BlueprintExecution
     prepareBlueprintExecution,
     varValueToText,
   )
+import Seihou.CLI.CallerToolPolicy
 import Seihou.CLI.CheckoutSync (renderCheckoutPlan)
 import Seihou.CLI.CommandExecution
   ( CommandDisposition (..),
@@ -76,7 +77,7 @@ import Seihou.CLI.CommandExecution
     withReceiptWithdrawal,
   )
 import Seihou.CLI.Commands (BlueprintRunOpts (..))
-import Seihou.CLI.ManifestCapabilityUpgrade (prepareRecordedSeedOwnership)
+import Seihou.CLI.ManifestCapabilityUpgrade (prepareCallerToolPolicy, prepareRecordedSeedOwnership)
 import Seihou.CLI.Shared
   ( deriveNamespace,
     formatVarError,
@@ -158,7 +159,22 @@ handleAgentRun debug pending opts = do
           <> "'?"
     Left err -> exitErr level (renderModuleLoadError err)
 
-  unless (opts ^. #noBaseline) $ do
+  -- Finish provider/model/effort resolution now that the blueprint is loaded
+  -- and its launch declaration is known. This must precede the
+  -- providerCanMountFiles computation below, which depends on the final
+  -- provider.
+  modelConfig <-
+    resolveDeclaredAgentConfig
+      level
+      ("blueprint '" <> bp ^. #name . #unModuleName <> "'")
+      pending
+      (agentLaunchDeclaration (bp ^. #launch))
+
+  policy <- resolvePolicy (batch || debug) (modelConfig ^. #provider) (opts ^. #policy) >>= either (exitErr level) pure
+  unless debug $
+    preflightPolicyManifest (".seihou" </> "manifest.json") policy >>= either (exitErr level) pure
+
+  unless (debug || opts ^. #noBaseline) $ do
     paths <- defaultSearchPaths
     sourceCheck <- verifyDependencySources paths blueprintDir (bp ^. #baseModules)
     case sourceCheck of
@@ -173,7 +189,7 @@ handleAgentRun debug pending opts = do
   -- list. Resolving it here rather than inside 'applyBaseline' also means the
   -- Dhall evaluation happens exactly once.
   baselineComposition <-
-    if opts ^. #noBaseline || null (bp ^. #baseModules)
+    if debug || opts ^. #noBaseline || null (bp ^. #baseModules)
       then pure Nothing
       else Just <$> loadBaselineComposition level (bp ^. #baseModules)
 
@@ -186,29 +202,12 @@ handleAgentRun debug pending opts = do
   -- generate from, and nothing else: an artifact this run will not touch must
   -- not block it.
   --
-  -- The check runs in --debug too, unlike on the migrate path. --debug is a
-  -- true dry run for @agent migrate@ but not here: it skips only the provider
-  -- call, still applies the baseline at (c), and still records
-  -- applied-blueprint provenance below. Rewriting the manifest to name a
-  -- blueprint older than the one this project records is ADR 0003's opening
-  -- scenario exactly, so exempting debug would leave the hole this guard
-  -- exists to close.
-  enforceAgentArtifactGuard
-    (opts ^. #allowDowngrade)
-    (".seihou" </> "manifest.json")
-    [bp ^. #name]
-    (baselineComposedNames baselineComposition)
-
-  -- Finish provider/model/effort resolution now that the blueprint is loaded
-  -- and its launch declaration is known. This must precede the
-  -- providerCanMountFiles computation below, which depends on the final
-  -- provider.
-  modelConfig <-
-    resolveDeclaredAgentConfig
-      level
-      ("blueprint '" <> bp ^. #name . #unModuleName <> "'")
-      pending
-      (agentLaunchDeclaration (bp ^. #launch))
+  unless debug $
+    enforceAgentArtifactGuard
+      (opts ^. #allowDowngrade)
+      (".seihou" </> "manifest.json")
+      [bp ^. #name]
+      (baselineComposedNames baselineComposition)
 
   let providerCanMountFiles =
         modelConfig ^. #provider == AgentProviderClaudeCli
@@ -239,6 +238,7 @@ handleAgentRun debug pending opts = do
     if opts ^. #noBaseline
       then pure BaselineSkipped
       else case baselineComposition of
+        Nothing | debug && not (null (bp ^. #baseModules)) -> pure (BaselinePreview (depModuleNames (bp ^. #baseModules)))
         Nothing -> pure BaselineEmpty
         Just composition -> applyBaseline level opts composition cliOverrides resolved
 
@@ -247,45 +247,45 @@ handleAgentRun debug pending opts = do
   let systemPrompt = renderSystemPrompt ctx prepared baseline
 
   -- (f) Launch.
+  verifyPolicyFile policy >>= either (exitErr level) pure
   launchSucceeded <-
     runRenderedAgentPromptMode
       "blueprint"
+      policy
       debug
       batch
       modelConfig
-      (prepared ^. #allowedTools)
+      (effectiveTools policy (prepared ^. #allowedTools))
       (prepared ^. #mountedFilesDir)
       systemPrompt
       (opts ^. #prompt)
 
-  -- (g) Record the applied-blueprint provenance into
-  -- .seihou/manifest.json only after a successful provider response. In
-  -- debug mode, keep the previous successful dry-launch behavior by recording
-  -- after the rendered prompt is printed successfully.
-  when launchSucceeded $ do
+  when (launchSucceeded && not debug) $ do
+    verifyPolicyFile policy >>= either (exitErr level) pure
     now <- getCurrentTime
     -- Classify the blueprint's discovery directory into a portable origin, so
     -- the recorded entry names the artifact rather than a directory that means
     -- nothing on another developer's machine.
     projectRoot <- getCurrentDirectory
     blueprintOrigin <- detectArtifactOrigin projectRoot blueprintDir
-    let entry = appliedBlueprintFromOutcome bp blueprintOrigin baseline opts now
+    let entry = appliedBlueprintFromOutcome bp blueprintOrigin baseline opts now & #callerToolPolicy .~ policyEvidence policy
         manifestPath = ".seihou" </> "manifest.json"
     writeRes <- recordAppliedBlueprint manifestPath entry
     case writeRes of
       Right () -> pure ()
-      Left err ->
-        logIO level $
-          logError $
-            "Warning: agent succeeded but recording the applied-blueprint entry failed: "
-              <> err
+      Left err -> do
+        logIO level $ logError ("The agent may already have edited files. Recording the blueprint receipt failed: " <> err <> ". Inspect the working diff and manifest before retrying.")
+        when (isJust (policyEvidence policy)) exitFailure
 
 runRenderedAgentPrompt :: Bool -> AgentModelConfig -> [String] -> Maybe FilePath -> Text -> Maybe Text -> IO Bool
-runRenderedAgentPrompt debug = runRenderedAgentPromptMode "agent" debug False
+runRenderedAgentPrompt debug = runRenderedAgentPromptMode "agent" emptyPolicy debug False
 
-runRenderedAgentPromptMode :: Text -> Bool -> Bool -> AgentModelConfig -> [String] -> Maybe FilePath -> Text -> Maybe Text -> IO Bool
-runRenderedAgentPromptMode sessionName debug batch modelConfig tools mFilesDir systemPrompt initialPrompt
+runRenderedAgentPromptMode :: Text -> ResolvedPolicy -> Bool -> Bool -> AgentModelConfig -> [String] -> Maybe FilePath -> Text -> Maybe Text -> IO Bool
+runRenderedAgentPromptMode sessionName policy debug batch modelConfig tools mFilesDir systemPrompt initialPrompt
   | debug = do
+      when (sessionName == "blueprint" && modelConfig ^. #provider == AgentProviderClaudeCli) $ do
+        TIO.putStrLn ("Preapproved tools: " <> T.intercalate ", " (map T.pack tools))
+        TIO.putStrLn (if isJust (settingsPath policy) then "Caller settings supplied." else "No caller settings supplied.")
       TIO.putStr systemPrompt
       forM_ (resolveAgentInitialPrompt (modelConfig ^. #provider) initialPrompt) $ \instruction -> do
         TIO.putStrLn "\n===== Initial user instruction ====="
@@ -311,6 +311,7 @@ runRenderedAgentPromptMode sessionName debug batch modelConfig tools mFilesDir s
       sink <- traceSinkForConfig LogNormal modelConfig
       result <-
         runAgentCompletionWithCliAccess
+          (settingsPath policy)
           (maybeToList mFilesDir)
           tools
           (buildAgentCompletionRequestWith sink modelConfig systemPrompt initialPrompt)
@@ -336,13 +337,15 @@ appliedBlueprintFromOutcome bp blueprintOrigin baseline opts now =
       appliedAt = now,
       baselineModules = case baseline of
         BaselineApplied entries -> map fst entries
+        BaselinePreview _ -> []
         BaselineEmpty -> []
         BaselineSkipped -> [],
       noBaseline = case baseline of
         BaselineSkipped -> True
         _ -> False,
       userPrompt = opts ^. #prompt,
-      agentSessionId = Nothing
+      agentSessionId = Nothing,
+      callerToolPolicy = Nothing
     }
 
 -- | One resolved baseline composition: the primary base module, and every
@@ -470,7 +473,7 @@ applyBaseline level opts (primary, modulesInOrder) cliOverridesIn resolvedBluepr
     Left err -> do
       logIO level $ logError $ "Error reading manifest: " <> err
       exitFailure
-    Right m -> pure (fromMaybe (emptyManifest now) m)
+    Right m -> either (exitErr level) pure (prepareCallerToolPolicy (fromMaybe (emptyManifest now) m))
 
   case validateSeedRun manifest ops of
     Left errors -> mapM_ (logIO level . logError . (^. #message)) errors >> exitFailure

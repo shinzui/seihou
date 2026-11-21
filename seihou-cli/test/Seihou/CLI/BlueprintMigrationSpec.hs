@@ -704,7 +704,8 @@ receiptWithOutcome origin name fromVersion toVersion outcome =
       toVersion,
       outcome,
       appliedAt = read "2026-07-20 12:00:00 UTC" :: UTCTime,
-      agentSessionId = Nothing
+      agentSessionId = Nothing,
+      callerToolPolicy = Nothing
     }
 
 version :: Text -> Version

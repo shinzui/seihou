@@ -49,7 +49,8 @@ mkEntry name mver baseline noBL prompt =
       baselineModules = map ModuleName baseline,
       noBaseline = noBL,
       userPrompt = prompt,
-      agentSessionId = Nothing
+      agentSessionId = Nothing,
+      callerToolPolicy = Nothing
     }
 
 readManifestFile :: FilePath -> IO Manifest

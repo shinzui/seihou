@@ -65,6 +65,7 @@ data UpgradeStepAction
   | MakeSeedOwnershipExplicit
   | AddEmptyCheckoutCommands
   | AddEmptyJudgements
+  | AddUnknownCallerToolPolicy
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
 
 -- | Whether a step may be staged automatically.
@@ -130,7 +131,8 @@ manifestUpgradeSteps =
     step 11 AddUnknownRecipeInputs "recipe inputs",
     step 12 AddUnknownRecipeChain "recipe inheritance provenance",
     step 13 IntroduceConditionalRemoval "conditional removal policies and recorded root retirement",
-    step 14 AddEmptyJudgements "active judgements"
+    step 14 AddEmptyJudgements "active judgements",
+    step 15 AddUnknownCallerToolPolicy "caller tool policy receipts"
   ]
   where
     step from stepAction =
@@ -148,6 +150,7 @@ upgradeStepKind AddEmptyCheckoutOutputs = LosslessUpgrade
 upgradeStepKind AddEmptyCheckoutCommands = LosslessUpgrade
 upgradeStepKind MakeSeedOwnershipExplicit = LosslessUpgrade
 upgradeStepKind AddEmptyJudgements = LosslessUpgrade
+upgradeStepKind AddUnknownCallerToolPolicy = LosslessUpgrade
 
 -- | The contiguous steps from @source@ to @target@. Planning from a version
 -- to itself is an empty path.
@@ -222,6 +225,7 @@ applyLosslessUpgradeStep upgradeStep document = do
       Aeson.Object fields -> Right (Aeson.Object (KeyMap.insert "applications" (addInputs (fromMaybe (Aeson.Array mempty) (KeyMap.lookup "applications" fields))) fields))
       _ -> Right document
     StampVersion -> Right document
+    AddUnknownCallerToolPolicy -> first (MalformedDocument actual) (addUnknownCallerToolPolicy document)
     AddEmptyJudgements -> case document of
       Aeson.Object fields -> case KeyMap.lookup "judgements" fields of
         Nothing -> Right (Aeson.Object (KeyMap.insert "judgements" (Aeson.toJSON ([] :: [Aeson.Value])) fields))
@@ -258,6 +262,21 @@ applyLosslessUpgradeStep upgradeStep document = do
       first (MalformedDocument actual) (makeSharedWriteEvidenceExplicit document)
     ConvertMachineLocalPaths -> Left (StepRequiresInference upgradeStep)
   pure (setDocumentSchemaVersion (upgradeStep ^. #toVersion) transformed)
+
+addUnknownCallerToolPolicy :: Aeson.Value -> Either Text Aeson.Value
+addUnknownCallerToolPolicy (Aeson.Object fields) =
+  Aeson.Object <$> KeyMap.traverseWithKey update fields
+  where
+    update "blueprint" Aeson.Null = Right Aeson.Null
+    update "blueprint" receipt = addPolicy receipt
+    update "blueprintMigrations" (Aeson.Array receipts) = Aeson.Array <$> traverse addPolicy receipts
+    update "blueprintMigrations" _ = Left "blueprintMigrations must be an array"
+    update _ value = Right value
+    addPolicy (Aeson.Object receipt)
+      | KeyMap.member "callerToolPolicy" receipt = Left "schema 15 cannot contain callerToolPolicy"
+      | otherwise = Right (Aeson.Object (KeyMap.insert "callerToolPolicy" Aeson.Null receipt))
+    addPolicy _ = Left "blueprint receipt must be an object"
+addUnknownCallerToolPolicy _ = Left "manifest must be an object"
 
 -- | Upgrade a raw document to @target@ using lossless steps only. Stops with
 -- 'StepRequiresInference' before changing anything if the path crosses an

@@ -12,7 +12,7 @@ import Data.FileEmbed (embedFile)
 import Data.Generics.Labels ()
 import Data.List (nub)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, listToMaybe, maybeToList)
+import Data.Maybe (fromMaybe, isJust, listToMaybe, maybeToList)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
@@ -63,6 +63,7 @@ import Seihou.CLI.BlueprintMigration
     runVersionProbe,
     unstatedNotApplicableReason,
   )
+import Seihou.CLI.CallerToolPolicy
 import Seihou.CLI.Commands (BlueprintMigrationOpts (..))
 import Seihou.CLI.MigrationCohort
   ( CohortBlueprint (..),
@@ -167,6 +168,10 @@ handleAgentMigrate debug pendingConfig opts = do
       pendingConfig
       (agentLaunchDeclaration (blueprint ^. #launch))
 
+  policy <- resolvePolicy (batchMode || debug) (modelConfig ^. #provider) (opts ^. #policy) >>= either (exitErr level) pure
+  unless debug $
+    preflightPolicyManifest manifestPath policy >>= either (exitErr level) pure
+
   -- The receipts are read before the window is planned, not after, because
   -- the window itself now depends on them: an omitted --from is the highest
   -- version this project has already migrated this blueprint to. The same
@@ -241,7 +246,8 @@ handleAgentMigrate debug pendingConfig opts = do
               -- variables. All of them are resolved now rather than lazily per
               -- step: a user should answer every prompt up front rather than
               -- being interrupted between agent sessions.
-              preparedByOwner <- prepareCohort level modelConfig opts cohort pending
+              ownerContexts <- prepareCohort level modelConfig opts cohort pending
+              let preparedByOwner = Map.map (& #allowedTools %~ effectiveTools policy) ownerContexts
               traceSink <- traceSinkForConfig level modelConfig
               context <- gatherAgentContext
               let signalPath = notApplicableSignalPath projectRoot
@@ -257,11 +263,13 @@ handleAgentMigrate debug pendingConfig opts = do
                           position
                           total
                           step
-                          <> if batchMode && modelConfig ^. #provider == AgentProviderClaudeCli
+                          <> if (batchMode || debug && isJust (policyEvidence policy)) && modelConfig ^. #provider == AgentProviderClaudeCli
                             then
                               "\n\n## Batch execution permissions\n\nThis run has no approval terminal. Preapproved tools: "
                                 <> T.intercalate ", " (map T.pack (migrationAllowedTools (prepared ^. #allowedTools)))
-                                <> ". Use native Read, Glob, and Grep tools with absolute paths for dependency-source inspection; do not cd into dependency checkouts. Use native file tools for edits. Run shell commands individually: no cd wrappers, command substitution, pipelines, or chained commands. Do not invoke shell commands outside these grants or request additional permissions. A reported permission denial fails this attempt even if you later recover. If a validation command is outside the grants, complete the authorized edits and report that exact check as pending.\n"
+                                <> ". Use native Read, Glob, and Grep tools with absolute paths for dependency-source inspection; do not cd into dependency checkouts. Use native file tools for edits. Run shell commands individually: no cd wrappers, command substitution, pipelines, or chained commands."
+                                <> maybe " Do not invoke shell commands outside these grants or request additional permissions." (const " Caller settings also govern requests. The caller's hook may allow or deny a command.") (settingsPath policy)
+                                <> " A reported permission denial fails this attempt even if you later recover. If a validation command cannot be approved, complete the authorized edits and report that exact check as pending.\n"
                             else ""
                   renderDebugStep position total step =
                     renderStep position total step
@@ -287,8 +295,8 @@ handleAgentMigrate debug pendingConfig opts = do
                   createDirectoryIfMissing True (takeDirectory signalPath)
                   result <-
                     runBlueprintMigrationsWith
-                      (launchMigration batchMode traceSink modelConfig opts preparedByOwner signalPath renderStep)
-                      (recordMigration manifestPath cohort)
+                      (launchMigration policy batchMode traceSink modelConfig opts preparedByOwner signalPath renderStep)
+                      (recordMigration policy manifestPath cohort)
                       pending
                   handleRunResult level (blueprint ^. #name) result
 
@@ -324,7 +332,7 @@ markPendingAsApplied level manifestPath cohort pending = do
   where
     go recorded [] = TIO.putStrLn (formatMarkAppliedSummary recorded)
     go recorded (step : rest) =
-      recordMigration manifestPath cohort step MigrationApplied >>= \case
+      recordMigration emptyPolicy manifestPath cohort step MigrationApplied >>= \case
         Right () -> go (recorded + 1) rest
         Left err ->
           exitErr level $
@@ -354,6 +362,8 @@ markPendingAsApplied level manifestPath cohort pending = do
 rejectConflictingMarkApplied :: Bool -> BlueprintMigrationOpts -> IO ()
 rejectConflictingMarkApplied debug opts
   | not (opts ^. #markApplied) = pure ()
+  | flags@(_ : _) <- policyOptionNames (opts ^. #policy) =
+      refuse ["--mark-applied cannot be combined with " <> T.intercalate " or " flags <> ". Omit caller policy when recording a manual migration."]
   | opts ^. #rerun =
       refuse
         [ "✗ --mark-applied and --rerun cannot be combined.",
@@ -632,6 +642,7 @@ readNotApplicableSignal signalPath = do
       pure (Just (fromMaybe unstatedNotApplicableReason firstLine))
 
 launchMigration ::
+  ResolvedPolicy ->
   Bool ->
   -- | built once per command, so every migration edge appends to one destination
   TraceSink ->
@@ -646,7 +657,7 @@ launchMigration ::
   Int ->
   BlueprintMigrationStep ->
   IO (Either BlueprintMigrationLaunchFailure BlueprintMigrationLaunchResult)
-launchMigration batchMode traceSink modelConfig opts preparedByOwner signalPath renderStep position total step = do
+launchMigration policy batchMode traceSink modelConfig opts preparedByOwner signalPath renderStep position total step = do
   TIO.putStrLn $
     "Running blueprint migration "
       <> stepLabel
@@ -666,11 +677,15 @@ launchMigration batchMode traceSink modelConfig opts preparedByOwner signalPath 
   where
     launchCli prepared systemPrompt
       | batchMode =
-          finishCompletion $
-            runAgentMigrationCompletionWithCliAccess
-              (maybeToList (prepared ^. #mountedFilesDir))
-              (prepared ^. #allowedTools)
-              (buildAgentCompletionRequestWith traceSink modelConfig systemPrompt (opts ^. #prompt))
+          verifyPolicyFile policy >>= \case
+            Left err -> pure (Left (BlueprintMigrationProviderFailure err))
+            Right () ->
+              finishCompletion $
+                runAgentMigrationCompletionWithCliAccess
+                  (settingsPath policy)
+                  (maybeToList (prepared ^. #mountedFilesDir))
+                  (prepared ^. #allowedTools)
+                  (buildAgentCompletionRequestWith traceSink modelConfig systemPrompt (opts ^. #prompt))
       | otherwise = launchInteractive prepared systemPrompt
 
     stepLabel = T.pack (show position) <> "/" <> T.pack (show total)
@@ -738,30 +753,35 @@ launchMigration batchMode traceSink modelConfig opts preparedByOwner signalPath 
 -- afterwards finds it and crosses nothing twice. Recording under the invoking
 -- blueprint would make the same work look like two different edges.
 recordMigration ::
+  ResolvedPolicy ->
   FilePath ->
   -- | every blueprint this run loaded, keyed by name
   Map Text CohortBlueprint ->
   BlueprintMigrationStep ->
   MigrationOutcome ->
   IO (Either Text ())
-recordMigration manifestPath cohort step migrationOutcome =
+recordMigration policy manifestPath cohort step migrationOutcome =
   case Map.lookup (step ^. #owner) cohort of
     -- Unreachable: the step came out of a plan this cohort resolved.
     Nothing -> pure (Left (missingOwnerMessage step))
     Just owner -> do
       now <- getCurrentTime
-      recordAppliedBlueprintMigration
-        manifestPath
-        AppliedBlueprintMigration
-          { name = owner ^. #blueprint . #name,
-            origin = owner ^. #origin,
-            blueprintVersion = owner ^. #blueprint . #version,
-            fromVersion = step ^. #edge . #from,
-            toVersion = step ^. #edge . #to,
-            outcome = migrationOutcome,
-            appliedAt = now,
-            agentSessionId = Nothing
-          }
+      verifyPolicyFile policy >>= \case
+        Left err -> pure (Left err)
+        Right () ->
+          recordAppliedBlueprintMigration
+            manifestPath
+            AppliedBlueprintMigration
+              { name = owner ^. #blueprint . #name,
+                origin = owner ^. #origin,
+                blueprintVersion = owner ^. #blueprint . #version,
+                fromVersion = step ^. #edge . #from,
+                toVersion = step ^. #edge . #to,
+                outcome = migrationOutcome,
+                appliedAt = now,
+                agentSessionId = Nothing,
+                callerToolPolicy = policyEvidence policy
+              }
 
 handleRunResult :: LogLevel -> ModuleName -> BlueprintMigrationRunResult -> IO ()
 handleRunResult level blueprintName = \case

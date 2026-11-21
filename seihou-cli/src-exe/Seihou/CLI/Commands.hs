@@ -58,6 +58,7 @@ where
 import Data.Text qualified as T
 import Options.Applicative
 import Options.Applicative.Help.Pretty (Doc, indent, line, pretty, vsep)
+import Seihou.CLI.CallerToolPolicy (CallerPolicyOptions (..))
 import Seihou.CLI.Extension (ExtensionRunOpts (..))
 import Seihou.CLI.Help (HelpCommand, helpCommandParser)
 import Seihou.CLI.Judgement.Validate (activeJudgementNames, discoverJudgementNames)
@@ -476,6 +477,7 @@ data BlueprintRunOpts = BlueprintRunOpts
     verbose :: !Bool,
     force :: !Bool,
     batch :: !Bool,
+    policy :: !CallerPolicyOptions,
     provider :: !(Maybe Text),
     model :: !(Maybe Text),
     effort :: !(Maybe Text),
@@ -500,6 +502,7 @@ data BlueprintMigrationOpts = BlueprintMigrationOpts
     context :: !(Maybe Text),
     verbose :: !Bool,
     batch :: !Bool,
+    policy :: !CallerPolicyOptions,
     rerun :: !Bool,
     -- | When 'True', record a receipt for every pending step in the window
     -- without starting an agent session, on the user's assertion that the
@@ -2127,9 +2130,8 @@ agentRunInfo =
                   pretty ("> interactive prompts." :: String),
                   line,
                   pretty ("Pass --no-baseline to skip baseline application, files and commands;" :: String),
-                  pretty ("--debug (on the parent 'seihou agent --debug') still applies the baseline," :: String),
-                  pretty ("including its commands, then prints the resolved system prompt without" :: String),
-                  pretty ("contacting the configured provider." :: String),
+                  pretty ("Parent --debug prints the resolved prompt and previews the baseline." :: String),
+                  pretty ("It leaves project files and the manifest untouched." :: String),
                   pretty ("Pass --batch to use a non-interactive CLI provider; Seihou selects" :: String),
                   pretty ("batch mode automatically when stdin is not a terminal." :: String),
                   line,
@@ -2140,12 +2142,18 @@ agentRunInfo =
                         pretty ("seihou agent run my-blueprint \"set this up for billing\"" :: String),
                         pretty ("seihou agent run my-blueprint --var service.name=billing" :: String),
                         pretty ("seihou agent run my-blueprint --no-baseline" :: String),
-                        pretty ("seihou agent run my-blueprint --batch" :: String),
+                        pretty ("seihou agent run my-blueprint --batch --allowed-tool 'Bash(grep *)'" :: String),
                         pretty ("seihou agent --debug run my-blueprint" :: String)
                       ]
                 ]
           )
     )
+
+callerPolicyParser :: Parser CallerPolicyOptions
+callerPolicyParser =
+  CallerPolicyOptions
+    <$> many (strOption (long "allowed-tool" <> metavar "PATTERN" <> help "Preapprove one Claude tool pattern for this batch invocation (repeatable), e.g. 'Bash(grep *)'"))
+    <*> optional (strOption (long "settings" <> metavar "FILE" <> help "Load this Claude JSON settings file, including its hooks, for this batch invocation"))
 
 agentRunParser :: Parser AgentCommand
 agentRunParser =
@@ -2164,6 +2172,7 @@ agentRunParser =
       <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
       <*> switch (long "force" <> help "Accept generated managed baseline files on conflicts; preserve seeds")
       <*> switch (long "batch" <> help "Run a non-interactive CLI provider (automatic when stdin is not a terminal)")
+      <*> callerPolicyParser
       <*> providerOption
       <*> modelOption
       <*> effortOption
@@ -2205,7 +2214,7 @@ agentMigrateInfo =
                   indent 2 $
                     vsep
                       [ pretty ("seihou agent migrate my-library" :: String),
-                        pretty ("seihou agent migrate my-library --from 1.0.0 --to 3.0.0" :: String),
+                        pretty ("seihou agent migrate my-library --from 1.0.0 --to 3.0.0 --batch --settings ./campaign/claude-settings.json" :: String),
                         pretty ("seihou agent migrate my-library --from 1 --to 3 --rerun" :: String),
                         pretty ("seihou agent --debug migrate my-library --to 3.0.0" :: String)
                       ]
@@ -2244,6 +2253,7 @@ agentMigrateParser =
       <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Override context for config lookup"))
       <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
       <*> switch (long "batch" <> help "Run non-interactively (automatic when stdin is not a terminal)")
+      <*> callerPolicyParser
       <*> switch (long "rerun" <> help "Run matching migrations even when a receipt already exists")
       <*> switch
         ( long "mark-applied"

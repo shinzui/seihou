@@ -78,6 +78,7 @@ library seihou-cli-internal
     Seihou.CLI.BlueprintExecution
     Seihou.CLI.BlueprintMigration
     Seihou.CLI.BrowseFormat
+    Seihou.CLI.CallerToolPolicy
     Seihou.CLI.CheckoutSync
     Seihou.CLI.CommandExecution
     Seihou.CLI.CommitMessage
@@ -173,6 +174,7 @@ library seihou-cli-internal
     text >=2.0 && <3,
     time >=1.12 && <2,
     transformers >=0.6 && <0.7,
+    unix >=2.8 && <2.9,
     vector ^>=0.13.2.0,
 
 executable seihou

@@ -38,30 +38,66 @@ tests = testSpec "blueprint baseline commands" spec
 
 spec :: Spec
 spec = do
+  it "rejects incompatible policies and malformed inputs before applying a baseline" $
+    withProject [sentinelCommand] $ \project -> do
+      let root = project ^. #root
+          reject flags diagnostic = do
+            (code, out, err) <- runSeihou project [] (["agent", "run", "proto-bp", "--batch"] <> flags)
+            code `shouldBe` ExitFailure 1
+            (out <> err) `shouldSatisfy` T.isInfixOf diagnostic
+            D.doesFileExist (root </> "cmd.log") `shouldReturn` False
+            D.doesFileExist (project ^. #launchLog) `shouldReturn` False
+            D.doesFileExist (root </> ".seihou/manifest.json") `shouldReturn` False
+      mapM_ (\v -> reject ["--allowed-tool", v] "--allowed-tool") [" ", "--settings", "Read,Bash"]
+      mapM_ (\v -> reject ["--allowed-tool", "Read", "--provider", v] "--allowed-tool") ["openai", "anthropic", "codex-cli"]
+      reject ["--settings", "missing"] "readable regular file"
+      reject ["--settings", "."] "readable regular file"
+      mapM_ (\v -> TIO.writeFile (root </> "policy.json") v >> reject ["--settings", "policy.json"] "JSON object") ["[]", "false", "{broken"]
+
+  it "previews the baseline without applying commands, launching, or changing receipt bytes" $
+    withProject [sentinelCommand] $ \project -> do
+      let root = project ^. #root
+          path = root </> ".seihou/manifest.json"
+          render = do
+            (out, _) <- succeed project [] ["agent", "--debug", "run", "proto-bp", "Check the preview"]
+            out `shouldSatisfy` T.isInfixOf "Preview only"
+            out `shouldSatisfy` T.isInfixOf "Check the preview"
+            D.doesFileExist (root </> "cmd.log") `shouldReturn` False
+            D.doesFileExist (project ^. #launchLog) `shouldReturn` False
+      render
+      D.doesFileExist path `shouldReturn` False
+      _ <- succeed project [] ["run", "demo", "--no-commands"]
+      TIO.appendFile path "\n  \n"
+      before <- TIO.readFile path
+      render
+      render
+      TIO.readFile path `shouldReturn` before
+
   it "runs the baseline's commands, as seihou run does, before the agent starts" $ do
     viaRun <- withProject [sentinelCommand] $ \project -> do
       _ <- succeed project [] ["run", "demo"]
       TIO.readFile (project ^. #root </> "cmd.log")
     viaBlueprint <- withProject [sentinelCommand] $ \project -> do
-      (out, err) <- succeed project [] ["agent", "--debug", "run", "proto-bp"]
+      (out, err) <- succeed project [] ["agent", "run", "proto-bp", "--batch"]
       -- The decisive assertion for BUG-4: the command saw the seed and ran.
       D.doesFileExist (project ^. #root </> "cmd.log") `shouldReturn` True
       -- Standard output carries the rendered prompt and nothing from the
       -- command phase; the progress line and the command's output go to
       -- standard error.
-      out `shouldSatisfy` T.isInfixOf "Blueprint Identity"
+      out `shouldSatisfy` T.isInfixOf "baseline complete"
       out `shouldNotSatisfy` T.isInfixOf commandOutput
       out `shouldNotSatisfy` T.isInfixOf "baseline command"
       err `shouldSatisfy` T.isInfixOf "Running 1 baseline command(s)..."
       err `shouldSatisfy` T.isInfixOf commandOutput
       -- The agent is told the commands already ran.
-      out `shouldSatisfy` T.isInfixOf "commands already ran"
+      prompt <- TIO.readFile (project ^. #launchLog)
+      prompt `shouldSatisfy` T.isInfixOf "commands already ran"
       TIO.readFile (project ^. #root </> "cmd.log")
     viaBlueprint `shouldBe` viaRun
 
   it "finishes the command phase before a batch provider launches" $
     withProject [sentinelCommand] $ \project -> do
-      (out, err) <- succeed project [] ["agent", "run", "proto-bp", "--batch"]
+      (out, err) <- succeed project [("SEIHOU_BASELINE_SENTINEL", project ^. #root </> "cmd.log")] ["agent", "run", "proto-bp", "--batch"]
       -- The stub exits 1 unless cmd.log exists, so success proves ordering.
       out `shouldSatisfy` T.isInfixOf "baseline complete"
       out `shouldNotSatisfy` T.isInfixOf commandOutput
@@ -109,7 +145,7 @@ spec = do
   it "publishes receipts before a command commits the manifest, and withdraws them on failure" $ do
     withProject [initCommand, commitCommand] $ \project -> do
       let root = project ^. #root
-      _ <- succeed project [] ["agent", "--debug", "run", "proto-bp"]
+      _ <- succeed project [] ["agent", "run", "proto-bp", "--batch"]
       (_, committed) <- committedManifest root
       map (^. #command) (demoReceipts committed) `shouldMatchList` [initCommand, commitCommand]
       -- The phase confirmed the published receipts rather than rewriting them.
@@ -117,7 +153,7 @@ spec = do
       demoReceipts onDisk `shouldBe` demoReceipts committed
     withProject [initCommand, commitCommand, "exit 7"] $ \project -> do
       let root = project ^. #root
-      (code, _, err) <- runSeihou project [] ["agent", "--debug", "run", "proto-bp"]
+      (code, _, err) <- runSeihou project [] ["agent", "run", "proto-bp", "--batch"]
       code `shouldBe` ExitFailure 1
       err `shouldSatisfy` T.isInfixOf "withdrawn from .seihou/manifest.json"
       err `shouldSatisfy` T.isInfixOf "commit the result of the successful rerun"
@@ -144,21 +180,21 @@ spec = do
           TIO.readFile (project ^. #root </> "order.log")
     viaRun <- observe ["run", "demo"]
     viaRun `shouldBe` "child-one\ndemo-hi\nquiet\n"
-    viaBlueprint <- observe ["agent", "--debug", "run", "proto-bp"]
+    viaBlueprint <- observe ["agent", "run", "proto-bp", "--batch"]
     viaBlueprint `shouldBe` viaRun
 
   it "repeats commands on an explicit rerun and skips files and commands under --no-baseline" $ do
     withProject [sentinelCommand] $ \project -> do
       let root = project ^. #root
-      _ <- succeed project [] ["agent", "--debug", "run", "proto-bp"]
-      _ <- succeed project [] ["agent", "--debug", "run", "proto-bp"]
+      _ <- succeed project [] ["agent", "run", "proto-bp", "--batch"]
+      _ <- succeed project [] ["agent", "run", "proto-bp", "--batch"]
       TIO.readFile (root </> "cmd.log") `shouldReturn` "applied\napplied\n"
-      (_, err) <- succeed project [] ["agent", "--debug", "run", "proto-bp", "--no-baseline"]
+      (_, err) <- succeed project [] ["agent", "run", "proto-bp", "--batch", "--no-baseline"]
       err `shouldNotSatisfy` T.isInfixOf "baseline command"
       TIO.readFile (root </> "cmd.log") `shouldReturn` "applied\napplied\n"
     withProject [sentinelCommand] $ \project -> do
       let root = project ^. #root
-      _ <- succeed project [] ["agent", "--debug", "run", "proto-bp", "--no-baseline"]
+      _ <- succeed project [] ["agent", "run", "proto-bp", "--batch", "--no-baseline"]
       D.doesFileExist (root </> "cmd.log") `shouldReturn` False
       D.doesFileExist (root </> "LICENSE") `shouldReturn` False
 
@@ -169,7 +205,7 @@ spec = do
       _ <- succeed project [] ["run", "demo", "--no-commands"]
       before <- readManifest root
       demoReceipts before `shouldBe` []
-      _ <- succeed project [] ["agent", "--debug", "run", "proto-bp"]
+      _ <- succeed project [] ["agent", "run", "proto-bp", "--batch"]
       TIO.readFile (root </> "cmd.log") `shouldReturn` "applied\n"
       after <- readManifest root
       map (^. #command) (demoReceipts after) `shouldBe` [sentinelCommand]
@@ -177,7 +213,7 @@ spec = do
     withProject [sentinelCommand] $ \project -> do
       let root = project ^. #root
       _ <- succeed project [] ["run", "demo"]
-      _ <- succeed project [] ["agent", "--debug", "run", "proto-bp"]
+      _ <- succeed project [] ["agent", "run", "proto-bp", "--batch"]
       manifest <- readManifest root
       map (^. #command) (demoReceipts manifest) `shouldBe` [sentinelCommand]
       length [a | a <- manifest ^. #applications, a ^. #target == AppliedModuleTarget "demo"] `shouldBe` 1
@@ -186,28 +222,28 @@ spec = do
     withProject [] $ \project -> do
       let root = project ^. #root
       writeDemo project (commandsField [checkout "echo checkout >> checkout.log", apply sentinelCommand])
-      _ <- succeed project [] ["agent", "--debug", "run", "proto-bp"]
+      _ <- succeed project [] ["agent", "run", "proto-bp", "--batch"]
       TIO.readFile (root </> "checkout.log") `shouldReturn` "checkout\n"
       manifest <- readManifest root
       map (^. #command) (demoReceipts manifest) `shouldBe` [sentinelCommand]
 
   it "keeps command-free and empty baselines quiet" $ do
     withProject [] $ \project -> do
-      (_, err) <- succeed project [] ["agent", "--debug", "run", "proto-bp"]
+      (_, err) <- succeed project [] ["agent", "run", "proto-bp", "--batch"]
       err `shouldNotSatisfy` T.isInfixOf "baseline command"
       D.doesFileExist (project ^. #root </> "LICENSE") `shouldReturn` True
     withProject [sentinelCommand] $ \project -> do
       writeBlueprint project "[] : List { module : Text, vars : List { name : Text, value : Text } }"
-      (_, err) <- succeed project [] ["agent", "--debug", "run", "proto-bp"]
+      (_, err) <- succeed project [] ["agent", "run", "proto-bp", "--batch"]
       err `shouldNotSatisfy` T.isInfixOf "baseline command"
       D.doesFileExist (project ^. #root </> "cmd.log") `shouldReturn` False
 
   it "refuses a baseline conflict before running any command" $
     withProject [sentinelCommand] $ \project -> do
       let root = project ^. #root
-      _ <- succeed project [] ["agent", "--debug", "run", "proto-bp"]
+      _ <- succeed project [] ["agent", "run", "proto-bp", "--batch"]
       TIO.writeFile (root </> "LICENSE") "edited by hand\n"
-      (code, out, err) <- runSeihou project [] ["agent", "--debug", "run", "proto-bp"]
+      (code, out, err) <- runSeihou project [] ["agent", "run", "proto-bp", "--batch"]
       code `shouldBe` ExitFailure 1
       (out <> err) `shouldSatisfy` T.isInfixOf "Baseline conflicts detected"
       TIO.readFile (root </> "cmd.log") `shouldReturn` "applied\n"
@@ -262,7 +298,7 @@ withProject commands action =
       ( T.unlines
           [ "#!/bin/sh",
             "printf '%s\\n' \"$@\" > \"$SEIHOU_FAKE_AGENT_LOG\"",
-            "if [ ! -f \"$SEIHOU_BASELINE_SENTINEL\" ]; then echo 'baseline sentinel missing' >&2; exit 1; fi",
+            "if [ -n \"$SEIHOU_BASELINE_SENTINEL\" ] && [ ! -f \"$SEIHOU_BASELINE_SENTINEL\" ]; then echo 'baseline sentinel missing' >&2; exit 1; fi",
             "printf '%s\\n' '{\"result\":\"baseline complete\",\"is_error\":false,\"session_id\":\"fake\"}'"
           ]
       )
@@ -342,8 +378,7 @@ runSeihou project extraEnv args = do
           ("XDG_CONFIG_HOME", root </> "config"),
           ("XDG_CACHE_HOME", root </> "cache"),
           ("PATH", project ^. #fakeBin <> [searchPathSeparator] <> inheritedPath),
-          ("SEIHOU_FAKE_AGENT_LOG", project ^. #launchLog),
-          ("SEIHOU_BASELINE_SENTINEL", root </> "cmd.log")
+          ("SEIHOU_FAKE_AGENT_LOG", project ^. #launchLog)
         ]
           <> extraEnv
       cleared = ["SEIHOU_AGENT_PROVIDER", "SEIHOU_AGENT_MODEL", "SEIHOU_AGENT_EFFORT", "SEIHOU_AGENT_TRACE", "SEIHOU_CONTEXT"]
