@@ -168,12 +168,42 @@ let field =
 let scalar =
       \(name : Text) ->
       \(description : Text) ->
-        field name description Cardinality.Scalar (None FieldFormat) (None NestedRules)
+        field
+          name
+          description
+          Cardinality.Scalar
+          (None FieldFormat)
+          (None NestedRules)
 
 let versionRule =
       scalar
         "version"
         "The version the registry catalog records for this artifact. Optional rather than required, because `seihou-registry.dhall` itself declares `version : Optional Text`; a profile that demanded it would refuse a valid registry."
+
+let migrationEdgesRule =
+          field
+            "seihouMigrationEdges"
+            "The observed owner edges. An empty list records no edges; older pages may omit the field."
+            Cardinality.List
+            (None FieldFormat)
+            (None NestedRules)
+      //  { elementFields = Some
+              (     emptyNestedRules
+                //  { allowUnknownFields = False
+                    , required =
+                      [ nestedScalar "from" "The starting version."
+                      , nestedScalar "to" "The destination version."
+                      , nestedScalar
+                          "anchor"
+                          "The fragment of the migration section in the owner page."
+                      ]
+                    }
+              )
+          , uniqueBy = Some "anchor"
+          }
+
+let migrationOwnerRules =
+      emptyRules // { optional = [ versionRule, migrationEdgesRule ] }
 
 let artifactType =
       \(name : Text) ->
@@ -198,8 +228,12 @@ in  { guidance = None Text
     , frontmatter =
             emptyRules
         //  { required =
-              [ scalar "type" "Which kind of Seihou artifact this concept documents."
-              , scalar "title" "The artifact's name, exactly as the registry publishes it."
+              [ scalar
+                  "type"
+                  "Which kind of Seihou artifact this concept documents."
+              , scalar
+                  "title"
+                  "The artifact's name, exactly as the registry publishes it."
               , scalar
                   "description"
                   "What the artifact is for. Taken from the registry catalog entry, else the artifact's own description, else synthesized."
@@ -253,18 +287,20 @@ in  { guidance = None Text
     , idField = None Text
     , requireBundleVersion = Some "0.2"
     , types =
-      [ artifactType
-          "SeihouModule"
-          "A deterministic file-generation template: variables, generation steps, shell commands, dependencies, managed/seed/checkout ownership, an optional removal procedure, judgement references and optional migration edges."
-          "modules"
+      [     artifactType
+              "SeihouModule"
+              "A deterministic file-generation template: variables, generation steps, shell commands, dependencies, managed/seed/checkout ownership, an optional removal procedure, judgement references and optional migration edges."
+              "modules"
+        //  { frontmatter = migrationOwnerRules }
       , artifactType
           "SeihouRecipe"
           "A declared composition of modules with sourced dependencies, preset variable bindings, an optional single base and explicit overrides."
           "recipes"
-      , artifactType
-          "SeihouBlueprint"
-          "An agent-driven scaffold: a prompt, optional base modules, reference files and optional agent-guided migration edges."
-          "blueprints"
+      ,     artifactType
+              "SeihouBlueprint"
+              "An agent-driven scaffold: a prompt, optional base modules, reference files and optional agent-guided migration edges."
+              "blueprints"
+        //  { frontmatter = migrationOwnerRules }
       , artifactType
           "SeihouPrompt"
           "A reusable agent-session template."

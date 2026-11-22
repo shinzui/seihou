@@ -1,12 +1,14 @@
 module Seihou.OKF.Docs.RenderSpec (tests) where
 
 import Control.Lens ((%~), (&), (.~), (?~), (^.))
+import Data.Aeson (Value (..), object, toJSON, (.=))
 import Data.Generics.Labels ()
 import Data.List (sort)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Okf.Bundle qualified as Okf
 import Okf.ConceptId qualified as Okf
+import Okf.Document qualified as Okf
 import Okf.Validation (BundleValidationError (..), ValidationProfile (..))
 import Seihou.Core.Migration
   ( BlueprintMigration (..),
@@ -46,6 +48,33 @@ spec = do
       rendered `shouldSatisfy` T.isInfixOf "title: base"
       rendered `shouldSatisfy` T.isInfixOf "resource: seihou://fixture/modules/base"
       rendered `shouldSatisfy` T.isInfixOf "version: 1.0.0"
+
+    it "publishes structured migration edges with a single target per anchor" $ do
+      concept <- requireConcept "modules/rich" testOptions richModel
+      let edge start end anchor =
+            object ["from" .= String start, "to" .= String end, "anchor" .= String anchor]
+          firstAnchor = "migration-0_2e_1_2e_0-0_2e_2_2e_0"
+          secondAnchor = "migration-0_2e_2_2e_0-0_2e_3_2e_0"
+          rendered = Okf.serializeConcept concept
+      Okf.frontmatterLookup "seihouMigrationEdges" (Okf.frontmatter (Okf.conceptDocument concept))
+        `shouldBe` Just (toJSON [edge "0.1.0" "0.2.0" firstAnchor, edge "0.2.0" "0.3.0" secondAnchor])
+      T.count ("<a id=\"" <> firstAnchor <> "\"></a>") rendered `shouldBe` 1
+      T.count ("<a id=\"" <> secondAnchor <> "\"></a>") rendered `shouldBe` 1
+      owner <- requireConcept "modules/base" testOptions wellFormedModel
+      Okf.frontmatterLookup "seihouMigrationEdges" (Okf.frontmatter (Okf.conceptDocument owner))
+        `shouldBe` Just (toJSON ([] :: [Value]))
+      nonOwner <- requireConcept "recipes/app-recipe" testOptions wellFormedModel
+      Okf.frontmatterLookup "seihouMigrationEdges" (Okf.frontmatter (Okf.conceptDocument nonOwner))
+        `shouldBe` Nothing
+
+    it "refuses duplicate migration edges" $ do
+      let duplicate entry =
+            case entry ^. #artifact of
+              DocModuleArtifact modl@Module {migrations} ->
+                entry & #artifact .~ DocModuleArtifact (modl & #migrations .~ (migrations <> migrations))
+              _ -> entry
+      renderDocBundle testOptions (richModel & #entries %~ fmap duplicate)
+        `shouldBe` Left [AmbiguousMigrationAnchor DocModuleKind "rich" "migration-0_2e_1_2e_0-0_2e_2_2e_0"]
 
     it "renders resolvable cross-links to composed modules" $ do
       concept <- requireConcept "recipes/app-recipe" testOptions wellFormedModel

@@ -15,9 +15,10 @@ module Seihou.OKF.Docs.Render
 where
 
 import Control.Lens ((^.))
-import Data.Aeson (Value (..))
+import Data.Aeson (Value (..), object, toJSON, (.=))
 import Data.Aeson.Text qualified as Aeson
 import Data.Bifunctor (first)
+import Data.Char (ord)
 import Data.Either (partitionEithers)
 import Data.FileEmbed (embedStringFile)
 import Data.Foldable (toList)
@@ -25,10 +26,12 @@ import Data.Generics.Labels ()
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Text.Lazy qualified as TL
 import GHC.Generics (Generic)
+import Numeric (showHex)
 import Okf.Actor (Actor (..))
 import Okf.Bundle (BundleError, Concept, bundleInventoryOfConcepts, conceptFromDocument, writeBundle)
 import Okf.ConceptId (ConceptId, parseConceptId, renderConceptLink)
@@ -119,6 +122,7 @@ defaultRenderOptions version =
 
 data DocRenderError
   = InvalidDocConceptId DocKind T.Text T.Text
+  | AmbiguousMigrationAnchor DocKind T.Text T.Text
   deriving stock (Eq, Show)
 
 data DocBundleError
@@ -238,18 +242,50 @@ conceptFor opts repoName entry =
   case conceptIdFor (entry ^. #kind) (entry ^. #name) of
     Left err ->
       Left (InvalidDocConceptId (entry ^. #kind) (entry ^. #name) err)
-    Right conceptId ->
-      Right (conceptFromDocument conceptId (documentFor opts repoName entry))
+    Right conceptId
+      | anchor : _ <- ambiguous ->
+          Left (AmbiguousMigrationAnchor (entry ^. #kind) (entry ^. #name) anchor)
+      | otherwise ->
+          Right (conceptFromDocument conceptId (Okf.OKFDocument (frontmatterFor opts repoName entry) body))
+  where
+    body = bodyFor repoName entry
+    anchors = Set.fromList (map (uncurry migrationAnchor) (foldMap id (migrationPairs entry)))
+    counts = Map.fromListWith (+) [(line, 1 :: Int) | line <- T.lines body]
+    ambiguous =
+      [anchor | anchor <- Set.toList anchors, Map.lookup (anchorTag anchor) counts /= Just 1]
 
-documentFor :: RenderOptions -> T.Text -> DocEntry -> Okf.OKFDocument
-documentFor opts repoName entry =
-  Okf.OKFDocument
-    (frontmatterFor opts repoName entry)
-    (bodyFor repoName entry)
+migrationPairs :: DocEntry -> Maybe [(T.Text, T.Text)]
+migrationPairs entry =
+  case entry ^. #artifact of
+    DocModuleArtifact Module {migrations} -> Just [(from, to) | Migration {from, to} <- migrations]
+    DocBlueprintArtifact Blueprint {migrations} -> Just [(from, to) | BlueprintMigration {from, to} <- migrations]
+    _ -> Nothing
+
+migrationAnchor :: T.Text -> T.Text -> T.Text
+migrationAnchor from to = "migration-" <> encode from <> "-" <> encode to
+  where
+    -- The separator never appears inside an encoded version. Escape underscores
+    -- as well so literal text cannot be confused with an escaped code point.
+    encode = T.concatMap encodeChar
+    encodeChar c
+      | ('a' <= c && c <= 'z') || ('0' <= c && c <= '9') = T.singleton c
+      | otherwise = "_" <> T.pack (showHex (ord c) "") <> "_"
+
+anchorTag :: T.Text -> T.Text
+anchorTag anchor = "<a id=\"" <> anchor <> "\"></a>"
+
+migrationHeading :: T.Text -> T.Text -> T.Text
+migrationHeading from to =
+  anchorTag (migrationAnchor from to) <> "\n\n### " <> versionLabel from <> " → " <> versionLabel to
+  where
+    versionLabel version
+      | not (T.null version) && T.all (\c -> c `elem` ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-+_" :: String)) version =
+          T.replace "_" "\\_" version
+      | otherwise = inlineCode version
 
 frontmatterFor :: RenderOptions -> T.Text -> DocEntry -> Okf.Frontmatter
 frontmatterFor opts repoName entry =
-  maybeSetVersion
+  maybeSetEdges . maybeSetVersion $
     ( baseFrontmatter
         opts
         (typeFor (entry ^. #kind))
@@ -259,6 +295,10 @@ frontmatterFor opts repoName entry =
         (entry ^. #tags)
     )
   where
+    maybeSetEdges =
+      maybe id (Okf.setField "seihouMigrationEdges" . toJSON . fmap edgeField) (migrationPairs entry)
+    edgeField (from, to) =
+      object ["from" .= from, "to" .= to, "anchor" .= migrationAnchor from to]
     maybeSetVersion =
       maybe id (\version -> Okf.setField "version" (String version)) (entry ^. #version)
 
@@ -394,6 +434,7 @@ bodyFor repoName entry =
   T.intercalate
     "\n\n"
     ( baseSections repoName entry
+        <> usageSections entry
         <> optionalSection "Declaration metadata" (renderDeclaredMetadata entry)
         <> optionalSection "Judgements" (renderJudgementRefs (entry ^. #judgementRefs))
         <> kindSections entry
@@ -406,6 +447,60 @@ baseSections repoName entry =
     descriptionFor repoName entry
   ]
     <> foldMap (\version -> ["**Version:** " <> version]) (entry ^. #version)
+
+-- The lead paragraph already gives the registry author's purpose. Add the
+-- point in the project workflow where each kind is used and its normal commands.
+usageSections :: DocEntry -> [T.Text]
+usageSections entry =
+  [ section "When to use" purpose,
+    section "How to use" (T.intercalate "\n\n" [prerequisites, install, fencedBlock "bash" (T.unlines commands), result])
+  ]
+  where
+    name = shellArgument (entry ^. #name)
+    install =
+      "If the artifact is not installed, set `REGISTRY_GIT_URL` to the Git URL of its publishing registry and run:\n\n"
+        <> fencedBlock "bash" ("seihou install \"$REGISTRY_GIT_URL\" --module " <> name)
+    (purpose, prerequisites, commands, result) =
+      case entry ^. #artifact of
+        DocModuleArtifact _ ->
+          ( "Use this module to generate or manage the files listed under Generation steps.",
+            "Run from the project directory. Supply the required Variables through Seihou configuration, its prompts or `--var KEY=VALUE`.",
+            ["seihou run " <> name <> " --dry-run", "seihou run " <> name],
+            "Review the planned files and commands in the preview. Applying the plan writes the files, runs the declared commands and records the application in the project manifest."
+          )
+        DocRecipeArtifact _ ->
+          ( "Use this recipe to apply its module composition together.",
+            "Run from the project directory. Seihou resolves the base recipe and inherited bindings where declared. Supply remaining required inputs through project configuration, prompts or `--var KEY=VALUE`.",
+            ["seihou run " <> name <> " --dry-run", "seihou run " <> name],
+            "Review the composed plan before applying it. The recipe's bindings configure its modules, and the CLI overrides let you choose different values for this run."
+          )
+        DocBlueprintArtifact _ ->
+          ( "Use this blueprint when you want an agent to carry out the task under Agent prompt.",
+            "Run from the target project directory with an authenticated Seihou agent provider. Supply the declared variables and prompt answers. Review Base modules, Reference files and Tools before starting.",
+            ["seihou agent run " <> name],
+            "Seihou applies the declared base modules, prepares the reference files and starts an agent session with the rendered task and tool permissions."
+          )
+        DocPromptArtifact _ ->
+          ( "Use this prompt to start a reusable agent session for the task under Agent prompt.",
+            "Run in the working directory for that task with an authenticated Seihou agent provider. Supply the declared variables and prompt answers. Review any command-derived inputs and allowed tools.",
+            ["seihou prompt run " <> name],
+            "Seihou resolves inputs, prepares the reference files and launches the session with the rendered prompt and guidance."
+          )
+        DocJudgementArtifact _ ->
+          ( "Use this judgement to review staged changes against the checks below.",
+            "Run in the consuming Git project. Offline evaluation requires the judgement's labelled `examples.json`. Activation requires a configured review provider and model and the project's consent to the review route's data policy.",
+            [ "seihou judgement eval " <> name <> " --offline",
+              "seihou run " <> name <> " --dry-run",
+              "seihou run " <> name,
+              "seihou check --staged"
+            ],
+            "Offline evaluation validates examples and runs the deterministic scan. The activation preview shows the route and policy. Applying records an active judgement in the project manifest and installs the hook. Use `seihou judgement configure` in the consuming project to set its route, thresholds and enforcement."
+          )
+
+shellArgument :: T.Text -> T.Text
+shellArgument value
+  | not (T.null value) && T.all (\c -> c `elem` ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" :: String)) value = value
+  | otherwise = "'" <> T.replace "'" "'\"'\"'" value <> "'"
 
 -- | The per-kind body sections.
 --
@@ -431,7 +526,7 @@ kindSections entry =
         <> optionalSection "Generation steps" (renderSteps steps)
         <> optionalSection "Commands" (renderCommands commands)
         <> foldMap (optionalSection "Removal" . renderRemoval) removal
-        <> optionalSection "Migrations" (renderMigrations migrations)
+        <> optionalSection "Migrations" (renderMigrations (entry ^. #name) migrations)
     DocRecipeArtifact Recipe {modules = recipeModules, vars, prompts, extends, moduleOverrides, promptOverrides} ->
       foldMap (\ref -> [section "Extends" (renderRecipeBase entry ref)]) extends
         <> [section "Composes" (renderDependencies entry (maybe "This recipe does not compose any modules." (const "Uses its inherited members without adding modules.") extends) recipeModules)]
@@ -452,7 +547,7 @@ kindSections entry =
         <> foldMap (optionalSection "Version probe" . renderVersionProbe) versionProbe
         <> optionalSection
           "Migrations"
-          (renderBlueprintMigrations (resolvedEntailedBlueprints entry) migrations)
+          (renderBlueprintMigrations (entry ^. #name) (resolvedEntailedBlueprints entry) migrations)
     DocPromptArtifact AgentPrompt {prompt, vars, prompts, commandVars, guidance, files, allowedTools, launch} ->
       [section "Agent prompt" (renderAgentPrompt prompt)]
         <> optionalSection "Variables" (renderVarDecls' vars)
@@ -729,13 +824,25 @@ renderRemovalAction RemoveFileAction = "delete"
 renderRemovalAction RemoveSectionAction = "strip this module's section from"
 renderRemovalAction RewriteFileAction = "rewrite"
 
-renderMigrations :: [Migration] -> T.Text
-renderMigrations migrations =
-  T.intercalate "\n\n" (renderMigration <$> migrations)
+renderMigrations :: T.Text -> [Migration] -> T.Text
+renderMigrations name migrations =
+  T.intercalate "\n\n" (renderMigration name <$> migrations)
 
-renderMigration :: Migration -> T.Text
-renderMigration Migration {from, to, ops} =
-  "### " <> from <> " → " <> to <> "\n\n" <> renderMigrationOps ops
+renderMigration :: T.Text -> Migration -> T.Text
+renderMigration name Migration {from, to, ops} =
+  T.intercalate
+    "\n\n"
+    [ migrationHeading from to,
+      "From a project with "
+        <> inlineCode name
+        <> " applied at "
+        <> inlineCode from
+        <> ", preview the migration to "
+        <> inlineCode to
+        <> ". Remove `--dry-run` to apply the operations below and advance the recorded version.",
+      fencedBlock "bash" ("seihou migrate " <> shellArgument name <> " --to " <> shellArgument to <> " --dry-run"),
+      renderMigrationOps ops
+    ]
 
 renderMigrationOps :: [MigrationOp] -> T.Text
 renderMigrationOps [] = "This edge declares no operations; it advances the recorded version only."
@@ -752,15 +859,19 @@ renderMigrationOp RunCommand {run, workDir} =
 
 -- | Blueprint migration edges, each with the guidance the agent is given and
 -- the other blueprints' edges that crossing this one entails.
-renderBlueprintMigrations :: [T.Text] -> [BlueprintMigration] -> T.Text
-renderBlueprintMigrations resolvedBlueprints migrations =
-  T.intercalate "\n\n" (renderBlueprintMigration resolvedBlueprints <$> migrations)
+renderBlueprintMigrations :: T.Text -> [T.Text] -> [BlueprintMigration] -> T.Text
+renderBlueprintMigrations name resolvedBlueprints migrations =
+  T.intercalate "\n\n" (renderBlueprintMigration name resolvedBlueprints <$> migrations)
 
-renderBlueprintMigration :: [T.Text] -> BlueprintMigration -> T.Text
-renderBlueprintMigration resolvedBlueprints BlueprintMigration {from, to, prompt, entails} =
+renderBlueprintMigration :: T.Text -> [T.Text] -> BlueprintMigration -> T.Text
+renderBlueprintMigration name resolvedBlueprints BlueprintMigration {from, to, prompt, entails} =
   T.intercalate
     "\n\n"
-    ( ["### " <> from <> " → " <> to, T.strip prompt]
+    ( [ migrationHeading from to,
+        "Run in the project using the library at " <> inlineCode from <> ", with the blueprint installed and an authenticated agent provider. Seihou gives the agent the instructions below for the move to " <> inlineCode to <> ".",
+        fencedBlock "bash" ("seihou agent migrate " <> shellArgument name <> " --from " <> shellArgument from <> " --to " <> shellArgument to),
+        T.strip prompt
+      ]
         <> renderEntails resolvedBlueprints entails
     )
 

@@ -1,4 +1,4 @@
-module Seihou.OKF.Docs.ModelSpec (tests, writeCurrentFixtureRegistry) where
+module Seihou.OKF.Docs.ModelSpec (tests, writeFixtureRegistry, writeCurrentFixtureRegistry) where
 
 import Control.Lens ((^.))
 import Data.Generics.Labels ()
@@ -155,6 +155,7 @@ withFixtureRegistry action =
 
 writeFixtureRegistry :: FilePath -> IO ()
 writeFixtureRegistry registryDir = do
+  createDirectoryIfMissing True registryDir
   writeFile (registryDir </> "seihou-registry.dhall") registryDhall
   writeModule registryDir "modules/base" "base" [] "Base module"
   writeModule registryDir "modules/app" "app" ["base"] "Application module"
@@ -165,6 +166,9 @@ writeFixtureRegistry registryDir = do
   writePrompt registryDir
   createDirectoryIfMissing True (registryDir </> "judgements/docs-review")
   writeFile (registryDir </> "judgements/docs-review/judgement.dhall") judgementDhall
+  writeFile
+    (registryDir </> "judgements/docs-review/examples.json")
+    "{\"version\":1,\"examples\":[{\"id\":\"current-docs\",\"files\":[{\"path\":\"docs/usage.md\",\"content\":\"Describe the current CLI options.\"}],\"expect\":{\"stale-docs\":\"passed\"}}]}"
 
 writeModule :: FilePath -> FilePath -> String -> [String] -> String -> IO ()
 writeModule registryDir relDir name dependencies description = do
@@ -209,7 +213,7 @@ registryDhall =
   \, recipes = [ { name = \"app-recipe\", version = Some \"0.1.0\", path = \"recipes/app-recipe\", description = Some \"Recipe\", tags = [ \"recipe\" ] } ]\n\
   \, blueprints =\n\
   \  [ { name = \"app-blueprint\", version = Some \"0.1.0\", path = \"blueprints/app-blueprint\", description = Some \"Blueprint\", tags = [ \"blueprint\" ] }\n\
-  \  , { name = \"entailing-blueprint\", version = Some \"0.1.0\", path = \"blueprints/entailing-blueprint\", description = Some \"Entailing blueprint\", tags = [] : List Text }\n\
+  \  , { name = \"entailing-blueprint\", version = Some \"0.1.0\", path = \"blueprints/entailing-blueprint\", description = Some \"Upgrade the application runtime and its dependent libraries\", tags = [] : List Text }\n\
   \  ]\n\
   \, prompts = [ { name = \"review\", version = Some \"0.1.0\", path = \"prompts/review\", description = Some \"Review prompt\", tags = [ \"prompt\" ] } ]\n\
   \, judgements = [ { name = \"docs-review\", version = Some \"1.0.0\", path = \"judgements/docs-review\", description = Some \"Docs review\", tags = [] : List Text } ]\n\
@@ -282,7 +286,7 @@ entailingBlueprintDhall :: String
 entailingBlueprintDhall =
   "{ name = \"entailing-blueprint\"\n\
   \, version = Some \"0.1.0\"\n\
-  \, description = Some \"Entailing blueprint\"\n\
+  \, description = Some \"Upgrade the application runtime and its dependent libraries\"\n\
   \, prompt = \"Upgrade\"\n\
   \, vars = [] : "
     <> varDeclListType
@@ -387,7 +391,7 @@ judgementDhall =
 writeCurrentFixtureRegistry :: FilePath -> IO ()
 writeCurrentFixtureRegistry registryDir = do
   writeFixtureRegistry registryDir
-  overlay "modules/app/module.dhall" "let Op = < MoveFile : { src : Text, dest : Text } | MoveDir : { src : Text, dest : Text } | DeleteFile : { path : Text } | DeleteDir : { path : Text } | RemoveLine : { path : Text, line : Text } | RunCommand : { run : Text, workDir : Optional Text } >\nlet Action = < Apply : Text | Checkout : Text >\nin { dependencies = [ { module = \"base\", source = Some \"https://example.invalid/modules.git\", vars = [ {name=\"literal\",value=\"a|`b`\"} ] } ]\n, judgements = [ { name = \"docs-review\", source = None Text, when = Some \"IsSet project.name\" }, { name = \"docs-review\", source = Some \"https://example.invalid/reviews.git\", when = None Text }, { name = \"catalogue-review\", source = None Text, when = None Text } ]\n, steps = [ {strategy=\"template\",src=\"managed.tpl\",dest=\"managed\",when=None Text,patch=None Text,lifecycle=Some \"managed\"}, {strategy=\"template\",src=\"seed.tpl\",dest=\"seed\",when=None Text,patch=None Text,lifecycle=Some \"seed\"}, {strategy=\"symlink\",src=\"files\",dest=\"linked\",when=None Text,patch=None Text,lifecycle=Some \"checkout\"} ]\n, commands = [ {action=Action.Checkout \"touch SHOULD-NOT-EXIST\",workDir=None Text,when=None Text} ]\n, migrations = [ {from=\"1\",to=\"2\",ops=[Op.RemoveLine {path=\".gitignore\",line=\"exact|`literal`\"}]} ]\n}"
+  overlay "modules/app/module.dhall" "let Op = < MoveFile : { src : Text, dest : Text } | MoveDir : { src : Text, dest : Text } | DeleteFile : { path : Text } | DeleteDir : { path : Text } | RemoveLine : { path : Text, line : Text } | RunCommand : { run : Text, workDir : Optional Text } >\nlet Action = < Apply : Text | Checkout : Text >\nin { dependencies = [ { module = \"base\", source = Some \"https://example.invalid/modules.git\", vars = [ {name=\"literal\",value=\"a|`b`\"} ] } ]\n, judgements = [ { name = \"docs-review\", source = None Text, when = Some \"IsSet project.name\" }, { name = \"docs-review\", source = Some \"https://example.invalid/reviews.git\", when = None Text }, { name = \"catalogue-review\", source = None Text, when = None Text } ]\n, steps = [ {strategy=\"template\",src=\"managed.tpl\",dest=\"managed\",when=None Text,patch=None Text,lifecycle=Some \"managed\"}, {strategy=\"template\",src=\"seed.tpl\",dest=\"seed\",when=None Text,patch=None Text,lifecycle=Some \"seed\"}, {strategy=\"symlink\",src=\"files\",dest=\"linked\",when=None Text,patch=None Text,lifecycle=Some \"checkout\"} ]\n, commands = [ {action=Action.Checkout \"touch SHOULD-NOT-EXIST\",workDir=None Text,when=None Text} ]\n, migrations = [ {from=\"2.4.0\",to=\"3.0.0\",ops=[Op.RemoveLine {path=\".gitignore\",line=\"exact|`literal`\"}]} ]\n}"
   overlay "recipes/app-recipe/recipe.dhall" "{ modules = [ { module = \"base\", source = None Text, vars = [] : List {name : Text,value : Text} }, { module = \"base\", source = Some \"https://example.invalid/modules.git\", vars = [] : List {name : Text,value : Text} } ]\n, extends = Some { recipe = \"app-recipe\", source = Some \"https://example.invalid/recipes.git\", versionRange = Some {minimum=\"1\",before=\"2\"} }\n, moduleOverrides = [ { module = \"inherited\", vars = [ {name=\"literal\",value=\"a|`b`\"} ] } ]\n, promptOverrides = [ {var=\"inherited\",text=\"First line\\n```text\\nsecond | line\",when=None Text,choices=None (List Text)} ]\n, judgements = [ { name = \"docs-review\", source = None Text, when = Some \"IsSet project.name\" }, { name = \"docs-review\", source = Some \"https://example.invalid/reviews.git\", when = None Text }, { name = \"catalogue-review\", source = None Text, when = None Text } ] }"
   overlay "blueprints/app-blueprint/blueprint.dhall" "{ baseModules = [ { module = \"base\", source = Some \"https://example.invalid/modules.git\", vars = [] : List {name : Text,value : Text} } ], allowedTools=Some ([] : List Text), prompt=\"First line\\n```text\\nsecond | line\",versionProbe=Some \"touch SHOULD-NOT-EXIST\\n```\",launch=Some {provider=Some \"test\",model=Some \"model\",effort=Some \"high\",mode=Some \"reserved\"} }"
   let judgementPath = registryDir </> "judgements/docs-review/judgement.dhall"

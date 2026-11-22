@@ -35,8 +35,10 @@ bundle safe to commit and to diff in review.
 ## What ends up on each page
 
 Every page carries the artifact's name, its description, and the version the registry catalog
-records. Beyond that, a page shows what its artifact actually declares — and omits the
-sections it declares nothing for.
+records. The usage sections explain when to use the artifact, what it needs and which
+commands to run in the consuming project. The rest of the page shows the artifact’s
+declarations. To publish more specific guidance in the generated page, write it into the
+registry entry’s description or the artifact’s description when the entry has none.
 
 For a **module** (`module.dhall`):
 
@@ -67,6 +69,17 @@ reference files, its tool allowlist, and its launch preferences.
 
 Conditions are shown in the same `when` syntax you wrote them in, for example
 ``when `Eq nix.treefmt true` ``.
+
+## Migration links
+
+Module and blueprint pages include a `seihouMigrationEdges` list in frontmatter.
+Each item records the starting version (`from`), destination version (`to`) and
+fragment in that page (`anchor`). An empty list records that the owner declares
+no migration edges. Older bundles may omit the field.
+
+Each fragment identifies the corresponding migration instructions inside the
+owner document. Those instructions describe which project state the example
+expects and what applying the edge will do.
 
 ## Entailed migration edges
 

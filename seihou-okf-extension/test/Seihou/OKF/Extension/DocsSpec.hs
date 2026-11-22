@@ -136,6 +136,24 @@ spec = do
             "maxFindings: 20",
             "not calibrated risk estimates"
           ]
+        prompt <- page "prompts/review.md"
+        edgeOwner <- page "blueprints/entailing-blueprint.md"
+        let guidance =
+              [ (app, "seihou run app --dry-run"),
+                (recipe, "seihou run app-recipe --dry-run"),
+                (blueprint, "seihou agent run app-blueprint"),
+                (prompt, "seihou prompt run review"),
+                (judgement, "seihou judgement eval docs-review --offline")
+              ]
+        mapM_
+          ( \(body, command) -> do
+              body `shouldSatisfy` T.isInfixOf "## When to use"
+              body `shouldSatisfy` T.isInfixOf "## How to use"
+              body `shouldSatisfy` T.isInfixOf command
+          )
+          guidance
+        app `shouldSatisfy` T.isInfixOf "seihou migrate app --to 3.0.0 --dry-run"
+        edgeOwner `shouldSatisfy` T.isInfixOf "seihou agent migrate entailing-blueprint --from 2.4.0 --to 3.0.0"
         validateWritten outDir
 
     it "preserves every existing output file on invalid input and rejecting profiles even with force" $
@@ -244,11 +262,11 @@ demandingProfile :: T.Text
 demandingProfile =
   T.replace
     demandingProfileAnchor
-    ("[ scalar \"stale_after\" \"A key this generator never emits.\"\n              , scalar \"type\"")
+    (demandingProfileAnchor <> "\n              , scalar \"stale_after\" \"A key this generator never emits.\"")
     builtinProfileDescriptor
 
 demandingProfileAnchor :: T.Text
-demandingProfileAnchor = "[ scalar \"type\""
+demandingProfileAnchor = "\"Which kind of Seihou artifact this concept documents.\""
 
 snapshot :: FilePath -> IO [(FilePath, T.Text)]
 snapshot root = do

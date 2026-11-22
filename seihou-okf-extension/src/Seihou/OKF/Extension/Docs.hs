@@ -187,6 +187,8 @@ renderDocumentParseError FrontmatterNotMapping =
 renderDocRenderError :: DocRenderError -> T.Text
 renderDocRenderError (InvalidDocConceptId kind name err) =
   "invalid OKF concept ID for " <> T.pack (show kind) <> " " <> name <> ": " <> err
+renderDocRenderError (AmbiguousMigrationAnchor kind name anchor) =
+  "ambiguous migration anchor for " <> T.pack (show kind) <> " " <> name <> ": " <> anchor
 
 -- | Every 'BundleValidationError' constructor gets its own branch, deliberately
 -- with no catch-all: @-Werror=incomplete-patterns@ then turns the next okf-core

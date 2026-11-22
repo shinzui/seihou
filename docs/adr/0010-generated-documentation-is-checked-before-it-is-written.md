@@ -84,6 +84,17 @@ contract; new fields and constructors must update the model, rendering and that 
 Literal values choose their delimiters from their contents so embedded fences and backticks
 cannot change their meaning.
 
+Module and blueprint concepts publish a `seihouMigrationEdges` list of `from`,
+`to` and `anchor` records. Seihou owns these locators and emits one standalone
+`<a id="…"></a>` immediately before each edge heading. The `migration-` fragment
+encodes each version independently, retaining lowercase ASCII letters and digits
+and escaping every other code point as lowercase hexadecimal between underscores.
+A hyphen joins the two encoded versions. This keeps the address stable when
+headings move and distinguishes version pairs that share a Markdown heading
+slug. Duplicate targets fail generation. A present empty list records an owner
+with no edges. An absent list is valid for older documentation that did not
+record edge coverage.
+
 ## Consequences
 
 `okf validate <bundle> --strict` and
