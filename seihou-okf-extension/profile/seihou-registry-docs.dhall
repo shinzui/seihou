@@ -189,8 +189,7 @@ let migrationEdgesRule =
             (None NestedRules)
       //  { elementFields = Some
               (     emptyNestedRules
-                //  { allowUnknownFields = False
-                    , required =
+                //  { required =
                       [ nestedScalar "from" "The starting version."
                       , nestedScalar "to" "The destination version."
                       , nestedScalar
