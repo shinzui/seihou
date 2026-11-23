@@ -9,7 +9,7 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-11-16T01:25:00Z"
-timestamp: "2026-11-21T15:49:46Z"
+timestamp: "2026-11-23T14:44:02Z"
 requestId: IR-23
 status: in-progress
 targetPlan: docs/plans/127-let-callers-supply-tool-policy-for-batch-blueprint-runs-and-migrations.md
@@ -20,7 +20,13 @@ origin: mori://shinzui/shikigami
 
 ## Status
 
-Claude support has passed source-level consumer acceptance. Release and installed acceptance are pending. It builds on IR-18
+Claude support passed consumer acceptance on the executable already installed
+on the development machine. A reviewed Codex candidate passed batch blueprint
+and migration checks against the native app-server. Codex integration awaits
+Baikai's dependency releases, and tagged Seihou release acceptance remains open.
+[ExecPlan 127](../plans/127-let-callers-supply-tool-policy-for-batch-blueprint-runs-and-migrations.md)
+
+This work builds on IR-18
 ([fail a batch blueprint run whose agent was refused tools](fail-a-batch-blueprint-run-whose-agent-was-refused-tools.md)),
 whose fail-closed exit is what surfaced the problem, and is complementary to IR-20
 ([tell off-plan refusals from missing tools](tell-off-plan-refusals-from-missing-tools-in-batch-runs.md))

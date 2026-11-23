@@ -32,6 +32,11 @@ provenance:
       at: 2026-11-21T16:25:41Z
       mode: "implement"
       note: "Verify the Codex app-server path and make its inventory check and denial decoder reusable in Baikai."
+    - model: "gpt-6.2-sol"
+      harness: "codex-cli"
+      at: 2026-11-23T14:24:45Z
+      mode: "implement"
+      note: "Verify installed Claude and debug workflows and implement Baikai's native Codex hook review and turn evidence."
 ---
 
 # Let callers supply tool policy for batch blueprint runs and migrations
@@ -54,13 +59,17 @@ render it in the target checkout without applying anything.
 Start in the consuming repository with the blueprint installed and Claude Code configured. For a missing
 rule, run one command. For a playbook that already produces a settings file, supply that file directly.
 The same Claude options work on a migration. Each invocation resolves its own policy.
-The proposed Codex hooks option depends on Baikai providing the reviewed-hook workflow in milestone 4.
+The Codex hooks option uses Baikai's reviewed-hook workflow in milestone 4. The
+source candidate can review the file through Seihou's terminal command, then
+reuse it on each batch invocation.
 
 ```bash
 seihou agent run fix-nix-haskell-flake-customizations --batch --allowed-tool 'Bash(grep *)'
 seihou agent run fix-nix-haskell-flake-customizations --batch --settings ./campaign/claude-settings.json
 seihou agent migrate keiro-upgrade --from=0.22.0.0 --to=0.25.0.0 --batch --settings ./campaign/claude-settings.json
 seihou agent --debug run fix-nix-haskell-flake-customizations
+seihou agent review-codex-hooks ./campaign/codex-hooks.json
+seihou agent run fix-nix-haskell-flake-customizations --batch --provider codex-cli --codex-hooks ./campaign/codex-hooks.json
 ```
 
 The first example grants the inspection command. The pilot run described under Context and Orientation
@@ -77,8 +86,8 @@ replaying a receipt must never grant tools to a subsequent run.
 - [x] (2026-11-21) A caller can supply a settings file containing a working Claude hook and identify the exact file contents used by their digest.
 - [x] (2026-11-21) Batch migrations apply the policy to each pending edge and record it under the blueprint that owns that edge.
 - [x] (2026-11-21) Investigated the Baikai integration against Codex 0.171.0. A real app-server with a local model fixture distinguished reviewed, unreviewed and modified hooks, emitted a structured denial and kept ordinary exit 7 separate. The reusable inventory check and notification decoder are in the Baikai source tree.
-- [ ] Baikai offers a normal reviewed-hook workflow and reports policy evidence through both unattended surfaces. Seihou can then accept a Codex hooks file on a batch run or migration and record its digest after success. Caller rules files are deferred.
-- [ ] Debug rendering, help and public consumer acceptance. Source checks for read-only debug and both Claude commands passed on 2026-11-21. Installed acceptance remains open.
+- [ ] Reviewed Codex hooks on batch runs and migrations. On 2026-11-23, Baikai source and an isolated Seihou candidate passed the native review, refusal, retry and digest path. Publish the Baikai provider and core before adopting the API in Seihou's normal build. Caller rules files are deferred.
+- [ ] Debug rendering, help and public consumer acceptance. On 2026-11-23, the executable on PATH passed the installed consumer check. Tagged release acceptance remains open.
 
 
 ## Surprises & Discoveries
@@ -119,6 +128,23 @@ does not promise that join. Codex hashes the normalized handler declaration, inc
 the command text, and does not hash the contents of executables referenced by it.
 [Baikai investigation and runnable probe](mori://shinzui/baikai/okf/improvement-requests/concepts/IR-14)
 
+On 2026-11-23, Codex 0.171.0 accepted review through the same native config operation
+its terminal UI uses. A fresh Baikai build displayed the exact handler, kept the
+review store unchanged when the operator declined, and persisted native trust when
+the operator confirmed. The initial review did not start a model turn.
+
+Codex 0.171.0 generated a schema containing `thread/start.runtimeWorkspaceRoots`
+without the experimental schema flag, then rejected that field for a
+migration owner with mounted references. Baikai now appends those paths to
+the effective writable roots using stable thread-local configuration and
+checks the returned sandbox. [FRIC-23](../friction-log/23-codex-emits-a-stable-schema-for-a-workspace-root-field-that-requires-experimental-capability.md)
+
+The Baikai OpenAI source also depends on the newer Responses replay export
+`Baikai.Content.outputItemReplay`, which is absent from the published
+`baikai` 0.10.1.1. The consumer candidate therefore used both source packages.
+The release must publish the core and raise the OpenAI provider's lower
+bound before the provider release. [FRIC-22](../friction-log/22-baikai-provider-source-needs-a-core-export-absent-from-its-declared-release-bound.md)
+
 ## Decision Log
 
 On 2026-11-21, select both invocation-level mechanisms in IR-23. One missing command is cheap to grant
@@ -156,6 +182,13 @@ directories of enabled, directory-backed layers, and a thread override has no di
 API providers remain outside this workflow.
 [Baikai IR-14](mori://shinzui/baikai/okf/improvement-requests/concepts/IR-14)
 
+On 2026-11-23, reuse Baikai's terminal review helper in
+`seihou agent review-codex-hooks FILE`. This keeps enrollment in the normal
+Seihou installation. Policy-bearing turns disable delegation because the
+stable hook stream describes the checked thread. Keep the reviewed thread
+alive through preparation and the model turn, then publish the receipt only
+once the scoped provider call returned successfully.
+
 ## Outcomes & Retrospective
 
 The local Cabal executable reported `seihou v0.16.0.2 (cd6c0f8)` while
@@ -186,6 +219,49 @@ trace cancellation test twice exceeded its deadline. A normal Baikai first-use
 review, complete run-level evidence and Seihou adoption are still open. No Codex flag is
 available in Seihou. FRIC-21 was promoted to Baikai IR-14.
 [Baikai provider package](mori://shinzui/baikai/packages/baikai-openai)
+
+On 2026-11-23, the executable already on PATH reported
+`seihou v0.16.0.2 (93c9789)`. The installed
+`fix-nix-haskell-flake-customizations` 0.2.0 blueprint ran in a fresh Git consumer
+with a recording Claude fixture. The fixture refused the ungranted command,
+accepted the explicit rule on retry, and invoked the gate from the caller's
+settings in the project directory. The receipt digest matched the supplied
+bytes. Debug preserved an absent manifest on the first render and the receipt
+bytes on a repeat render. The installed Keiro blueprint 0.15.0 exercised the
+documented migration window from 0.22.0.0 through 0.25.0.0. Six receipts across
+Keiro, Kiroku and two Shibuya adapter owners recorded the same supplied settings
+digest. The fixture checked each provider invocation's working directory and
+settings path. The installed executable passed the help and prompt audit, and
+the current source passed `cabal test all`. The tagged GitHub and Hackage
+release 0.16.0.2 predates the caller-policy implementation.
+
+Baikai source at `719b715` adds terminal review and the shared scoped
+transport in `baikai-openai/src/Baikai/Provider/OpenAI/ReviewedHooks.hs`
+(artifact-level URI pending). [Baikai](mori://shinzui/baikai)
+The Codex 0.171.0
+loopback probe passed first use, repeat, changed declarations, missing
+events, concurrent thread attribution, timeout and the exit-7 control.
+Seihou candidate `7ec808b`, built from the detached consumer worktree with
+both Baikai source packages, passed the fresh review before a baseline write,
+read-only debug, native denial, changed gate rejection, missing evidence,
+interruption, and a byte-matched hooks digest. In the installed Keiro
+0.15.0 cohort, a denial left the first owner's receipt intact and
+reviewing the replacement gate let the retry record its new digest for
+exactly the five pending edges. The probe used a local model endpoint and
+an isolated native review store. The candidate passed all 1,042 CLI
+tests, the other Cabal suites and the help audit. The executable identifies
+its build base as `seihou v0.16.0.2 (93c9789)`. The run and migration
+help screens include `--codex-hooks FILE` and the bundled help describes
+the review command.
+
+The Baikai provider and core versions with these changes remain unpublished.
+The Seihou candidate stays in a detached worktree until dependency publication
+allows a normal build with published bounds and updated Nix pins. A Seihou
+release and an installed check of that release remain open.
+
+FRIC-22 was promoted to Baikai IR-14 for the dependency release boundary.
+FRIC-23 was accepted with the verified stable configuration path for mounted
+references.
 
 ## Context and Orientation
 
@@ -396,7 +472,8 @@ consumer and the caller's native hooks file. The target ordinary command is
 `seihou agent run NAME --batch --provider codex-cli --codex-hooks FILE`, with the same
 option on a batch migration. A reviewed file should need one command on a repeat run.
 If an operator has never reviewed the handler, or it changed, the command must explain
-how to review that exact file using the shared Baikai workflow. Prove this first-use
+how to review that exact file with `seihou agent review-codex-hooks FILE`
+using the shared Baikai workflow. Prove this first-use
 path from an empty review store before advertising either command.
 
 Baikai should resolve supported synchronous PreToolUse declarations, start an ephemeral
@@ -577,6 +654,27 @@ gate to block the fixture with the marker absent, and a fresh thread to run the 
 and report exit 7. The fixture never enrolls a production hook. For the implementation,
 evidence and exact repository-local paths see
 [Baikai IR-14](mori://shinzui/baikai/okf/improvement-requests/concepts/IR-14).
+
+In Baikai, build the review CLI and exercise the native operator path.
+
+```bash
+cabal build exe:baikai
+python3 scripts/probe-codex-hook-policy.py --baikai "$(cabal list-bin exe:baikai)"
+```
+
+In the Seihou candidate worktree, initialize the schema submodule and run
+the consumer probe with the installed Keiro blueprint cohort available.
+Until the release bounds are updated, the detached worktree uses both
+Baikai source packages through its local Cabal project override.
+
+```bash
+git submodule update --init schema
+cabal build exe:seihou
+baikai_repo="$(mori registry show shinzui/baikai --json | jq -r .path)"
+python3 -B scripts/probe-codex-blueprint-policy.py \
+  --seihou "$(cabal list-bin exe:seihou)" \
+  --provider-probe "$baikai_repo/scripts/probe-codex-hook-policy.py"
+```
 
 ## Validation and Acceptance
 

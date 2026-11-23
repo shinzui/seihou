@@ -1,5 +1,17 @@
 # Bundle Update Log
 
+## 2026-11-23
+
+* **Update**: FRIC-23 accepted: Verified the stable configuration path with the six-edge Keiro migration fixture and its installed reference directories.
+
+
+* **Update**: FRIC-22 promoted: The Baikai release boundary now tracks publishing both core and OpenAI before Seihou adopts the API.
+
+
+* **Addition**: FRIC-23 records detour interface friction with https://github.com/openai/codex: Codex emits a stable schema for a workspace-root field that requires experimental capability
+
+* **Addition**: FRIC-22 records detour tooling friction with mori://shinzui/baikai/packages/baikai-openai: Baikai provider source needs a core export absent from its declared release bound
+
 ## 2026-11-21
 
 * **Update**: FRIC-21 promoted: Baikai IR-14 owns the app-server path that reports a blocked pre-tool hook and verifies existing review before a turn.

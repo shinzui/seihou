@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-11-23
+* **Progress**: IR-23 verified the installed Claude workflow and the reviewed Codex source candidate. Tagged delivery requires the Baikai core and OpenAI releases.
+
 ## 2026-11-21
 
 * **Update**: IR-23 is in progress. Claude batch runs and migration edges accept caller rules and native settings and record their evidence. Release and installed checks remain open.
