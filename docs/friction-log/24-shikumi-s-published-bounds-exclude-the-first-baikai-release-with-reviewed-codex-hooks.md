@@ -6,7 +6,7 @@ generated:
   by: "codex-cli/gpt-6.2-sol"
   at: "2026-11-23T16:01:48Z"
 frictionId: FRIC-24
-status: logged
+status: "resolved"
 impact: detour
 kind: tooling
 origin: "mori://shinzui/seihou"
@@ -14,6 +14,11 @@ affects: "mori://shinzui/shikumi/packages/shikumi"
 affectedVersion: "0.5.1.0"
 plan: "docs/plans/127-let-callers-supply-tool-policy-for-batch-blueprint-runs-and-migrations.md"
 workaround: "Test the published archives in the isolated Seihou candidate with scoped allow-newer for those two Shikumi bounds."
+resolution: "Shikumi 0.5.1.1 is published with compatible Baikai and Effectful bounds."
+amended:
+  - by: "codex-cli/gpt-6.2-sol"
+    at: "2026-11-23T19:17:24Z"
+    change: "Verified the release tag and a clean Seihou Cabal solve using Hackage archives without an override."
 ---
 # Shikumi's published bounds exclude the first Baikai release with reviewed Codex hooks
 

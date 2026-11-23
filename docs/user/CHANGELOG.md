@@ -6,8 +6,13 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 ## [Unreleased]
 
+- Batch blueprints and migrations can use the caller's reviewed Codex hook
+  file. Review it once with `seihou agent review-codex-hooks FILE`, then
+  pass `--codex-hooks FILE` on each invocation.
 - Claude CLI batch blueprint runs and migrations accept repeatable `--allowed-tool` and a native `--settings` file. Schema 16 records the caller inputs on each successful receipt.
 - `seihou agent --debug run` previews the prompt in the current checkout without applying the baseline, launching the provider, or writing a receipt.
+- Blueprint baseline commands now run before the agent starts. A failed baseline command stops the run and identifies the command to fix.
+- Generated registry docs show how to use each artifact and link to individual migration steps.
 
 ## [0.16.0.2] - 2026-11-18
 

@@ -25,6 +25,7 @@ import Seihou.CLI.AgentCompletion
     resolveAgentInitialPrompt,
     runAgentCompletion,
     runAgentMigrationCompletionWithCliAccess,
+    runReviewedCodexCompletion,
   )
 import Seihou.CLI.AgentConfig
   ( PendingAgentConfig,
@@ -288,11 +289,9 @@ handleAgentMigrate debug pendingConfig opts = do
                       <> " -> "
                       <> renderVersion (expandedPlan ^. #to)
                       <> "\n"
+                      <> (if isJust (codexHooksPath policy) then "Caller Codex hooks supplied.\n" else "")
                       <> formatBlueprintMigrationDebugOutput renderDebugStep pending
                 else do
-                  -- The agent needs somewhere to put the signal file, and the
-                  -- directory is created by the first receipt anyway.
-                  createDirectoryIfMissing True (takeDirectory signalPath)
                   result <-
                     runBlueprintMigrationsWith
                       (launchMigration policy batchMode traceSink modelConfig opts preparedByOwner signalPath renderStep)
@@ -665,27 +664,34 @@ launchMigration policy batchMode traceSink modelConfig opts preparedByOwner sign
       <> formatMigrationStepLabel step
       <> (if batchMode then " (batch)" else " (interactive)")
   hFlush stdout
-  clearNotApplicableSignal signalPath
   let systemPrompt = renderStep position total step
   case Map.lookup (step ^. #owner) preparedByOwner of
     Nothing -> pure (Left (BlueprintMigrationProviderFailure (missingOwnerMessage step)))
-    Just prepared -> case modelConfig ^. #provider of
-      AgentProviderClaudeCli -> launchCli prepared systemPrompt
-      AgentProviderCodexCli -> launchCli prepared systemPrompt
-      AgentProviderAnthropic -> launchCompletion systemPrompt
-      AgentProviderOpenAI -> launchCompletion systemPrompt
+    Just prepared -> do
+      launched <- withCodexPolicy policy modelConfig (prepared ^. #mountedFilesDir) $ \reviewed -> do
+        createDirectoryIfMissing True (takeDirectory signalPath)
+        clearNotApplicableSignal signalPath
+        case modelConfig ^. #provider of
+          AgentProviderClaudeCli -> launchCli reviewed prepared systemPrompt
+          AgentProviderCodexCli -> launchCli reviewed prepared systemPrompt
+          AgentProviderAnthropic -> launchCompletion systemPrompt
+          AgentProviderOpenAI -> launchCompletion systemPrompt
+      pure (either (Left . BlueprintMigrationProviderFailure) id launched)
   where
-    launchCli prepared systemPrompt
+    launchCli reviewed prepared systemPrompt
       | batchMode =
           verifyPolicyFile policy >>= \case
             Left err -> pure (Left (BlueprintMigrationProviderFailure err))
             Right () ->
-              finishCompletion $
-                runAgentMigrationCompletionWithCliAccess
-                  (settingsPath policy)
-                  (maybeToList (prepared ^. #mountedFilesDir))
-                  (prepared ^. #allowedTools)
-                  (buildAgentCompletionRequestWith traceSink modelConfig systemPrompt (opts ^. #prompt))
+              let request = buildAgentCompletionRequestWith traceSink modelConfig systemPrompt (opts ^. #prompt)
+               in finishCompletion $ case reviewed of
+                    Just session -> runReviewedCodexCompletion session request
+                    Nothing ->
+                      runAgentMigrationCompletionWithCliAccess
+                        (settingsPath policy)
+                        (maybeToList (prepared ^. #mountedFilesDir))
+                        (prepared ^. #allowedTools)
+                        request
       | otherwise = launchInteractive prepared systemPrompt
 
     stepLabel = T.pack (show position) <> "/" <> T.pack (show total)

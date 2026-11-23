@@ -459,8 +459,10 @@ record the inputs to that particular invocation. Null means no caller policy was
 recorded, including historical and manually marked receipts. A Claude policy
 object stores the ordered, deduplicated `allowedTools` literals and a nullable
 `settingsSha256` over the exact file bytes. Its `codexHooksSha256` and
-`codexRulesSha256` fields are null. The settings digest identifies the settings
-file only. Referenced programs can change independently.
+`codexRulesSha256` fields are null. A reviewed Codex run records the exact
+hooks file bytes as `codexHooksSha256`. The remaining fields are empty or null.
+A file digest identifies the supplied file. Referenced programs can change
+independently.
 
 The first policy-bearing run upgrades a portable manifest as part of writing its
 receipt. To upgrade in advance, run `seihou manifest upgrade`. Reading receipts

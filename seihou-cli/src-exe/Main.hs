@@ -19,6 +19,7 @@ import Seihou.CLI.AgentUpgrade (handleAgentUpgrade, upgradeModelConfig)
 import Seihou.CLI.Assist (handleAssist)
 import Seihou.CLI.Bootstrap (handleBootstrap)
 import Seihou.CLI.Browse (handleBrowse)
+import Seihou.CLI.CallerToolPolicy (handleCodexHookReview)
 import Seihou.CLI.Check (handleCheck)
 import Seihou.CLI.Commands
 import Seihou.CLI.Completions (handleCompletionsCommand)
@@ -175,6 +176,7 @@ dispatch cmd =
         AgentMigrate migrationOpts -> do
           pending <- pendingAgentConfigFor AgentCmdMigrate (parentAgentFlags agentOpts) (AgentSettingFlags (migrationOpts ^. #provider) (migrationOpts ^. #model) (migrationOpts ^. #effort) (migrationOpts ^. #trace))
           handleAgentMigrate (agentOpts ^. #debug) pending migrationOpts
+        AgentReviewCodexHooks file -> handleCodexHookReview (agentOpts ^. #debug) file
         AgentUpgrade upgradeOpts -> do
           -- Never 'resolveAgentModelConfigFor': it exits on a configuration
           -- error, and this command must not fail on configuration state.

@@ -35,34 +35,35 @@ in
   # Cabal bounds, independently of the older shared registry source pin.
   baikai = pkgs.haskell.lib.compose.overrideCabal
     (drv: {
-      # mori://shinzui/baikai/packages/baikai 0.10.1.0 still hardcodes /bin/ps.
+      # mori://shinzui/baikai/packages/baikai 0.11.0.0 hardcodes /bin/ps.
       # Declare the runtime tool for Linux and sandbox-compatible Darwin builds.
       postPatch = (drv.postPatch or "") + ''
         substituteInPlace src/Baikai/Provider/Cli/Process/Internal.hs \
           --replace-fail 'P.proc "/bin/ps"' 'P.proc "${processTools}/bin/ps"'
       '';
     })
-    (dontCheck (hackagePackage "baikai" "0.10.1.0"
-      "0w2zdqlq247x20ck95l2gq9pm64n8ni9wmqj6vkjjnz48sgpw5dx"));
-  baikai-claude = dontCheck (hackagePackage "baikai-claude" "0.7.3.0"
-    "1gz65wmv8rfyhzp64g042nyplqp1p5iq33lzq9lx5jq0jh29bk9v");
-  baikai-openai = dontCheck (hackagePackage "baikai-openai" "0.7.3.0"
-    "1rfdma5r71f2rn7j9r5k4sd54v4w85d9a2r2wqjjfp1gmy7g6bsx");
-  baikai-kit = dontCheck (hackagePackage "baikai-kit" "0.4.0.3"
-    "0pnjn93pg4pw3pwvxz8cc517id329nlr43cdmi8gmnln27mmady4");
+    (dontCheck (hackagePackage "baikai" "0.11.0.0"
+      "19wa96jl0fkc5qa2rjn6bwgwg1cc40zvx18z437dw5zfx2n2ys97"));
+  baikai-claude = dontCheck (hackagePackage "baikai-claude" "0.7.3.1"
+    "0v4zswdjbgwx6fdpr4n8lrw7296z4yxya9xnp38vhvhsl96iyj0l");
+  # The released Baikai Claude adapter uses mori://shinzui/claude-hs/packages/claude-hs.
+  claude-hs = dontCheck (hackagePackage "claude-hs" "0.1.0.0"
+    "0arfdf4gi68mjrs4b3mhxifp1fi9g6sxqrgzsp06v9mnld0jh8pz");
+  baikai-openai = dontCheck (hackagePackage "baikai-openai" "0.7.4.0"
+    "1gpxr0718zjmvha6r0r5k7r11jp985308dh26xxzn24dpkm6zrb4");
+  baikai-kit = dontCheck (hackagePackage "baikai-kit" "0.4.0.4"
+    "05x5dcmwr6agfb6fa76kcvz6831iidcz18wxg68rbgn9m4x46l3i");
   # mori://shinzui/baikai/packages/baikai-typesafe is the judgment-only
   # provider a judgement gate uses; it needs the released
   # mori://shinzui/typesafe-hs wire client.
-  baikai-typesafe = dontCheck (hackagePackage "baikai-typesafe" "0.1.0.1"
-    "0n7i7pqcgwzqs4kcsyqfpy7iv4gz6kqn9v384diywhd55hniz507");
+  baikai-typesafe = dontCheck (hackagePackage "baikai-typesafe" "0.1.0.2"
+    "1i7k7nglcwjhd456wimk91rj1zfb86vpz5jg7ng4kqw2mq1r3654");
   typesafe-hs = dontCheck (hackagePackage "typesafe-hs" "0.1.0.0"
     "1rlajsqxfjl7nqiq4nlqd4j4wf3r85q9h8grhmd5l0467jd2xqwv");
-  # mori://shinzui/shikumi/packages/shikumi 0.5.1.0 bounds baikai-effectful
-  # below 0.5, so 0.5.0.0 is excluded.
-  baikai-effectful = dontCheck (hackagePackage "baikai-effectful" "0.4.0.5"
-    "11bcq4xs3m1vzs6v5x2fbl8pbya8samalvnqpfyl1fsb6pva37as");
-  shikumi = dontCheck (hackagePackage "shikumi" "0.5.1.0"
-    "0bys08dmq4p9jnw9lapxlg39bwd4i7934g8sh06vlnb9c2g1a17v");
+  baikai-effectful = dontCheck (hackagePackage "baikai-effectful" "0.5.0.1"
+    "1qbibcmk44qwcq11s7zqllswqi39i5d5vdjcq4ivaml8ifgcpqv1");
+  shikumi = dontCheck (hackagePackage "shikumi" "0.5.1.1"
+    "0n17j11xhkdfj7fiifkxy8b82m2fzw3db1wzmahmdi9j1hb2qbni");
 
   # effectful-core 2.7.x: the ghc9124 package set still carries 2.6.1.0, which
   # is below the `>=2.7.1.1` bound seihou-core/seihou-cli declare (2.7.0.0 has a

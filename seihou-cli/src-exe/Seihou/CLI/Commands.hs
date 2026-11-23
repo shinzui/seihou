@@ -147,6 +147,7 @@ data AgentCommand
   | AgentSetup SetupOpts
   | AgentRun BlueprintRunOpts
   | AgentMigrate BlueprintMigrationOpts
+  | AgentReviewCodexHooks FilePath
   | AgentUpgrade AgentUpgradeOpts
   | AgentModels AgentModelsOpts
   | AgentConfigShow
@@ -1939,6 +1940,12 @@ agentCommandParser =
         <> command "setup" agentSetupInfo
         <> command "run" agentRunInfo
         <> command "migrate" agentMigrateInfo
+        <> command
+          "review-codex-hooks"
+          ( info
+              ((AgentReviewCodexHooks <$> strArgument (metavar "FILE")) <**> helper)
+              (progDesc "Review the native Codex PreToolUse commands in FILE")
+          )
         <> command "upgrade" agentUpgradeInfo
         <> command "models" agentModelsInfo
         <> command "config" agentConfigInfo
@@ -2154,6 +2161,7 @@ callerPolicyParser =
   CallerPolicyOptions
     <$> many (strOption (long "allowed-tool" <> metavar "PATTERN" <> help "Preapprove one Claude tool pattern for this batch invocation (repeatable), e.g. 'Bash(grep *)'"))
     <*> optional (strOption (long "settings" <> metavar "FILE" <> help "Load this Claude JSON settings file, including its hooks, for this batch invocation"))
+    <*> optional (strOption (long "codex-hooks" <> metavar "FILE" <> help "Use reviewed Codex PreToolUse hooks for this batch invocation"))
 
 agentRunParser :: Parser AgentCommand
 agentRunParser =

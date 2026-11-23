@@ -19,6 +19,7 @@ module Seihou.CLI.AgentCompletion
     runAgentCompletion,
     runAgentCompletionWithCliAccess,
     runAgentMigrationCompletionWithCliAccess,
+    runReviewedCodexCompletion,
     resolveAgentInitialPrompt,
     migrationAllowedTools,
     runAgentCompletionWith,
@@ -33,6 +34,8 @@ import Baikai.Provider.Claude.Api qualified as ClaudeApi
 import Baikai.Provider.Claude.Cli qualified as ClaudeCli
 import Baikai.Provider.OpenAI.Api qualified as OpenAIApi
 import Baikai.Provider.OpenAI.Cli qualified as CodexCli
+import Baikai.Provider.OpenAI.HookEvidence (CodexPreToolUse (..))
+import Baikai.Provider.OpenAI.ReviewedHooks (CodexHookTurn (..), ReviewedCodexThread)
 import Baikai.Response qualified as BaikaiResponse
 import Baikai.ThinkingLevel (ThinkingLevel (..), renderThinkingLevel)
 import Baikai.Trace qualified as BaikaiTrace
@@ -337,6 +340,30 @@ runAgentCompletionUsing renderError registerProviders req = do
               then Left "Provider returned no assistant text."
               else Right body
 
+-- | Use the same completion and trace path with a checked Codex thread.
+-- A successful terminal turn supplies positive completion evidence. An
+-- ordinary command failure inside that turn is distinct from a refusal.
+runReviewedCodexCompletion :: ReviewedCodexThread -> AgentCompletionRequest -> IO (Either Text Text)
+runReviewedCodexCompletion session =
+  runAgentCompletionUsing (^. #message) $
+    Baikai.registerApiProvider $
+      Baikai.apiProviderWith Baikai.OpenAICompletionsCli (Baikai.liftCompleteToStream complete) complete
+  where
+    complete m ctx opts = do
+      result <- CodexCli.completeReviewedCodexCli session ctx opts
+      either (throwIO . Baikai.providerError) pure $ do
+        turn <- result
+        case blockedHooks turn of
+          [] -> pure (validatedResponse m (answer turn))
+          blocked ->
+            Left
+              ( "Codex PreToolUse blocked "
+                  <> Text.pack (show (length blocked))
+                  <> " tool call(s): "
+                  <> Text.intercalate ", " (map runId blocked)
+                  <> ". Inspect the working diff and the caller's gate decisions before retrying."
+              )
+
 responseText :: Baikai.Response -> Text
 responseText =
   Text.intercalate "\n"
@@ -485,20 +512,22 @@ registerValidatedCli api provider claudeArgs codexArgs exitFailure validate = do
                 ExitSuccess -> validate (TE.encodeUtf8 (Text.pack out))
         case result of
           Left err -> throwIO (Baikai.providerError err)
-          Right body ->
-            pure $
-              BaikaiResponse.emptyResponse
-                { BaikaiResponse.model = m,
-                  BaikaiResponse.message =
-                    Baikai.AssistantPayload
-                      { Baikai.content = V.singleton (Baikai.AssistantText (Baikai.TextContent body)),
-                        Baikai.usage = Baikai.zeroUsage,
-                        Baikai.stopReason = Baikai.Stop,
-                        Baikai.errorMessage = Nothing,
-                        Baikai.timestamp = Nothing
-                      }
-                }
+          Right body -> pure (validatedResponse m body)
   Baikai.registerApiProvider (Baikai.apiProviderWith api (Baikai.liftCompleteToStream complete) complete)
+
+validatedResponse :: Baikai.Model -> Text -> Baikai.Response
+validatedResponse m body =
+  BaikaiResponse.emptyResponse
+    { BaikaiResponse.model = m,
+      BaikaiResponse.message =
+        Baikai.AssistantPayload
+          { Baikai.content = V.singleton (Baikai.AssistantText (Baikai.TextContent body)),
+            Baikai.usage = Baikai.zeroUsage,
+            Baikai.stopReason = Baikai.Stop,
+            Baikai.errorMessage = Nothing,
+            Baikai.timestamp = Nothing
+          }
+    }
 
 -- | Source discovery is part of the ordinary migration workflow. Keep grants
 -- specific to read-only Mori commands; registry writes are never implied.

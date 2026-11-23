@@ -1,6 +1,9 @@
 # Bundle Update Log
 
 ## 2026-11-23
+
+* **Progress**: IR-23 now resolves released Baikai and Shikumi packages in the normal Seihou build. Tagged Seihou delivery is pending.
+
 * **Progress**: IR-23 verified the installed Claude workflow and the reviewed Codex source candidate. Tagged delivery requires the Baikai core and OpenAI releases.
 
 ## 2026-11-21

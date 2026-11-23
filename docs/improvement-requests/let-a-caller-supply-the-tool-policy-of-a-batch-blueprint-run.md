@@ -9,7 +9,7 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-11-16T01:25:00Z"
-timestamp: "2026-11-23T14:44:02Z"
+timestamp: "2026-11-23T19:17:39Z"
 requestId: IR-23
 status: in-progress
 targetPlan: docs/plans/127-let-callers-supply-tool-policy-for-batch-blueprint-runs-and-migrations.md
@@ -21,9 +21,10 @@ origin: mori://shinzui/shikigami
 ## Status
 
 Claude support passed consumer acceptance on the executable already installed
-on the development machine. A reviewed Codex candidate passed batch blueprint
-and migration checks against the native app-server. Codex integration awaits
-Baikai's dependency releases, and tagged Seihou release acceptance remains open.
+on the development machine. Reviewed Codex hooks passed batch blueprint and
+migration checks against the native app-server. The Seihou build now selects
+released Baikai and Shikumi packages through its normal dependency graph.
+Tagged Seihou release acceptance remains open.
 [ExecPlan 127](../plans/127-let-callers-supply-tool-policy-for-batch-blueprint-runs-and-migrations.md)
 
 This work builds on IR-18

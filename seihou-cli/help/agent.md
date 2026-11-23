@@ -168,7 +168,7 @@ SUBCOMMANDS
       missing from the blueprint's allowedTools, a guarded write such as one
       inside .git/ or a shell redirection, or a command run by your own Claude
       Code hooks. Declare what the blueprint needs in allowedTools, or run it
-      interactively. codex-cli batch runs are not checked this way.
+      interactively. Codex runs with --codex-hooks check native hook evidence.
 
   seihou agent migrate BLUEPRINT [--from VERSION] [--to VERSION] [PROMPT]
       Run one agent session per in-window migration declared by the blueprint.
@@ -268,3 +268,16 @@ Baseline commands run directly under Seihou before the agent starts.
 Inspect the working diff after a refusal and retry with the intended rule or gate.
 The manifest records inputs in blueprint.callerToolPolicy or each executed
 blueprintMigrations entry. Rules are literal. Files are identified by SHA-256.
+
+Reviewed Codex hooks
+
+Supply a file of synchronous PreToolUse commands with --codex-hooks FILE
+on a Codex batch run or migration. Review the file once from the project:
+
+  seihou agent review-codex-hooks ./caller-hooks.json
+  seihou agent run fix-nix-haskell-flake-customizations --batch --provider codex-cli --codex-hooks ./caller-hooks.json
+
+Seihou checks native review before applying any baseline. Review changed
+declarations again. A blocked or failed gate stops execution without a
+new blueprint or migration receipt. Successful receipts store the digest
+of the supplied hooks file. The reviewed session runs in one thread.

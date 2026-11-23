@@ -244,3 +244,8 @@ Baseline commands run directly under Seihou before the agent starts.
 Inspect the working diff after a refusal and retry with the intended rule or gate.
 The manifest records inputs in blueprint.callerToolPolicy or each executed
 blueprintMigrations entry. Rules are literal. Files are identified by SHA-256.
+
+Codex batch runs and migrations accept --codex-hooks FILE for synchronous
+PreToolUse command handlers. Run seihou agent review-codex-hooks FILE from
+the project to review new or changed declarations. A successful receipt
+stores the file digest, and a reported denial stops the attempt.

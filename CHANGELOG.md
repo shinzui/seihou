@@ -4,8 +4,20 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Codex CLI batch blueprint runs and migrations accept `--codex-hooks FILE`. Review a file with `seihou agent review-codex-hooks FILE`. Completed receipts record its digest after a checked Codex turn.
 - Claude CLI batch blueprint runs and migrations accept repeatable `--allowed-tool` and a native `--settings` file. Schema 16 records the caller inputs on each successful receipt.
+- Generated OKF registry documentation includes Seihou command examples and stable links to migration edges. Older migration edge records remain readable.
+
+### Changed
+
+- **Breaking core API.** `AppliedBlueprint` and `AppliedBlueprintMigration` gain the `callerToolPolicy` field. Construct records with `Nothing` when caller policy is absent.
 - `seihou agent --debug run` previews the prompt in the current checkout without applying the baseline, launching the provider, or writing a receipt.
+
+### Fixed
+
+- Blueprint baseline commands run after their files are applied and before the provider starts. A failed command stops the run before any blueprint receipt is recorded (BUG-4).
 
 ## [0.16.0.2] - 2026-11-18
 

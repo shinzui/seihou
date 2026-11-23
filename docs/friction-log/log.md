@@ -2,6 +2,9 @@
 
 ## 2026-11-23
 
+* **Update**: FRIC-24 resolved: Verified the release tag and a clean Seihou Cabal solve using Hackage archives without an override.
+
+
 * **Addition**: FRIC-24 records detour tooling friction with mori://shinzui/shikumi/packages/shikumi: Shikumi's published bounds exclude the first Baikai release with reviewed Codex hooks
 
 

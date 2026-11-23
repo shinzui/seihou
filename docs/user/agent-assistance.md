@@ -228,11 +228,10 @@ jq -r 'select(.kind == "call_failed") | "\(.model): \(.errorMessage)"' .seihou/t
 jq -s 'map(select(.kind == "call_finished")) | sort_by(-.latencyMs) | .[0:5]' .seihou/trace.jsonl
 ```
 
-A few fields are thinner than they look. Cost (`usd`) is omitted entirely when
-the provider does not report one, and the two local CLI providers
-(`claude-cli`, `codex-cli`) are subscription-based, so they report no cost and
-zeroes for `inputTokens`/`outputTokens`. Use an API provider (`anthropic`,
-`openai`) if you need cost accounting. `promptSummary` is empty unless the
+The trace includes `usd` when the provider supplies a cost. Validated Claude
+blueprint calls and calls with reviewed Codex hooks record elapsed time and
+report zero token counts. Use an API provider (`anthropic`, `openai`) if you
+need cost accounting. `promptSummary` is empty unless the
 invocation carried an explicit prompt argument, since Seihou sends its rendered
 prompt as the system prompt. And `provider` names the upstream vendor —
 `anthropic` or `openai` — rather than the Seihou provider you configured, so
@@ -450,14 +449,15 @@ blueprint's `allowedTools`, a write Claude guards even when `Write` is allowed
 or a command run on behalf of your own Claude Code hooks or global
 instructions. When the named command comes from your own setup rather than the
 blueprint, grant it in your Claude Code settings. `seihou validate-blueprint`
-warns about a blueprint that declares no `allowedTools`. `codex-cli` batch runs
-are not checked this way. A batch `claude-cli` trace records no token counts,
-because Seihou reads Claude's output itself to see the refusals.
+warns about a blueprint that declares no `allowedTools`. For a Codex batch
+run with `--codex-hooks`, Seihou checks the native hook evidence before recording
+the blueprint as applied.
 
 Blueprint `allowedTools` entries are added to the base runner tools with
 duplicates removed. Claude Code receives the effective list through
-`--allowedTools`. Codex continues to use its workspace-write sandbox and
-on-request approval policy because it has no equivalent per-tool allow-list.
+`--allowedTools`. Codex uses a workspace-write sandbox. An interactive
+Codex session can ask for approval, and a reviewed Codex batch run uses the
+supplied hook policy in an unattended turn.
 
 See [Agent-Driven Blueprints](blueprints.md) for blueprint authoring and
 publishing details.
@@ -541,3 +541,8 @@ to use its permission rules and hooks. Both flags apply only to this invocation.
 Baseline commands run directly under Seihou before the agent starts.
 
 [Caller policy examples and receipts](blueprints.md#caller-policy-for-claude-batch-sessions)
+
+A Codex CLI batch blueprint can apply a reviewed caller gate with
+`--codex-hooks FILE`. Start with `seihou agent review-codex-hooks FILE` from
+the project directory and retry the same batch command. See
+[Review Codex hooks for a batch run](../cli/agent.md#review-codex-hooks-for-a-batch-run).

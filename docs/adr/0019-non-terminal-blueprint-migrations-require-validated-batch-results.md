@@ -61,3 +61,8 @@ continue to govern outcomes and edge ownership.
 extends the denial rule, and only that rule, to batch `agent run`.
 
 Implementation: [plan 111](../plans/111-run-blueprint-migrations-without-an-interactive-terminal.md).
+
+A migration with caller-supplied Codex hooks validates the native app-server
+turn and its hook evidence through Baikai. An ordinary command can exit
+nonzero inside a successful turn. A reported hook denial, failed gate or
+missing turn evidence stops the migration and keeps earlier receipts.

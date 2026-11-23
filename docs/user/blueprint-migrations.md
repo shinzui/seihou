@@ -767,3 +767,9 @@ Baseline commands run directly under Seihou before the agent starts.
 Use the same policy for all pending edges. A manual `--mark-applied` receipt has no provider policy.
 
 [Caller policy examples and receipts](blueprints.md#caller-policy-for-claude-batch-sessions)
+
+For a Codex CLI migration, use `--codex-hooks FILE` to supply reviewed native
+PreToolUse commands. Run `seihou agent review-codex-hooks FILE` in the project
+before first use or after changing a handler. Each completed edge records
+the hooks digest under its owning blueprint. On a denial, the command stops.
+Inspect the diff and gate evidence, then retry to continue from pending edges.

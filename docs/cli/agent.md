@@ -38,7 +38,7 @@ $ seihou agent run deep-thinker --verbose
 
 A declaration naming an unknown provider or effort fails the run with an actionable message rather than silently falling back. See [Blueprints](../user/blueprints.md#launch-settings). Note that `launch` does not cover `--trace`: tracing is the operator's choice, not the artifact author's.
 
-`--trace` records what each model call cost in time and money. It is off unless asked for, and it covers batch and API calls only — an interactive `claude`/`codex` session is a spawned subprocess, not a request Seihou can time or price, so it emits no events. See [Tracing model calls](../user/agent-assistance.md#tracing-model-calls).
+`--trace` measures elapsed time for batch and API calls and records token counts and costs when the provider reports them. Tracing is off by default. Interactive sessions run directly in the provider terminal. See [Tracing model calls](../user/agent-assistance.md#tracing-model-calls).
 
 ## Providers
 
@@ -471,6 +471,25 @@ seihou prompt run review-changes --provider codex-cli
 ```
 
 See [`seihou prompt`](prompt.md) and [First-Class Prompts](../user/prompts.md).
+
+### Review Codex hooks for a batch run
+
+From the project, review the native JSON file and supply it to the batch
+command. Use the same flag on `agent migrate`.
+
+```bash
+seihou agent review-codex-hooks ./caller-hooks.json
+seihou agent run fix-nix-haskell-flake-customizations --batch --provider codex-cli --codex-hooks ./caller-hooks.json
+```
+
+Seihou displays the exact synchronous PreToolUse commands for review. A
+changed declaration requires a new review. Keep the file stable until the
+attempt ends and keep any referenced scripts under your control. Codex
+checks its native review state before any baseline is applied. The reviewed
+session uses one thread and reports a blocked call by its hook run ID. If
+the run stops on a denial, inspect the diff and gate decisions before retrying.
+Successful blueprint and migration receipts identify the supplied file by
+`callerToolPolicy.codexHooksSha256`.
 
 ### Caller policy and receipts
 

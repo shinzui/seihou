@@ -59,9 +59,9 @@ render it in the target checkout without applying anything.
 Start in the consuming repository with the blueprint installed and Claude Code configured. For a missing
 rule, run one command. For a playbook that already produces a settings file, supply that file directly.
 The same Claude options work on a migration. Each invocation resolves its own policy.
-The Codex hooks option uses Baikai's reviewed-hook workflow in milestone 4. The
-source candidate can review the file through Seihou's terminal command, then
-reuse it on each batch invocation.
+The Codex hooks option uses Baikai's reviewed-hook workflow in milestone 4.
+Review the file through Seihou's terminal command and supply it on each batch
+invocation.
 
 ```bash
 seihou agent run fix-nix-haskell-flake-customizations --batch --allowed-tool 'Bash(grep *)'
@@ -86,7 +86,7 @@ replaying a receipt must never grant tools to a subsequent run.
 - [x] (2026-11-21) A caller can supply a settings file containing a working Claude hook and identify the exact file contents used by their digest.
 - [x] (2026-11-21) Batch migrations apply the policy to each pending edge and record it under the blueprint that owns that edge.
 - [x] (2026-11-21) Investigated the Baikai integration against Codex 0.171.0. A real app-server with a local model fixture distinguished reviewed, unreviewed and modified hooks, emitted a structured denial and kept ordinary exit 7 separate. The reusable inventory check and notification decoder are in the Baikai source tree.
-- [ ] Reviewed Codex hooks on batch runs and migrations. On 2026-11-23, the isolated Seihou candidate passed the native review, refusal, retry and digest path. Baikai's compatible releases are now on Hackage. Shikumi's published bounds still prevent a normal Cabal build. Caller rules files are deferred.
+- [x] (2026-11-23) Reviewed Codex hooks pass the native review, refusal, receipt and retry fixtures through Seihou's normal build with released Baikai and Shikumi packages. Caller rules files are deferred.
 - [ ] Debug rendering, help and public consumer acceptance. On 2026-11-23, the executable on PATH passed the installed consumer check. Tagged release acceptance remains open.
 
 
@@ -256,9 +256,9 @@ the review command.
 
 Hackage now carries `baikai` 0.11.0.0 and `baikai-openai` 0.7.4.0.
 Their release tags contain the reviewed-hook API and the provider bounds admit
-the released core. Shikumi 0.5.1.0 still caps `baikai` below 0.11 and
+the released core. Shikumi 0.5.1.0 capped `baikai` below 0.11 and
 `baikai-effectful` below 0.5. Its APIs share Baikai types with Seihou's
-judgement runtime, so the normal Cabal build needs a compatible Shikumi
+judgement runtime, so the normal Cabal build needed a compatible Shikumi
 release or metadata revision. A clean Cabal solve with an empty package
 store confirmed the conflict. The isolated candidate uses just those two
 relaxed bounds with all dependencies drawn from Hackage archives.
@@ -277,9 +277,22 @@ The pristine Shikumi 0.5.1.0 source passed all 300 tests against Baikai 0.11.0.0
 and Baikai Effectful 0.5.0.1 with only its bounds updated. Hackage accepted
 the metadata preview. The proposed revision admits `baikai >=0.10.0.0 &&
 <0.12` and `baikai-effectful (>=0.4.0.5 && <0.5) || ^>=0.5.0.1` for the
-library and its tests. Publication of the revision and Seihou 0.17.0.0
-awaits authorization. The Seihou version increase accounts for the exported
-core receipt records gaining a field.
+library and its tests.
+
+Shikumi 0.5.1.1 subsequently shipped compatible bounds. Seihou uses that
+Hackage release in Cabal and Nix. A clean Cabal solve from an empty package
+store selected Shikumi and all six Baikai packages from Hackage archives.
+This resolved FRIC-24. The integrated Cabal executable reported
+`seihou v0.16.0.2 (d688421)` and passed the native Codex 0.171.0 fixture
+including rejection before baseline writes, receipt preservation and a
+six-edge Keiro retry. The same executable passed the installed Claude pilot
+blueprint and six-edge settings fixtures, including the read-only debug check.
+The packaged Nix executable also passed the Codex fixture and the help audit
+on aarch64-darwin. The audit covered 19 topics, 37 command help pages, six
+example modules and eight prompt renders.
+The proposed Seihou 0.17.0.0 release accounts for the exported core receipt
+records gaining a field. Publication awaits version confirmation.
+[Shikumi package](mori://shinzui/shikumi/packages/shikumi)
 
 FRIC-22 was promoted to Baikai IR-14 for the dependency release boundary.
 FRIC-23 was accepted with the verified stable configuration path for mounted
@@ -684,10 +697,9 @@ cabal build exe:baikai
 python3 scripts/probe-codex-hook-policy.py --baikai "$(cabal list-bin exe:baikai)"
 ```
 
-In the Seihou candidate worktree, initialize the schema submodule and run
-the consumer probe with the installed Keiro blueprint cohort available.
-The detached worktree uses the published Baikai packages. Its local Cabal
-project override relaxes the two Shikumi bounds for compatibility testing.
+From the Seihou checkout, initialize the schema submodule and run the
+consumer probe with the installed Keiro blueprint cohort available.
+The ordinary Cabal project uses the published Baikai and Shikumi packages.
 
 ```bash
 git submodule update --init schema

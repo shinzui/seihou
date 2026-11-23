@@ -633,3 +633,8 @@ preserve edits and deliberate deletion. The agent can extend those starters as t
 task requires. Status/diff count receipts without comparing seed content. Commit
 the manifest with the project; ordinary update owns lifecycle transitions rather
 than a forced baseline rerun. See [seed authoring](module-authoring.md#step-lifecycle).
+
+Codex batch blueprints accept `--codex-hooks FILE` for synchronous native
+PreToolUse commands. From the project, run `seihou agent review-codex-hooks FILE`
+before using the file for the first time or after changing a declaration. The
+[CLI reference](../cli/agent.md#review-codex-hooks-for-a-batch-run) shows the commands.

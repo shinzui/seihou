@@ -12,6 +12,7 @@ module Seihou.CLI.AgentRun
   )
 where
 
+import Baikai.Provider.OpenAI.ReviewedHooks (ReviewedCodexThread)
 import Control.Exception (IOException, displayException, try)
 import Control.Monad (forM_, unless, when)
 import Data.FileEmbed (embedFile)
@@ -32,6 +33,7 @@ import Seihou.CLI.AgentCompletion
     buildAgentCompletionRequestWith,
     resolveAgentInitialPrompt,
     runAgentCompletionWithCliAccess,
+    runReviewedCodexCompletion,
   )
 import Seihou.CLI.AgentConfig
   ( PendingAgentConfig,
@@ -233,34 +235,42 @@ handleAgentRun debug pending opts = do
   let resolved = (prepared ^. #resolvedVariables)
       cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- opts ^. #vars]
 
-  -- (c) Baseline.
-  baseline <-
-    if opts ^. #noBaseline
-      then pure BaselineSkipped
-      else case baselineComposition of
-        Nothing | debug && not (null (bp ^. #baseModules)) -> pure (BaselinePreview (depModuleNames (bp ^. #baseModules)))
-        Nothing -> pure BaselineEmpty
-        Just composition -> applyBaseline level opts composition cliOverrides resolved
+  let run reviewed = do
+        -- (c) Baseline.
+        baseline <-
+          if opts ^. #noBaseline
+            then pure BaselineSkipped
+            else case baselineComposition of
+              Nothing | debug && not (null (bp ^. #baseModules)) -> pure (BaselinePreview (depModuleNames (bp ^. #baseModules)))
+              Nothing -> pure BaselineEmpty
+              Just composition -> applyBaseline level opts composition cliOverrides resolved
 
-  -- (d) Render the system prompt around the prepared shared body.
-  ctx <- gatherAgentContext
-  let systemPrompt = renderSystemPrompt ctx prepared baseline
+        -- (d) Render the system prompt around the prepared shared body.
+        ctx <- gatherAgentContext
+        let systemPrompt = renderSystemPrompt ctx prepared baseline
 
-  -- (f) Launch.
-  verifyPolicyFile policy >>= either (exitErr level) pure
-  launchSucceeded <-
-    runRenderedAgentPromptMode
-      "blueprint"
-      policy
-      debug
-      batch
-      modelConfig
-      (effectiveTools policy (prepared ^. #allowedTools))
-      (prepared ^. #mountedFilesDir)
-      systemPrompt
-      (opts ^. #prompt)
+        -- (f) Launch.
+        verifyPolicyFile policy >>= either (exitErr level) pure
+        launchSucceeded <-
+          runRenderedAgentPromptMode
+            "blueprint"
+            reviewed
+            policy
+            debug
+            batch
+            modelConfig
+            (effectiveTools policy (prepared ^. #allowedTools))
+            (prepared ^. #mountedFilesDir)
+            systemPrompt
+            (opts ^. #prompt)
 
-  when (launchSucceeded && not debug) $ do
+        pure (if launchSucceeded && not debug then Just baseline else Nothing)
+
+  recordedBaseline <-
+    if debug
+      then run Nothing
+      else withCodexPolicy policy modelConfig (prepared ^. #mountedFilesDir) run >>= either (exitErr level) pure
+  forM_ recordedBaseline $ \baseline -> do
     verifyPolicyFile policy >>= either (exitErr level) pure
     now <- getCurrentTime
     -- Classify the blueprint's discovery directory into a portable origin, so
@@ -278,14 +288,15 @@ handleAgentRun debug pending opts = do
         when (isJust (policyEvidence policy)) exitFailure
 
 runRenderedAgentPrompt :: Bool -> AgentModelConfig -> [String] -> Maybe FilePath -> Text -> Maybe Text -> IO Bool
-runRenderedAgentPrompt debug = runRenderedAgentPromptMode "agent" emptyPolicy debug False
+runRenderedAgentPrompt debug = runRenderedAgentPromptMode "agent" Nothing emptyPolicy debug False
 
-runRenderedAgentPromptMode :: Text -> ResolvedPolicy -> Bool -> Bool -> AgentModelConfig -> [String] -> Maybe FilePath -> Text -> Maybe Text -> IO Bool
-runRenderedAgentPromptMode sessionName policy debug batch modelConfig tools mFilesDir systemPrompt initialPrompt
+runRenderedAgentPromptMode :: Text -> Maybe ReviewedCodexThread -> ResolvedPolicy -> Bool -> Bool -> AgentModelConfig -> [String] -> Maybe FilePath -> Text -> Maybe Text -> IO Bool
+runRenderedAgentPromptMode sessionName reviewed policy debug batch modelConfig tools mFilesDir systemPrompt initialPrompt
   | debug = do
       when (sessionName == "blueprint" && modelConfig ^. #provider == AgentProviderClaudeCli) $ do
         TIO.putStrLn ("Preapproved tools: " <> T.intercalate ", " (map T.pack tools))
         TIO.putStrLn (if isJust (settingsPath policy) then "Caller settings supplied." else "No caller settings supplied.")
+      when (isJust (codexHooksPath policy)) (TIO.putStrLn "Caller Codex hooks supplied.")
       TIO.putStr systemPrompt
       forM_ (resolveAgentInitialPrompt (modelConfig ^. #provider) initialPrompt) $ \instruction -> do
         TIO.putStrLn "\n===== Initial user instruction ====="
@@ -309,12 +320,10 @@ runRenderedAgentPromptMode sessionName policy debug batch modelConfig tools mFil
         ExitFailure _ -> exitWith exitCode
   | otherwise = do
       sink <- traceSinkForConfig LogNormal modelConfig
-      result <-
-        runAgentCompletionWithCliAccess
-          (settingsPath policy)
-          (maybeToList mFilesDir)
-          tools
-          (buildAgentCompletionRequestWith sink modelConfig systemPrompt initialPrompt)
+      let request = buildAgentCompletionRequestWith sink modelConfig systemPrompt initialPrompt
+      result <- case reviewed of
+        Just session -> runReviewedCodexCompletion session request
+        Nothing -> runAgentCompletionWithCliAccess (settingsPath policy) (maybeToList mFilesDir) tools request
       case result of
         Right assistantText -> do
           TIO.putStrLn assistantText
