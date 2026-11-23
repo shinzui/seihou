@@ -31,6 +31,11 @@ Use a blueprint when:
 - a prose prompt is the right interface for a coding agent
 - the workflow should create or modify project files, optionally after applying baseline modules
 
+Baseline modules apply their files and run their commands before the provider
+starts. Keep deterministic setup in the modules' command declarations. Use
+`seihou agent --debug run NAME` to render the prompt and list the declared
+baseline modules in the current checkout.
+
 Use a module when:
 - all variation is enumerable as `VarDecl`s
 - the output is deterministic given those variables

@@ -84,10 +84,11 @@ BASELINE MODULES
   starts. Every `seihou agent run` applies it again, so its commands run
   again too. A failing command exits 1 without starting the agent and names
   the command, its module, and how to retry; `--no-baseline` starts the
-  agent without applying the baseline. Parent `--debug` previews the
-  baseline and prompt without writing files or starting processes for the baseline or provider. The command
-  phase reports on standard error. Baseline commands run as Seihou's own
-  processes; `allowedTools` governs only the agent.
+  agent without applying the baseline. Parent `--debug` lists the declared
+  baseline modules and renders the prompt without writing files, running
+  baseline commands, or starting the provider. The command phase reports on
+  standard error. Baseline commands run directly under Seihou and the
+  provider's tool policy applies to the agent.
 
   Releases through 0.16.0.2 skipped baseline commands. Once consumers run a
   fixed release, remove any prompt text or `allowedTools` entries that only
@@ -110,7 +111,7 @@ REFERENCE FILES
   Reference files are meant for examples, snippets, partial templates, design
   notes, or sample configs that help the agent produce the right project. They
   are not copied automatically by the deterministic engine. During interactive
-  `claude-cli` and `codex-cli` runs, the runner mounts the existing `files/`
+  and batch `claude-cli` and `codex-cli` runs, the runner mounts the existing `files/`
   directory and prints its absolute path in the agent prompt so the agent can
   read references directly. API providers receive fallback guidance because
   they cannot access local directories.
@@ -127,11 +128,11 @@ ALLOWED TOOLS
   its workspace-write sandbox and on-request approval policy because it has no
   equivalent per-tool allow-list option.
 
-  Without allowedTools, a blueprint gets only the base set. A batch run
-  (--batch, or stdin that is not a terminal) cannot approve anything else:
-  Claude refuses it, and `seihou agent run` exits 1 naming each refused
-  command. `seihou validate-blueprint` warns about a blueprint that declares
-  no allowedTools, without failing.
+  Claude starts with the base set and any blueprint allowedTools. A batch run
+  can supply additional policy using the flags below. When Claude reports
+  a refusal, `seihou agent run` exits 1 and names each refused tool call.
+  `seihou validate-blueprint` reports an advisory when a blueprint declares
+  no allowedTools.
 
 LIBRARY UPGRADE MIGRATIONS
 
@@ -238,14 +239,15 @@ grant. Pass an existing Claude settings file with --settings ./campaign/claude-s
 to use its permission rules and hooks. Both flags apply only to this invocation.
 Baseline commands run directly under Seihou before the agent starts.
 
-  seihou agent run fix-nix-haskell-flake-customizations --batch --allowed-tool 'Bash(grep *)'
-  seihou agent migrate keiro-upgrade --from 0.22.0.0 --to 0.25.0.0 --batch --settings ./campaign/claude-settings.json
+  seihou agent run fix-nix-haskell-flake-customizations --batch --provider claude-cli --allowed-tool 'Bash(grep *)'
+  seihou agent migrate keiro-upgrade --from 0.22.0.0 --to 0.25.0.0 --batch --provider claude-cli --settings ./campaign/claude-settings.json
 
 Inspect the working diff after a refusal and retry with the intended rule or gate.
 The manifest records inputs in blueprint.callerToolPolicy or each executed
 blueprintMigrations entry. Rules are literal. Files are identified by SHA-256.
 
 Codex batch runs and migrations accept --codex-hooks FILE for synchronous
-PreToolUse command handlers. Run seihou agent review-codex-hooks FILE from
-the project to review new or changed declarations. A successful receipt
-stores the file digest, and a reported denial stops the attempt.
+PreToolUse command handlers. Run seihou agent review-codex-hooks FILE in a
+terminal from the consuming project to review new or changed declarations.
+A successful receipt stores the file digest, and a reported denial stops the
+attempt. See seihou help agent for the full invocation.

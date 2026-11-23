@@ -1807,7 +1807,7 @@ syncVersionsInfo =
   info
     (syncVersionsParser <**> helper)
     ( fullDesc
-        <> progDesc "Populate registry entry versions from each module/recipe/blueprint/prompt"
+        <> progDesc "Populate registry entry versions from their artifact definitions"
         <> footerDoc
           ( Just $
               vsep
@@ -1888,8 +1888,8 @@ agentInfo =
                   pretty ("anthropic, or openai, and --model for a provider-specific model." :: String),
                   pretty ("Run 'seihou agent models' to list known model choices." :: String),
                   line,
-                  pretty ("Use --debug with any subcommand to print the resolved system" :: String),
-                  pretty ("prompt without contacting the configured provider." :: String),
+                  pretty ("Use --debug with prompt-rendering subcommands to inspect" :: String),
+                  pretty ("the resolved system prompt without contacting a provider." :: String),
                   line,
                   pretty ("Available subcommands:" :: String),
                   indent 2 $
@@ -1899,6 +1899,7 @@ agentInfo =
                         pretty ("setup       Guided project setup: configure, run, and commit" :: String),
                         pretty ("run         Run an agent-driven blueprint" :: String),
                         pretty ("migrate     Run ordered library-upgrade blueprint migrations" :: String),
+                        pretty ("review-codex-hooks  Review Codex PreToolUse commands in a terminal" :: String),
                         pretty ("upgrade     Upgrade a module with an agent that repairs manifest state" :: String),
                         pretty ("models      List known agent models" :: String),
                         pretty ("config      Inspect resolved per-command agent settings" :: String)
@@ -2137,7 +2138,7 @@ agentRunInfo =
                   pretty ("> interactive prompts." :: String),
                   line,
                   pretty ("Pass --no-baseline to skip baseline application, files and commands;" :: String),
-                  pretty ("Parent --debug prints the resolved prompt and previews the baseline." :: String),
+                  pretty ("Parent --debug prints the resolved prompt and lists declared baseline modules." :: String),
                   pretty ("It leaves project files and the manifest untouched." :: String),
                   pretty ("Pass --batch to use a non-interactive CLI provider; Seihou selects" :: String),
                   pretty ("batch mode automatically when stdin is not a terminal." :: String),

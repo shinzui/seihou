@@ -66,8 +66,10 @@ OLDER MANIFESTS
       11 -> 12 recipe inputs
       12 -> 13 unknown recipe-chain history
       13 -> 14 conditional removal policies and recorded root retirement
+      14 -> 15 active judgements
+      15 -> 16 caller tool policy receipts
 
-    ✓ Upgraded .seihou/manifest.json to schema version 14.
+    ✓ Upgraded .seihou/manifest.json to schema version 16.
       Review the diff and commit it: git diff .seihou/manifest.json
 
   Running it on a manifest that is already current reports that there is
@@ -181,3 +183,20 @@ CONDITIONAL REMOVAL POLICIES
   removal. Other applications keep shared qualified instances. Explicit
   additional-root compositions and recipe applications retain exact-instance
   selection. See seihou help modules.
+
+ACTIVE JUDGEMENTS AND CALLER TOOL POLICY
+
+  Schema 15 records the project's active judgements and their policy. Adoption
+  through seihou run prepares this schema as needed. See seihou help judgements.
+
+  Schema 16 can record callerToolPolicy on a blueprint run or on each blueprint
+  migration receipt. Claude CLI receipts record the supplied allowed-tool
+  patterns and the digest of any settings file. Reviewed Codex CLI receipts
+  record the hooks file digest. Historical and manually marked receipts have
+  no caller policy. The receipt records per-invocation inputs for inspection.
+  Pass the flags again on a later invocation.
+
+  The first successful policy-bearing invocation upgrades a portable manifest as
+  it writes the receipt. Upgrade explicitly with seihou manifest upgrade when
+  you need to convert a machine-specific manifest first. Readers need Seihou
+  0.17.0.0 or newer to open schema 16. See seihou help agent for the flags.

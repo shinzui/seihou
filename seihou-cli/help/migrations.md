@@ -22,6 +22,8 @@ BLUEPRINT MIGRATIONS
   the next starts. A normal rerun resumes after receipts; --rerun repeats them.
   Parent --debug renders pending prompts in order without launching a provider
   or changing the manifest. Migration mode never applies blueprint baseModules.
+  Batch invocations accept Claude CLI --allowed-tool and --settings, or
+  Codex CLI --codex-hooks after terminal review. See seihou help agent.
 
   A receipt means the edge has been dealt with and need not run again: either
   the agent interaction completed, or the consumer upgraded by hand and said so

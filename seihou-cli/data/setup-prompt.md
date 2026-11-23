@@ -31,7 +31,8 @@ Adapt to the user's situation, but the general flow is:
    via `seihou agent run NAME [PROMPT]`. A prompt runs via
    `seihou prompt run NAME [USER-PROMPT]`. If the user names a blueprint,
    switch to the agent-run flow: resolve variables, optionally let the baseline
-   modules apply, then start the configured provider. If the user names a
+   modules apply their files and run their commands, then start the configured
+   provider. If the user names a
    prompt, switch to the prompt-run flow: resolve variables, run command-derived
    variables, render the prompt, then start the provider.
 
@@ -129,8 +130,13 @@ Suggest these commands when the user needs to run them locally:
   - `--force`: accept conflicted managed-file deletions; seeds remain protected
 - `seihou agent run BLUEPRINT [PROMPT] [--var K=V] [--no-baseline]` — run a blueprint
   - Discovers the blueprint, resolves variables (same precedence chain as `seihou run`), optionally applies base modules, then starts the configured provider
-  - `--no-baseline`: skip applying declared base modules
-  - `seihou agent --debug run BLUEPRINT`: print the resolved system prompt without contacting the provider
+  - `--no-baseline`: skip the baseline's files and commands
+  - `seihou agent --debug run BLUEPRINT`: render in the current checkout and list declared baseline modules without applying them
+  - In batch mode use `--provider claude-cli` with `--allowed-tool PATTERN` or
+    `--settings FILE`. For Codex, review with
+    `seihou agent review-codex-hooks FILE` in the project terminal and pass
+    `--batch --provider codex-cli --codex-hooks FILE`. The policy applies to
+    the provider invocation. See `seihou help agent`.
 - `seihou prompt run PROMPT [USER-PROMPT] [--var K=V] [--debug]` — run a reusable prompt
   - Discovers the prompt, resolves variables, runs command-derived variables, renders the prompt body, then starts the configured provider
   - `--debug`: print the rendered prompt without contacting the provider

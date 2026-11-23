@@ -6,13 +6,23 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 ## [Unreleased]
 
+## [0.17.0.0] - 2026-11-23
+
 - Batch blueprints and migrations can use the caller's reviewed Codex hook
-  file. Review it once with `seihou agent review-codex-hooks FILE`, then
-  pass `--codex-hooks FILE` on each invocation.
-- Claude CLI batch blueprint runs and migrations accept repeatable `--allowed-tool` and a native `--settings` file. Schema 16 records the caller inputs on each successful receipt.
-- `seihou agent --debug run` previews the prompt in the current checkout without applying the baseline, launching the provider, or writing a receipt.
-- Blueprint baseline commands now run before the agent starts. A failed baseline command stops the run and identifies the command to fix.
-- Generated registry docs show how to use each artifact and link to individual migration steps.
+  file. From the project terminal, run `seihou agent review-codex-hooks FILE`,
+  then pass `--batch --provider codex-cli --codex-hooks FILE` to
+  `seihou agent run` or `seihou agent migrate`. Review changes before retrying.
+- Claude CLI batch runs and migrations accept repeatable `--allowed-tool`
+  patterns and a native `--settings` file. Successful invocations that
+  supply caller policy record it in a schema 16 manifest. Use Seihou
+  0.17.0.0 or newer to read that manifest.
+- `seihou agent --debug run BLUEPRINT` renders the prompt in the current
+  checkout and lists the declared baseline modules. It leaves project files
+  and the manifest untouched and skips the provider.
+- Blueprint baseline commands run after their files are applied and before
+  the agent starts. A failed command stops the run and identifies what to fix.
+- Generated registry docs show how to use each artifact and link to individual
+  migration steps.
 
 ## [0.16.0.2] - 2026-11-18
 
@@ -1220,7 +1230,8 @@ regeneration.
 
 ---
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.16.0.2...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.17.0.0...HEAD
+[0.17.0.0]: https://github.com/shinzui/seihou/compare/v0.16.0.2...v0.17.0.0
 [0.16.0.2]: https://github.com/shinzui/seihou/compare/v0.16.0.1...v0.16.0.2
 [0.16.0.1]: https://github.com/shinzui/seihou/compare/v0.16.0.0...v0.16.0.1
 [0.16.0.0]: https://github.com/shinzui/seihou/compare/v0.15.0.0...v0.16.0.0

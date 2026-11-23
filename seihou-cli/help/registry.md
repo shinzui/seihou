@@ -1,7 +1,7 @@
 REGISTRY
 
 A multi-artifact repository declares seihou-registry.dhall at its root. Lists
-named modules, recipes, blueprints and prompts contain entries with name,
+named modules, recipes, blueprints, prompts and judgements contain entries with name,
 optional version/description, project-relative path and tags. Each path points
 to the directory holding the corresponding runnable definition. Names must be
 unique across kinds; paths must be relative without parent traversal.
@@ -18,8 +18,9 @@ AUTHOR WORKFLOW
   without writing; use it in CI. Validate checks structure and version agreement.
   Both commands accept --dir PATH, work locally and do not read installed copies.
 
-  Validate item contents with validate-module, validate-recipe, validate-blueprint or
-  validate-prompt as appropriate; registry validation checks metadata.
+  Run the matching artifact validator: validate-module, validate-recipe,
+  validate-blueprint, validate-prompt or validate-judgement. Registry
+  validation checks the entries and their recorded versions.
 
 CONSUMERS
 

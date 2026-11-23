@@ -18,6 +18,7 @@ OKF DOCUMENTATION
   output directory after validating the replacement. Invalid declarations or a rejecting
   profile preserve existing output. Run from a fresh registry checkout; no artifact
   installation is needed. Covers modules, recipes, blueprints, prompts and judgements.
+  Artifact pages show Seihou commands and link to individual migration steps.
 
 SEE ALSO
 

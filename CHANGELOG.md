@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.17.0.0] - 2026-11-23
+
 ### Added
 
 - Codex CLI batch blueprint runs and migrations accept `--codex-hooks FILE`. Review a file with `seihou agent review-codex-hooks FILE`. Completed receipts record its digest after a checked Codex turn.
@@ -18,6 +20,7 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Blueprint baseline commands run after their files are applied and before the provider starts. A failed command stops the run before any blueprint receipt is recorded (BUG-4).
+- Embedded help and agent prompts explain terminal review for Codex hooks, caller policy receipts in schema 16, and the blueprint debug and baseline workflows.
 
 ## [0.16.0.2] - 2026-11-18
 
@@ -1333,7 +1336,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.16.0.2...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.17.0.0...HEAD
+[0.17.0.0]: https://github.com/shinzui/seihou/compare/v0.16.0.2...v0.17.0.0
 [0.16.0.2]: https://github.com/shinzui/seihou/compare/v0.16.0.1...v0.16.0.2
 [0.16.0.1]: https://github.com/shinzui/seihou/compare/v0.16.0.0...v0.16.0.1
 [0.16.0.0]: https://github.com/shinzui/seihou/compare/v0.15.0.0...v0.16.0.0

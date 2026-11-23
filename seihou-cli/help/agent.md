@@ -18,9 +18,9 @@ PARENT OPTIONS
 
   --debug
       Print the resolved system prompt and exit without contacting any
-      provider. Use this to inspect what Seihou would send. Artifact
-      debug renders still run declared commandVars/version probes;
-      agent upgrade also saves its brief outside the project.
+      provider. Use this to inspect what Seihou would send. Migration debug
+      still runs a declared version probe when inferring --to. Agent upgrade
+      also saves its brief outside the project.
 
   --provider PROVIDER
       Select the provider for this invocation. Accepted values:
@@ -165,10 +165,15 @@ SUBCOMMANDS
       approve tools. With claude-cli, a run in which Claude refused any tool
       call exits 1, names each refused tool and command, and records no
       applied blueprint. Refusals count whatever their cause: a command
-      missing from the blueprint's allowedTools, a guarded write such as one
+      missing from the effective allow-list, a guarded write such as one
       inside .git/ or a shell redirection, or a command run by your own Claude
-      Code hooks. Declare what the blueprint needs in allowedTools, or run it
-      interactively. Codex runs with --codex-hooks check native hook evidence.
+      Code hooks. Use the caller policy flags below for per-invocation grants.
+      Codex runs with --codex-hooks check native hook evidence.
+
+  seihou agent review-codex-hooks FILE
+      Review synchronous Codex PreToolUse commands from the consuming project's
+      terminal. Inspect the commands shown and type yes to approve them.
+      See Reviewed Codex hooks below for the batch invocation.
 
   seihou agent migrate BLUEPRINT [--from VERSION] [--to VERSION] [PROMPT]
       Run one agent session per in-window migration declared by the blueprint.
@@ -190,12 +195,12 @@ SUBCOMMANDS
 
       --mark-applied records every pending edge in the window as already
       applied, without running them, on your assertion that you performed the
-      upgrade by hand. No provider is contacted and no file in the working
-      tree is changed. Each receipt is filed under the blueprint that owns its
+      upgrade by hand. It writes only the manifest, without starting a provider
+      or applying project edits. Each receipt is filed under the blueprint that owns its
       edge, so a marked entailed edge suppresses a later direct run of that
       blueprint too; edges that already have receipts are left alone rather
       than restamped. --rerun clears a mistaken marking. The flag is refused
-      alongside --rerun or parent --debug, both of which it contradicts.
+      alongside --rerun, parent --debug, or caller policy flags.
 
       A receipt records that an edge has been dealt with -- a provider
       interaction returned, or you marked it -- not package-manager
@@ -251,7 +256,8 @@ including whitespace. API providers (anthropic, openai) keep optional input
 unchanged. Automatic startup preserves provider tool approvals.
 
 seihou agent --debug run api-service shows the effective initial instruction
-and previews the declared baseline. Debug leaves project files and the manifest untouched.
+and lists the declared baseline modules. Debug leaves project files and the
+manifest untouched.
 A successful execution records the original PROMPT, including omission or blank text.
 
 CALLER TOOL POLICY
@@ -262,8 +268,8 @@ grant. Pass an existing Claude settings file with --settings ./campaign/claude-s
 to use its permission rules and hooks. Both flags apply only to this invocation.
 Baseline commands run directly under Seihou before the agent starts.
 
-  seihou agent run fix-nix-haskell-flake-customizations --batch --allowed-tool 'Bash(grep *)'
-  seihou agent migrate keiro-upgrade --from 0.22.0.0 --to 0.25.0.0 --batch --settings ./campaign/claude-settings.json
+  seihou agent run fix-nix-haskell-flake-customizations --batch --provider claude-cli --allowed-tool 'Bash(grep *)'
+  seihou agent migrate keiro-upgrade --from 0.22.0.0 --to 0.25.0.0 --batch --provider claude-cli --settings ./campaign/claude-settings.json
 
 Inspect the working diff after a refusal and retry with the intended rule or gate.
 The manifest records inputs in blueprint.callerToolPolicy or each executed

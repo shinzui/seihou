@@ -130,7 +130,7 @@ blocks, and body) with `seihou prompt run PROMPT --debug`.
 ## Registry Format (for multi-module repos)
 
 A `seihou-registry.dhall` at the repository root lists modules, recipes,
-blueprints, and prompts:
+blueprints, prompts, and judgements:
 
 ```dhall
 { repoName = "my-templates"
@@ -152,8 +152,9 @@ blueprints, and prompts:
 - **modules**: List of entries with name, version, path, description, tags.
   Keep `version` in sync with each module's `module.dhall` using
   `seihou registry sync-versions`.
-- **recipes**, **blueprints**, **prompts**: Optional lists with the same entry
-  shape, pointing to `recipe.dhall`, `blueprint.dhall`, and `prompt.dhall`.
+- **recipes**, **blueprints**, **prompts**, **judgements**: Optional lists
+  with the same entry shape. Each entry points to the directory with its
+  corresponding definition.
 
 ### Repository layout
 ```
@@ -304,6 +305,8 @@ Suggest these commands when the user needs to run them locally:
 
 7. **Plan for versioning**: Set an explicit initial version. Modules can ship
    deterministic layout migrations, automatically included by `seihou update`.
+   Blueprint baselines apply their modules' files and commands before the
+   provider starts. Keep those commands in the module declarations.
    Blueprints can ship separate agent-guided library migrations with
    `versionProbe`, ordered edges and optional `entails`; consumers use
    `seihou agent migrate NAME`. Inspect with parent `--debug` before launching.

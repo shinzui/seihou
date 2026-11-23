@@ -1,8 +1,8 @@
 GIT REPOSITORY
 
-Seihou modules, recipes, blueprints, and prompts can be shared and installed from git
-repositories. A repository can contain a single runnable item or multiple items
-organized as a registry.
+Seihou modules, recipes, blueprints, prompts, and judgements can be shared and
+installed from git repositories. A repository can contain a single artifact
+or multiple items organized as a registry.
 
 SINGLE-MODULE REPOSITORY
 
@@ -19,24 +19,25 @@ SINGLE-MODULE REPOSITORY
     seihou install https://github.com/user/my-module.git
     seihou install https://github.com/user/my-module.git --name custom-name
 
-SINGLE-RECIPE, SINGLE-BLUEPRINT, OR SINGLE-PROMPT REPOSITORY
+OTHER SINGLE-ARTIFACT REPOSITORIES
 
-  A repository with a recipe.dhall, blueprint.dhall, or prompt.dhall at the
-  root is treated as a single recipe, single blueprint, or single prompt.
-  Install it the same way:
+  A repository with a root recipe.dhall, blueprint.dhall, prompt.dhall, or
+  judgement.dhall is treated as a single artifact. Install it the same way:
 
     seihou install https://github.com/user/my-recipe.git
     seihou install https://github.com/user/my-blueprint.git
     seihou install https://github.com/user/my-prompt.git
+    seihou install https://github.com/user/my-judgement.git
 
   Recipes run through `seihou run`; blueprints run through
-  `seihou agent run`; prompts run through `seihou prompt run`.
+  `seihou agent run`; prompts run through `seihou prompt run`. Adopt a judgement
+  with `seihou run NAME`; see `seihou help judgements`.
 
 REGISTRY REPOSITORY
 
   A repository with a seihou-registry.dhall at the root is treated as a
-  registry containing multiple modules, recipes, blueprints, and prompts. Each item
-  lives in its own subdirectory with its own runnable definition.
+  registry containing modules, recipes, blueprints, prompts, or judgements.
+  Each item lives in its own subdirectory with its own definition.
 
     my-templates/
       seihou-registry.dhall
@@ -44,6 +45,7 @@ REGISTRY REPOSITORY
       recipes/haskell-library/recipe.dhall
       blueprints/api-service/blueprint.dhall
       prompts/review-changes/prompt.dhall
+      judgements/license-review/judgement.dhall
 
   The registry file declares available items with descriptions, versions, and
   tags. Install specific items, all items, or choose interactively:
@@ -64,8 +66,7 @@ BROWSING BEFORE INSTALLING
 WHERE ITEMS ARE INSTALLED
 
   Installed items are stored under ~/.config/seihou/installed/<name>/.
-  They appear alongside user-created modules, recipes, blueprints, and prompts in the
-  search path:
+  They appear alongside user-created artifacts in the search path:
 
   1. .seihou/modules/             Project-local items
   2. ~/.config/seihou/modules/    User items
