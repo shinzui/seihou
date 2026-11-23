@@ -86,7 +86,7 @@ replaying a receipt must never grant tools to a subsequent run.
 - [x] (2026-11-21) A caller can supply a settings file containing a working Claude hook and identify the exact file contents used by their digest.
 - [x] (2026-11-21) Batch migrations apply the policy to each pending edge and record it under the blueprint that owns that edge.
 - [x] (2026-11-21) Investigated the Baikai integration against Codex 0.171.0. A real app-server with a local model fixture distinguished reviewed, unreviewed and modified hooks, emitted a structured denial and kept ordinary exit 7 separate. The reusable inventory check and notification decoder are in the Baikai source tree.
-- [ ] Reviewed Codex hooks on batch runs and migrations. On 2026-11-23, Baikai source and an isolated Seihou candidate passed the native review, refusal, retry and digest path. Publish the Baikai provider and core before adopting the API in Seihou's normal build. Caller rules files are deferred.
+- [ ] Reviewed Codex hooks on batch runs and migrations. On 2026-11-23, the isolated Seihou candidate passed the native review, refusal, retry and digest path. Baikai's compatible releases are now on Hackage. Shikumi's published bounds still prevent a normal Cabal build. Caller rules files are deferred.
 - [ ] Debug rendering, help and public consumer acceptance. On 2026-11-23, the executable on PATH passed the installed consumer check. Tagged release acceptance remains open.
 
 
@@ -254,10 +254,32 @@ its build base as `seihou v0.16.0.2 (93c9789)`. The run and migration
 help screens include `--codex-hooks FILE` and the bundled help describes
 the review command.
 
-The Baikai provider and core versions with these changes remain unpublished.
-The Seihou candidate stays in a detached worktree until dependency publication
-allows a normal build with published bounds and updated Nix pins. A Seihou
-release and an installed check of that release remain open.
+Hackage now carries `baikai` 0.11.0.0 and `baikai-openai` 0.7.4.0.
+Their release tags contain the reviewed-hook API and the provider bounds admit
+the released core. Shikumi 0.5.1.0 still caps `baikai` below 0.11 and
+`baikai-effectful` below 0.5. Its APIs share Baikai types with Seihou's
+judgement runtime, so the normal Cabal build needs a compatible Shikumi
+release or metadata revision. A clean Cabal solve with an empty package
+store confirmed the conflict. The isolated candidate uses just those two
+relaxed bounds with all dependencies drawn from Hackage archives.
+[FRIC-24](../friction-log/24-shikumi-s-published-bounds-exclude-the-first-baikai-release-with-reviewed-codex-hooks.md)
+[Shikumi package](mori://shinzui/shikumi/packages/shikumi)
+
+The detached Seihou candidate at `aec4f1c` pins the released Baikai cohort.
+Its native Nix build passed on aarch64-darwin. The resulting executable
+passed the reviewed Codex batch and six-edge migration fixtures and the help
+audit. The Cabal build and all three Seihou test suites passed with the
+scoped override, as did the Claude fixture on the pilot blueprint and the
+same Keiro cohort. The source distributions solved with the proposed
+Shikumi metadata from an empty package store. The three package metadata
+checks and the native flake checks passed.
+The pristine Shikumi 0.5.1.0 source passed all 300 tests against Baikai 0.11.0.0
+and Baikai Effectful 0.5.0.1 with only its bounds updated. Hackage accepted
+the metadata preview. The proposed revision admits `baikai >=0.10.0.0 &&
+<0.12` and `baikai-effectful (>=0.4.0.5 && <0.5) || ^>=0.5.0.1` for the
+library and its tests. Publication of the revision and Seihou 0.17.0.0
+awaits authorization. The Seihou version increase accounts for the exported
+core receipt records gaining a field.
 
 FRIC-22 was promoted to Baikai IR-14 for the dependency release boundary.
 FRIC-23 was accepted with the verified stable configuration path for mounted
@@ -664,8 +686,8 @@ python3 scripts/probe-codex-hook-policy.py --baikai "$(cabal list-bin exe:baikai
 
 In the Seihou candidate worktree, initialize the schema submodule and run
 the consumer probe with the installed Keiro blueprint cohort available.
-Until the release bounds are updated, the detached worktree uses both
-Baikai source packages through its local Cabal project override.
+The detached worktree uses the published Baikai packages. Its local Cabal
+project override relaxes the two Shikumi bounds for compatibility testing.
 
 ```bash
 git submodule update --init schema

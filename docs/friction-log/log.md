@@ -2,6 +2,9 @@
 
 ## 2026-11-23
 
+* **Addition**: FRIC-24 records detour tooling friction with mori://shinzui/shikumi/packages/shikumi: Shikumi's published bounds exclude the first Baikai release with reviewed Codex hooks
+
+
 * **Update**: FRIC-23 accepted: Verified the stable configuration path with the six-edge Keiro migration fixture and its installed reference directories.
 
 
